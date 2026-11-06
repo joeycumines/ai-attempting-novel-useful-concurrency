@@ -20,6 +20,7 @@ import (
 	"context"
 	"iter"
 	"math"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -242,20 +243,17 @@ func (x *ChanPubSub09Gemini[C, V]) Add(delta int) (subscribers int) {
 		// If pingArmed is false while TryRLock fails, a blocking RLock()
 		// cleanly parks until Send either finishes (if subscribers was 0 or
 		// ping just finished) or we re-check without busy-spinning.
-		var ok bool
-		for {
-			ok = x.sendingMu.TryRLock()
-			if ok || x.pingArmed.Load() {
-				break
-			}
+		ok := x.sendingMu.TryRLock()
+		for !ok && !x.pingArmed.Load() && x.ping.Add(0) == 0 {
+			// Send holds the write lock but has not armed ping yet: keep
+			// spinning until it does (then we must steal), or until the send
+			// finishes and the read lock becomes available (then no steal is
+			// needed). A blocking RLock here would be wrong: it could only
+			// succeed after the send completed, skipping a steal that the
+			// already-taken subscriber snapshot still requires.
 			x.checkBroken()
-			// Yield via a brief RLock/RUnlock cycle if ping is not armed,
-			// avoiding 100% CPU spin-locks on single-P runtimes.
-			if x. ping.Add(0) != 0 {
-				break
-			}
-			x.sendingMu.RLock()
-			x.sendingMu.RUnlock()
+			runtime.Gosched()
+			ok = x.sendingMu.TryRLock()
 		}
 
 		subscribers = x.addSubscribers(delta)

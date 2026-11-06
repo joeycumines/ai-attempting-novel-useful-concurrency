@@ -35,16 +35,28 @@ func (x *ChanCaster2[C, V]) Send(v V) int {
 	}
 	x.mutex.Lock()
 	defer x.mutex.Unlock()
-	st := x.state.Load()
-	receivers := uint32(st >> 32)
-	if receivers == 0 {
-		return 0
+	// CAS loop (as in the reference ChanCaster): a concurrent negative Add
+	// may change the state between the load and the tracker update, so the
+	// update must be retried against the fresh state - a blind Add would
+	// broadcast against a stale receiver count and could block forever on a
+	// send with no remaining receiver.
+	var (
+		st        uint64
+		receivers uint32
+	)
+	for {
+		st = x.state.Load()
+		receivers = uint32(st >> 32)
+		if receivers == 0 {
+			return 0
+		}
+		if uint32(st) != receivers {
+			panic(`bigbuff: chancaster2: invariant`)
+		}
+		if x.state.CompareAndSwap(st, st+uint64(math.MaxInt32)) {
+			break
+		}
 	}
-	if uint32(st) != receivers {
-		panic(`bigbuff: chancaster2: invariant`)
-	}
-	// one atomic Add replaces CAS loop - only decrements race, and they Add(-d) on both halves
-	x.state.Add(uint64(math.MaxInt32))
 	for range receivers {
 		x.C <- v
 	}

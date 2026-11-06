@@ -81,7 +81,7 @@ func BenchmarkLockStep(b *testing.B) {
 					}
 				}
 			}
-		}}
+		}, true}
 	}
 	names = append(names, "RelayPubSub_w64")
 	for _, name := range names {

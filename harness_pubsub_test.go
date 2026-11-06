@@ -16,6 +16,12 @@ import (
 type pubsubAPI struct {
 	send      func(int) int
 	subscribe func(ctx context.Context) func(yield func(int) bool)
+	// lossless reports whether the implementation guarantees every sent value
+	// is delivered to every active subscriber session (lock-step pubsubs).
+	// Beacon-style impls (single latest-value slot + ack barrier) are
+	// lossy under churn by design: gaps are permitted, but duplicates,
+	// reordering, and stalls are always failures.
+	lossless bool
 }
 
 func seqOf[T any](f func(context.Context) func(func(T) bool)) func(context.Context) func(func(T) bool) {
@@ -26,7 +32,7 @@ func pubsubImpls() map[string]func() pubsubAPI {
 	return map[string]func() pubsubAPI{
 		"ChanPubSub": func() pubsubAPI {
 			x := NewChanPubSub(make(chan int))
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
 		"ChanPubSubV2_06meta": func() pubsubAPI {
 			x := NewChanPubSubV2(make(chan int))
@@ -46,43 +52,43 @@ func pubsubImpls() map[string]func() pubsubAPI {
 						}
 					}
 				}
-			}}
+			}, true}
 		},
 		"ChanPubSub09Gemini": func() pubsubAPI {
 			x := NewChanPubSub09Gemini(make(chan int))
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
 		"ChanPubSub10Gemini": func() pubsubAPI {
 			x := NewChanPubSub10Gemini(make(chan int))
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
 		"ChanPubSub14Xing": func() pubsubAPI {
 			x := NewChanPubSub14Xing(make(chan int))
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
 		"ChanPubSub16DeepSeek": func() pubsubAPI {
 			x := NewChanPubSub16DeepSeek(make(chan int))
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
 		"ChanPubSub17Gemini": func() pubsubAPI {
 			x := NewChanPubSub17Gemini(make(chan int))
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
 		"ChanGathererPubSub": func() pubsubAPI {
 			x := NewChanGathererPubSub(make(chan int), make(chan struct{}))
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
 		"ReliableBeacon": func() pubsubAPI {
 			x := NewReliableBeacon[int]()
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, false}
 		},
 		"EpochPubSub_11meta": func() pubsubAPI {
 			x := NewEpochPubSub[int]()
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, false}
 		},
 		"ChanRotor": func() pubsubAPI {
 			x := MakeChanRotor[int]()
-			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }}
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
 		"PhasePubSub": func() pubsubAPI {
 			x := NewPhasePubSub[int]()
@@ -101,7 +107,7 @@ func pubsubImpls() map[string]func() pubsubAPI {
 						}
 					}
 				}
-			}}
+			}, true}
 		},
 		"RelayPubSub_w4": func() pubsubAPI {
 			x := NewRelayPubSub[int](4)
@@ -120,7 +126,7 @@ func pubsubImpls() map[string]func() pubsubAPI {
 						}
 					}
 				}
-			}}
+			}, true}
 		},
 	}
 }
@@ -130,6 +136,7 @@ func pubsubImpls() map[string]func() pubsubAPI {
 // strictly consecutive run of values (no gaps, no duplicates).
 func runPubSubStress(t *testing.T, mk func() pubsubAPI, subs, sends int, churn bool) {
 	x := mk()
+	lossless := x.lossless
 	stop := make(chan struct{})
 	var gaps, dups, yielded atomic.Int64
 	var first atomic.Value
@@ -167,7 +174,7 @@ func runPubSubStress(t *testing.T, mk func() pubsubAPI, subs, sends int, churn b
 							if dups.Add(1) == 1 {
 								first.Store(fmt.Sprintf("dup/reorder: %d after %d", v, last))
 							}
-						} else if v != last+1 {
+						} else if v != last+1 && lossless {
 							if gaps.Add(1) == 1 {
 								first.Store(fmt.Sprintf("gap: %d after %d", v, last))
 							}

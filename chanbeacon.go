@@ -128,13 +128,20 @@ var beaconClosedChan = func() chan struct{} {
 // [RelaySub.Peek] are lock-free and safe for concurrent use with Send.
 // A single [RelaySub] MUST NOT be used concurrently from multiple goroutines
 // (the read cursor is not synchronized across goroutines).
+// beaconEntry pairs a value with the sequence number it was published under.
+type beaconEntry[V any] struct {
+	seq uint64
+	val V
+}
+
 type ChanBeacon[V any] struct {
 	// buf is the ring buffer for values. Length is always a power of 2.
-	// Written under mu, read lock-free via head synchronization.
+	// Each slot is tagged with the sequence number it holds, so a reader
+	// can detect slot reuse (overrun) instead of returning a stale value.
 	// The acquire-release pair on head guarantees that a reader who
 	// observes a given head value will also observe the corresponding
 	// buffer write that preceded it.
-	buf []V
+	buf []beaconEntry[V]
 
 	// mask is len(buf) - 1, used for fast bitwise modulo. Since len(buf)
 	// is a power of 2, `index & mask` is equivalent to `index % len(buf)`
@@ -196,7 +203,7 @@ func NewChanBeacon[V any](capacity int) *ChanBeacon[V] {
 	}
 	ch := make(chan struct{})
 	b := &ChanBeacon[V]{
-		buf:    make([]V, cap),
+		buf:    make([]beaconEntry[V], cap),
 		mask:   uint64(cap - 1),
 		slotMu: make([]sync.RWMutex, cap),
 	}
@@ -238,11 +245,13 @@ func (b *ChanBeacon[V]) Send(value V) int {
 		return 0 // no subscribers
 	}
 
-	// Write value to ring buffer slot.
+	// Write value to ring buffer slot. The new value has sequence number
+	// head+1, and sequence s is always stored at slot s&mask (matching
+	// Consume/Peek/Latest), so the slot for this value is (head+1)&mask.
 	head := b.head.Load()
-	slot := head & b.mask
+	slot := (head + 1) & b.mask
 	b.slotMu[slot].Lock()
-	b.buf[slot] = value
+	b.buf[slot] = beaconEntry[V]{seq: head + 1, val: value}
 	b.slotMu[slot].Unlock()
 
 	// Increment head with release semantics (atomic.Store). This
@@ -282,7 +291,7 @@ func (b *ChanBeacon[V]) Subscribe() *RelaySub[V] {
 	b.subs.Add(1)
 	return &RelaySub[V]{
 		beacon: b,
-		cursor: b.head.Load(),
+		cursor: b.head.Load() + 1,
 	}
 }
 
@@ -316,11 +325,11 @@ func (b *ChanBeacon[V]) Latest() (V, bool) {
 		var zero V
 		return zero, false
 	}
-	slot := (head - 1) & b.mask
+	slot := head & b.mask
 	b.slotMu[slot].RLock()
-	val := b.buf[slot]
+	e := b.buf[slot]
 	b.slotMu[slot].RUnlock()
-	return val, true
+	return e.val, true
 }
 
 // RelaySub is a subscription to a [ChanBeacon], providing lock-free
@@ -385,25 +394,31 @@ func (s *RelaySub[V]) Consume() (V, bool) {
 	// Acquire load of head synchronizes with the release store in Send,
 	// ensuring we see the buffer write that preceded the head increment.
 	head := s.beacon.head.Load()
-	if s.cursor >= head {
+	if s.cursor > head {
 		var zero V
 		return zero, false
 	}
 
-	bufLen := s.beacon.mask + 1
-	if head-s.cursor > bufLen {
-		// Overrun: subscriber fell behind by more than the buffer can
-		// hold. Skip to the oldest available value. The missed count
-		// can be quantified via Lag() before calling Consume.
-		s.cursor = head - bufLen
-	}
-
 	slot := s.cursor & s.beacon.mask
 	s.beacon.slotMu[slot].RLock()
-	v := s.beacon.buf[slot]
+	e := s.beacon.buf[slot]
 	s.beacon.slotMu[slot].RUnlock()
+	if e.seq != s.cursor {
+		// The slot was reused since this cursor position was last read
+		// (overrun): the value we are holding is newer than cursor. Skip
+		// forward to it - delivery stays monotonic, never duplicated.
+		if e.seq > s.cursor {
+			s.cursor = e.seq
+		} else {
+			// e.seq < cursor cannot happen for cursor < head (the slot always
+			// holds the newest sequence congruent to cursor mod bufLen);
+			// guard anyway by resyncing to head.
+			s.cursor = head
+			return s.Consume()
+		}
+	}
 	s.cursor++
-	return v, true
+	return e.val, true
 }
 
 // Peek returns the most recently broadcast value without advancing the
@@ -419,11 +434,11 @@ func (s *RelaySub[V]) Peek() (V, bool) {
 		var zero V
 		return zero, false
 	}
-	slot := (head - 1) & s.beacon.mask
+	slot := head & s.beacon.mask
 	s.beacon.slotMu[slot].RLock()
-	val := s.beacon.buf[slot]
+	e := s.beacon.buf[slot]
 	s.beacon.slotMu[slot].RUnlock()
-	return val, true
+	return e.val, true
 }
 
 // Lag returns the number of messages that have been lost due to buffer
@@ -435,9 +450,12 @@ func (s *RelaySub[V]) Peek() (V, bool) {
 // advances the cursor past the gap.
 func (s *RelaySub[V]) Lag() uint64 {
 	head := s.beacon.head.Load()
+	if s.cursor > head {
+		return 0
+	}
 	bufLen := s.beacon.mask + 1
-	if head > s.cursor+bufLen {
-		return head - s.cursor - bufLen
+	if head-s.cursor >= bufLen {
+		return head - s.cursor - bufLen + 1
 	}
 	return 0
 }
@@ -509,14 +527,22 @@ func (s *RelaySub[V]) Seq(ctx context.Context) iter.Seq[V] {
 				return
 			}
 			// Phase 2: Wait for new values or cancellation.
-			// Ready() returns the current notification channel, which
-			// will be closed by the next Send (or is already closed if
-			// the beacon was closed). Selecting on a closed channel
-			// fires immediately, so no notifications are missed.
+			// Capture the notification channel FIRST, then re-check for
+			// available data: a Send that lands between the drain and the
+			// capture closes the captured (old) channel, while a Send that
+			// landed before the capture leaves data for the re-check. Either
+			// way no wakeup is lost.
+			sig := s.Ready()
+			if v, ok := s.Consume(); ok {
+				if !yield(v) {
+					return
+				}
+				continue
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-s.Ready():
+			case <-sig:
 				// New values available, or beacon closed.
 				// Loop back to drain phase.
 			}

@@ -35,28 +35,27 @@ func (x *ChanCaster14Xing[C, V]) Send(value V) int {
 	x.mutex.Lock()
 	defer x.mutex.Unlock()
 
-	receivers := uint32(x.state.Load() >> 32)
-	if receivers > maxReceivers {
-		panic(`bigbuff: chancaster: send: state invariant violation`)
-	}
-	// Guard the invariant that the low 32 bits never carry a value larger than
-	// maxReceivers; they only contain maxReceivers + receivers while a send is
-	// in flight.
-	lo := uint32(x.state.Load())
-	tracker := uint32(lo) // currently the “extra” high band
-	if lo != receivers && tracker > maxReceivers {
-		panic(`bigbuff: chancaster: send: state invariant violation`)
-	}
-
-	// Initialise the tracker to maxReceivers + receivers, atomically syncing
-	// with any concurrent decrements.
-	tracker += maxReceivers
-	success := x.state.CompareAndSwap(uint64(receivers)<<32|uint64(receivers),
-		uint64(receivers)<<32|uint64(tracker))
-	if !success {
-		// Should not happen because the write lock excludes other writers,
-		// but defend anyway.
-		panic(`bigbuff: chancaster: send: invariant CAS failed`)
+	// CAS loop (as in the reference ChanCaster): a concurrent negative Add
+	// (which does not take the mutex) may change the state between the load
+	// and the tracker update, so retry against the fresh state until the
+	// tracker is set - panicking or broadcasting against a stale count on CAS
+	// failure would be wrong.
+	var (
+		st        uint64
+		receivers uint32
+	)
+	for {
+		st = x.state.Load()
+		receivers = uint32(st >> 32)
+		if receivers == 0 {
+			return 0
+		}
+		if receivers > maxReceivers || uint32(st) != receivers {
+			panic(`bigbuff: chancaster: send: state invariant violation`)
+		}
+		if x.state.CompareAndSwap(st, st+uint64(maxReceivers)) {
+			break
+		}
 	}
 
 	// Broadcast loop
@@ -107,7 +106,17 @@ func (x *ChanCaster14Xing[C, V]) Add(delta int) int {
 		receivers := uint32(st >> 32)
 		if receivers <= maxReceivers && maxReceivers-receivers >= uint32(delta) {
 			// low bits indicate either idle or actively sending.
-			if uint32(st) == receivers || uint32(st) == maxReceivers+receivers {
+			switch uint32(st) {
+			case receivers:
+				// not sending
+				return int(receivers)
+			case maxReceivers + receivers:
+				// sending - drain the requisite number of in-flight sends,
+				// so the sender never blocks on a receive that will never
+				// arrive (same contract as the reference ChanCaster).
+				for range delta {
+					<-x.C
+				}
 				return int(receivers)
 			}
 		}

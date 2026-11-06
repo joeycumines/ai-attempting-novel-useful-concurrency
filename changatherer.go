@@ -20,6 +20,7 @@ import (
 	"context"
 	"iter"
 	"math"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -355,6 +356,13 @@ func (x *ChanGathererPubSub[C, V, P]) Send(value V) (sent int) {
 	// Broadcast the value
 	sent = x.ping.Send(value)
 
+	// Compensate the pong gatherer for subscribers that unsubscribed
+	// mid-flight: their ping steals reduced the number of actual receivers
+	// to `sent`, so the same number of pongs will never arrive.
+	if diff := sent - int(subs); diff != 0 {
+		x.pong.Add(diff)
+	}
+
 	// Wait for all pongs (or cancellations)
 	if sent > 0 {
 		x.pong.Wait()
@@ -378,8 +386,22 @@ func (x *ChanGathererPubSub[C, V, P]) Add(delta int) (subscribers int) {
 		subscribers = int(x.subs.Load())
 
 	case delta < 0:
-		// Unsubscribe case
+		// Unsubscribe case. If a send is in flight (cannot take the read
+		// lock, and ping is armed), the departing subscriber's ping share
+		// must be drained so the sender never blocks on a receive that will
+		// never arrive. The sender compensates the pong side via `sent`.
+		ok := x.sendMu.TryRLock()
+		for !ok && x.ping.Add(0) == 0 && x.pong.Add(0) == 0 {
+			x.checkBroken()
+			runtime.Gosched()
+			ok = x.sendMu.TryRLock()
+		}
 		subscribers = int(x.subs.Add(int32(delta)))
+		if ok {
+			x.sendMu.RUnlock()
+		} else if x.ping.Add(0) != 0 {
+			x.ping.Add(delta) // steal the in-flight ping share
+		}
 
 	default:
 		// Subscribe case
