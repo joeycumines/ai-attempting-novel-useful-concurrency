@@ -390,3 +390,5 @@ func (x *ChanPubSub[C, V]) addSubscribers(delta int) int {
 }
 
 `````
+
+Give me the FULL, novel implementation. NOT based on the existing two. Just one - your output tokens are very limited.
