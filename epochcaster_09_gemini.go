@@ -39,9 +39,14 @@ var closedPulseChan = func() <-chan struct{} {
 //   - Odd sequence (`seq & 1 == 1`): Slot write is currently in progress.
 //   - Even sequence (`seq == targetSeq * 2`): Slot contains valid, committed
 //     data for logical sequence `targetSeq`.
+//
+// The payload is published through an atomic pointer so that readers never
+// observe a half-written value: the Seqlock sequence check discards logically
+// stale reads, and the atomic pointer makes every payload access properly
+// synchronised (no torn reads, race-detector clean).
 type epochSlot[V any] struct {
 	seq atomic.Uint64
-	val V
+	val atomic.Pointer[V]
 }
 
 // EpochCasterGemini is a high-throughput, zero-allocation broadcast engine that
@@ -111,7 +116,9 @@ func (e *EpochCasterGemini[V]) Cap() int {
 // sleeping subscribers that were directly woken via the pulse channel.
 //
 // Send is wait-free with respect to subscriber consumption speed: slow
-// subscribers never block Send.
+// subscribers never block Send. Each Send performs one small heap allocation
+// (the boxed payload stored in the ring slot) so that readers can access the
+// payload race-free via an atomic pointer.
 func (e *EpochCasterGemini[V]) Send(value V) (woken int) {
 	e.writeMu.Lock()
 	seq := e.writeSeq.Load() + 1
@@ -119,8 +126,10 @@ func (e *EpochCasterGemini[V]) Send(value V) (woken int) {
 
 	// Begin Seqlock write transaction (odd sequence number).
 	slot.seq.Store(seq*2 - 1)
-	slot.val = value
-	// Commit Seqlock write transaction (even sequence number).
+	// Publish the payload via atomic pointer store (one small allocation per
+	// Send), then commit the Seqlock write transaction (even sequence number).
+	v := value
+	slot.val.Store(&v)
 	slot.seq.Store(seq * 2)
 
 	// Publish new write head before checking sleeping waiters.
@@ -188,7 +197,15 @@ func (e *EpochCasterGemini[V]) SubscribeContext(ctx context.Context) iter.Seq2[V
 					}
 				}
 			case <-sub.Arm():
-				// Woken by pulse or immediate ready check; loop to TryRecv.
+				// The receive on the pulse channel consumed this subscription's
+				// registration (ChanCaster.Send resets its state to zero once the
+				// broadcast completes), so the pulse must be acknowledged rather
+				// than disarmed - disarming here would Add(-1) against an already
+				// consumed registration and corrupt the ChanCaster state.
+				// N.B. AckPulse is a no-op if Arm returned the pre-closed
+				// immediate-ready channel (already disarmed).
+				sub.AckPulse()
+				// Loop to TryRecv.
 			}
 		}
 	}
@@ -251,7 +268,11 @@ func (s *EpochSubscriptionGemini[V]) TryRecv() (value V, skipped uint64, ok bool
 			continue
 		}
 
-		val := slot.val
+		p := slot.val.Load()
+		if p == nil {
+			continue // slot never written (cannot happen for nextSeq <= head, but be safe)
+		}
+		val := *p
 
 		// Acquire barrier via second atomic load ensures `val` was read
 		// before checking whether a concurrent writer mutated the slot.

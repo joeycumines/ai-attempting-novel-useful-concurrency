@@ -4,6 +4,7 @@ package bigbuff
 
 import (
 	"math"
+	"runtime"
 	"sync/atomic"
 )
 
@@ -44,9 +45,10 @@ func NewChanCaster15Nemotron[C ~chan V, V any](channel C) *ChanCaster15Nemotron[
 }
 
 // Send broadcasts value to all registered receivers and returns the number
-// of sends performed, captured at the instant the send lock was acquired.
-// Receivers added after that instant miss this broadcast; receivers removed
-// during the broadcast drain their share via [Add].
+// of sends performed, less any removed mid-flight by [Add].
+// Receivers added after the send lock is acquired wait for the next
+// broadcast; receivers removed during the broadcast drain their share via
+// [Add].
 //
 // This call serialises with other [Send] calls via the generation lock. It
 // never blocks on subscriber churn.
@@ -57,7 +59,7 @@ func (x *ChanCaster15Nemotron[C, V]) Send(value V) int {
 	// If another send is in progress, spin and retry; sends are expected to
 	// be infrequent relative to receives, so contention is minimal.
 	var (
-		st       uint64
+		st        uint64
 		receivers int32
 	)
 	for {
@@ -69,6 +71,7 @@ func (x *ChanCaster15Nemotron[C, V]) Send(value V) int {
 		gen := uint32(st)
 		if gen&1 == 1 {
 			// Send already in progress; retry.
+			runtime.Gosched()
 			continue
 		}
 		// Mark sending: set the low bit of the generation.
@@ -87,28 +90,41 @@ func (x *ChanCaster15Nemotron[C, V]) Send(value V) int {
 		x.C <- value
 	}
 
-	// Release the send lock: transition the generation from odd back to
-	// even. Receivers removed by concurrent negative Add calls have already
-	// consumed their messages, so the remaining sends were delivered to
-	// the survivors.
-	for {
-		st = x.state.Load()
-		if uint32(st)&1 == 0 {
-			panic(`bigbuff: chancaster: send: state not locked`)
-		}
-		if x.state.CompareAndSwap(st, st+sendLock) {
-			break
-		}
+	// Consume the serviced registrations and release the send lock.
+	//
+	// Each [Add] with a positive delta registers intent to receive exactly
+	// one value, so - exactly as in the reference [ChanCaster] - every
+	// registration present when the send lock was acquired is consumed by
+	// this broadcast and must be cleared here. Receivers removed by
+	// concurrent negative [Add] calls have already decremented the count
+	// (and consumed their share of the sends), so the final count is exactly
+	// the number of receivers that were removed mid-flight, and the number of
+	// sends actually received is n less that count - which is what we return.
+	// Clearing the count in the same compare-and-swap that releases the send
+	// lock keeps the two operations atomic with respect to concurrent [Add]
+	// calls; a failed compare-and-swap indicates an invariant violation (e.g.
+	// an unregistered receive), exactly as in [ChanCaster.Send].
+	st = x.state.Load()
+	gen := uint32(st)
+	remaining := int32(st >> 32)
+	if gen&1 == 0 || remaining > receivers ||
+		!x.state.CompareAndSwap(st, uint64(gen)+sendLock) {
+		panic(`bigbuff: chancaster: send: state invariant violation`)
 	}
 
-	return n
+	// `remaining` is the number of registrations that were NOT removed
+	// mid-flight, i.e. exactly the number of sends actually received (each
+	// remaining registration was paired with one channel receive); the
+	// compare-and-swap above consumed (cleared) all of them.
+	return int(remaining)
 }
 
 // Add increments or decrements the number of receivers and returns the
 // count after the operation. A delta of 0 is a no-op inspection.
 //
-// Positive deltas are completely lock-free: new receivers added while a
-// send is in progress simply miss that send.
+// Positive deltas are lock-free (no mutex), but wait for any in-progress
+// [Send] to complete first, so that the new registration is never consumed
+// by a broadcast it did not participate in.
 //
 // Negative deltas are also lock-free with respect to mutexes, but if a
 // send is in progress (odd generation) the departing receiver must consume
@@ -128,10 +144,21 @@ func (x *ChanCaster15Nemotron[C, V]) Add(delta int) int {
 			panic(`bigbuff: chancaster: add: positive delta out of bounds`)
 		}
 		// Increment receivers without touching the generation.
+		//
+		// If a send is in progress (odd generation), wait for it to complete
+		// before registering: [Send] consumes (clears) every registration
+		// present when it acquires the send lock, so a registration added
+		// mid-send would be silently dropped, leaving its receiver blocked
+		// forever. Waiting for an even generation preserves the
+		// one-registration-per-receive contract of [ChanCaster].
 		for {
 			st := x.state.Load()
 			receivers := int32(st >> 32)
 			gen := uint32(st)
+			if gen&1 == 1 {
+				runtime.Gosched()
+				continue
+			}
 			if receivers > maxInt32-int32(delta) {
 				panic(`bigbuff: chancaster: add: receiver overflow`)
 			}

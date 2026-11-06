@@ -23,6 +23,10 @@ type asyncAPI struct {
 
 func asyncImpls() map[string]func() asyncAPI {
 	return map[string]func() asyncAPI{
+		"BaselineFanout_c64": func() asyncAPI {
+			x := NewBaselineFanout[pv](64)
+			return asyncAPI{send: func(v pv) { x.Send(v) }, subscribe: func(ctx context.Context) func(func(pv) bool) { return x.SubscribeContext(ctx) }}
+		},
 		"Beacon": func() asyncAPI {
 			x := NewBeacon[pv]()
 			return asyncAPI{send: func(v pv) { x.Send(v) }, subscribe: func(ctx context.Context) func(func(pv) bool) { return x.SubscribeContext(ctx) }}

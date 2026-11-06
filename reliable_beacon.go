@@ -3,6 +3,7 @@ package bigbuff
 import (
 	"context"
 	"iter"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -18,7 +19,8 @@ type ReliableBeacon[T any] struct {
 	subs      atomic.Int32
 	ackMu     sync.Mutex
 	ackCond   *sync.Cond
-	pending   int32
+	pending   atomic.Int32
+	armedSeq  atomic.Uint64 // beacon seq of the round `pending` was armed for
 	broken    chan struct{}
 }
 
@@ -45,18 +47,8 @@ func (x *ReliableBeacon[T]) Add(delta int) int {
 		return int(x.subs.Load())
 	}
 	if delta < 0 {
-		ok := x.sendingMu.TryRLock()
-		for !ok && x.beacon.seq.Load() == 0 { // fast spin if no send
-			ok = x.sendingMu.TryRLock()
-		}
-		n := int(x.subs.Add(int32(delta)))
-		if ok {
-			x.sendingMu.RUnlock()
-		}
-		if n < 0 {
-			panic(`negative subs`)
-		}
-		return n
+		x.unsubscribe(nil)
+		return int(x.subs.Load())
 	}
 	x.sendingMu.RLock()
 	defer x.sendingMu.RUnlock()
@@ -67,7 +59,37 @@ func (x *ReliableBeacon[T]) Add(delta int) int {
 	return n
 }
 func (x *ReliableBeacon[T]) Subscribe()   { x.Add(1) }
-func (x *ReliableBeacon[T]) Unsubscribe() { x.Add(-1) }
+func (x *ReliableBeacon[T]) Unsubscribe() { x.unsubscribe(nil) }
+
+// unsubscribe withdraws a subscription. If a send is in flight and the
+// subscriber has not already acked the armed round, it was counted in
+// `pending` and will never Wait - so the barrier is compensated atomically
+// with the decrement.
+func (x *ReliableBeacon[T]) unsubscribe(lastWaited *atomic.Uint64) {
+	ok := x.sendingMu.TryRLock()
+	for !ok && x.pendingLoad() == 0 {
+		runtime.Gosched()
+		ok = x.sendingMu.TryRLock()
+	}
+	x.ackMu.Lock()
+	waited := uint64(0)
+	if lastWaited != nil {
+		waited = lastWaited.Load()
+	}
+	n := int(x.subs.Add(-1))
+	if !ok && x.pending.Load() > 0 && x.armedSeq.Load() != waited {
+		if x.pending.Add(-1) == 0 {
+			x.ackCond.Broadcast()
+		}
+	}
+	x.ackMu.Unlock()
+	if ok {
+		x.sendingMu.RUnlock()
+	}
+	if n < 0 {
+		panic(`negative subs`)
+	}
+}
 
 func (x *ReliableBeacon[T]) Send(v T) int {
 	if x.subs.Load() == 0 {
@@ -77,18 +99,24 @@ func (x *ReliableBeacon[T]) Send(v T) int {
 	defer x.sendMu.Unlock()
 	x.sendingMu.Lock()
 	defer x.sendingMu.Unlock()
+	// Snapshot the subscriber count and arm the ack barrier under ackMu, so
+	// a concurrent Unsubscribe either lands before the snapshot (excluded
+	// from n) or after (compensates pending) - never lost in between.
+	x.ackMu.Lock()
 	n := int(x.subs.Load())
 	if n == 0 {
+		x.ackMu.Unlock()
 		return 0
 	}
-	x.ackMu.Lock()
-	x.pending = int32(n)
+	x.pending.Store(int32(n))
+	x.armedSeq.Store(x.beacon.seq.Load() + 1)
+	x.ackCond.Broadcast() // wake any Wait() parked from a previous round
 	x.ackMu.Unlock()
 	x.beacon.Send(v) // O(1) wake
 	// wait for acks
 	x.ackMu.Lock()
 	defer x.ackMu.Unlock()
-	for x.pending != 0 {
+	for x.pending.Load() > 0 {
 		x.ackCond.Wait()
 		select {
 		case <-x.broken:
@@ -100,6 +128,13 @@ func (x *ReliableBeacon[T]) Send(v T) int {
 }
 
 func (x *ReliableBeacon[T]) Wait() {
+	x.waitTracked(0, nil, false)
+}
+
+// waitTracked is Wait plus optional round tracking. When track is true the
+// ack only counts against the armed round (seq), and the last-acked round is
+// recorded under ackMu so the unsubscribe compensation guard is race-free.
+func (x *ReliableBeacon[T]) waitTracked(seq uint64, lastWaited *atomic.Uint64, track bool) {
 	x.ackMu.Lock()
 	defer x.ackMu.Unlock()
 	select {
@@ -108,7 +143,7 @@ func (x *ReliableBeacon[T]) Wait() {
 	default:
 	}
 	// wait until a Send is pending
-	for x.pending == 0 {
+	for x.pending.Load() == 0 {
 		x.ackCond.Wait()
 		select {
 		case <-x.broken:
@@ -116,10 +151,18 @@ func (x *ReliableBeacon[T]) Wait() {
 		default:
 		}
 	}
-	x.pending--
-	if x.pending == 0 {
-		x.ackCond.Broadcast()
+	if x.pending.Load() > 0 && (!track || seq == x.armedSeq.Load()) {
+		if x.pending.Add(-1) == 0 {
+			x.ackCond.Broadcast()
+		}
 	}
+	if track && lastWaited != nil {
+		lastWaited.Store(seq)
+	}
+}
+
+func (x *ReliableBeacon[T]) pendingLoad() int32 {
+	return x.pending.Load()
 }
 
 func (x *ReliableBeacon[T]) C() <-chan struct{} { return x.beacon.Signal() }
@@ -130,18 +173,19 @@ func (x *ReliableBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	stop := context.AfterFunc(ctx, x.Unsubscribe)
+	lastWaited := &atomic.Uint64{}
+	stop := context.AfterFunc(ctx, func() { x.unsubscribe(lastWaited) })
 	return func(yield func(T) bool) {
 		if yield == nil {
 			if stop() {
-				x.Unsubscribe()
+				x.unsubscribe(lastWaited)
 			}
 			panic(`nil yield`)
 		}
 		if !stop() {
 			return
 		}
-		defer x.Unsubscribe()
+		defer x.unsubscribe(lastWaited)
 		next := x.beacon.seq.Load() + 1
 		for {
 			select {
@@ -152,7 +196,7 @@ func (x *ReliableBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 			s := x.beacon.val.Load()
 			if s != nil && s.seq >= next {
 				next = s.seq + 1
-				x.Wait()
+				x.waitTracked(s.seq, lastWaited, true)
 				if !yield(s.val) {
 					return
 				}

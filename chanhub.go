@@ -28,10 +28,13 @@ type hubSnapshot[V any] struct {
 	subs []hubSubscription[V]
 }
 
-// hubSubscription binds a subscriber identity to its channel.
+// hubSubscription binds a subscriber identity to its channel. done is closed
+// by [ChanHub.Unsubscribe], allowing an in-progress [ChanHub.Send] to abandon
+// a send to a departed subscriber instead of blocking forever.
 type hubSubscription[V any] struct {
-	id uint64
-	ch chan V
+	id   uint64
+	ch   chan V
+	done chan struct{}
 }
 
 // NewChanHub constructs an empty [ChanHub].
@@ -56,7 +59,7 @@ func (h *ChanHub[V]) Subscribe(ch chan V) uint64 {
 	old := h.snap.Load()
 	subs := make([]hubSubscription[V], len(old.subs)+1)
 	copy(subs, old.subs)
-	subs[len(subs)-1] = hubSubscription[V]{id: id, ch: ch}
+	subs[len(subs)-1] = hubSubscription[V]{id: id, ch: ch, done: make(chan struct{})}
 	h.snap.Store(&hubSnapshot[V]{gen: old.gen + 1, subs: subs})
 	h.mu.Unlock()
 
@@ -81,6 +84,11 @@ func (h *ChanHub[V]) Unsubscribe(id uint64) bool {
 		return false
 	}
 
+	// Signal departure BEFORE publishing the new snapshot, so a concurrent
+	// Send holding the old snapshot observes the closed done channel and
+	// abandons the send to this subscriber instead of blocking forever.
+	close(old.subs[idx].done)
+
 	subs := make([]hubSubscription[V], len(old.subs)-1)
 	copy(subs, old.subs[:idx])
 	copy(subs[idx:], old.subs[idx+1:])
@@ -90,7 +98,9 @@ func (h *ChanHub[V]) Unsubscribe(id uint64) bool {
 
 // Send broadcasts value to every current subscriber, blocking until each
 // subscriber's channel accepts the value. It returns the number of
-// subscribers that received the value.
+// subscribers that received the value. A subscriber that unsubscribes while
+// the send is in flight is skipped (its done channel is closed), so Send
+// never blocks forever on a departed subscriber.
 //
 // Because each subscriber owns its channel, callers may select on that
 // channel directly; this is the natural companion to [select] statements.
@@ -98,8 +108,14 @@ func (h *ChanHub[V]) Send(value V) int {
 	snap := h.snap.Load()
 	sent := 0
 	for _, sub := range snap.subs {
-		sub.ch <- value
-		sent++
+		// Select on the per-subscription done channel: a subscriber that
+		// unsubscribes while this send is in flight must not block the
+		// sender forever on a channel nobody will receive from anymore.
+		select {
+		case sub.ch <- value:
+			sent++
+		case <-sub.done:
+		}
 	}
 	return sent
 }
@@ -115,6 +131,7 @@ func (h *ChanHub[V]) TrySend(value V) int {
 		select {
 		case sub.ch <- value:
 			sent++
+		case <-sub.done:
 		default:
 		}
 	}

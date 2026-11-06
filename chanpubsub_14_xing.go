@@ -3,6 +3,7 @@ package bigbuff
 import (
 	"context"
 	"iter"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -148,6 +149,7 @@ func (x *ChanPubSub14Xing[C, V]) Add(delta int) (subscribers int) {
 		ok := x.sendingMu.TryRLock()
 		for !ok && x.ping.Add(0) == 0 {
 			x.checkBroken()
+			runtime.Gosched()
 			ok = x.sendingMu.TryRLock()
 		}
 		subscribers = x.addSubscribers(delta)

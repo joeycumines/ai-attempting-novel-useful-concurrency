@@ -16,7 +16,7 @@ type RingBeacon[T any] struct {
 	sig    atomic.Pointer[chan struct{}]
 	sendMu sync.Mutex
 	mask   uint64
-	ring   []ringEnt[T]
+	ring   []atomic.Pointer[ringEnt[T]]
 }
 
 type ringEnt[T any] struct {
@@ -29,7 +29,7 @@ func NewRingBeacon[T any](capacityPow2 int) *RingBeacon[T] {
 	if capacityPow2&(capacityPow2-1) != 0 {
 		panic(`bigbuff: ring: capacity must be power of two`)
 	}
-	b := &RingBeacon[T]{mask: uint64(capacityPow2 - 1), ring: make([]ringEnt[T], capacityPow2)}
+	b := &RingBeacon[T]{mask: uint64(capacityPow2 - 1), ring: make([]atomic.Pointer[ringEnt[T]], capacityPow2)}
 	ch := make(chan struct{})
 	b.sig.Store(&ch)
 	return b
@@ -39,7 +39,10 @@ func (b *RingBeacon[T]) Send(v T) uint64 {
 	b.sendMu.Lock()
 	defer b.sendMu.Unlock()
 	seq := b.seq.Add(1)
-	b.ring[seq&b.mask] = ringEnt[T]{seq: seq, val: v}
+	// Publish the entry via an atomic pointer store: readers load the slot
+	// atomically, so the payload is never observed half-written (no torn
+	// reads, and the race detector sees properly synchronised accesses).
+	b.ring[seq&b.mask].Store(&ringEnt[T]{seq: seq, val: v})
 	old := b.sig.Load()
 	nch := make(chan struct{})
 	b.sig.Store(&nch)
@@ -68,8 +71,8 @@ func (c *Cursor[T]) Next() (T, uint64, bool) {
 		// snap to latest - caller can treat as lossy
 		c.next = seq
 	}
-	e := c.b.ring[c.next&c.b.mask]
-	if e.seq != c.next { // torn due to overrun
+	e := c.b.ring[c.next&c.b.mask].Load()
+	if e == nil || e.seq != c.next { // nil (never written) or reused due to overrun
 		c.next = seq
 		var zero T
 		return zero, 0, false

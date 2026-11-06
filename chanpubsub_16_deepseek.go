@@ -392,6 +392,17 @@ func (x *ChanPubSub16DeepSeek[C, V]) Add(delta int) (subscribers int) {
 func (x *ChanPubSub16DeepSeek[C, V]) Wait() {
 	x.checkUsedFactoryFunction()
 	x.checkBroken()
+	// The WaitGroup is shared across rounds, and [ChanPubSub16DeepSeek.Send]
+	// both pre-charges it (wg.Add(subscribers)) and compensates it for
+	// mid-flight unsubscribes (wg.Add(sent - subscribers)) while holding the
+	// write side of sendingMu. Taking the read side here serialises every
+	// wg.Done against those wg.Add calls: without this, a pong could land
+	// between the pre-charge and the compensation, driving the counter
+	// negative (sync: negative WaitGroup counter) or corrupting a later
+	// round (WaitGroup reuse). Send never blocks on the WaitGroup while
+	// holding sendingMu, so this cannot deadlock.
+	x.sendingMu.RLock()
+	defer x.sendingMu.RUnlock()
 	x.wg.Done()
 }
 
