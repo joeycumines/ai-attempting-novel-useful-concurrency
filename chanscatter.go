@@ -73,8 +73,9 @@ type ChanScatter[C ~chan V, V any] struct {
 
 	// sendMu serialises Send calls so that at most one send is ever in
 	// flight; this is what allows the steal path in Add to know that at most
-	// one receive is needed to unblock a pending send.
-	sendMu sync.Mutex
+	// one receive is needed to unblock a pending send. It also coordinates with
+	// positive Add calls so receivers cannot be added while a send is in flight.
+	sendMu sync.RWMutex
 
 	// state packs subscriber count and sending flag:
 	//
@@ -189,10 +190,10 @@ func (x *ChanScatter[C, V]) Add(delta int) int {
 		panic(`bigbuff: chanscatter: add: positive delta out of bounds`)
 
 	case delta >= 0:
-		// Lock-free positive add: the high 32 bits can be incremented
-		// atomically without disturbing the sending flag, and a late-joining
-		// consumer participating in the current in-flight send is semantically
-		// fine for a scatter.
+		if delta > 0 {
+			x.sendMu.RLock()
+			defer x.sendMu.RUnlock()
+		}
 		state := x.state.Add(uint64(delta) << 32)
 		if hi := uint32(state >> 32); hi <= maxSubscribers {
 			return int(hi)
@@ -216,16 +217,8 @@ func (x *ChanScatter[C, V]) Add(delta int) int {
 			if x.state.CompareAndSwap(state, uint64(newHi)<<32|uint64(lo)) {
 				if newHi == 0 && lo != 0 {
 					// All subscribers have left while a send is in flight.
-					// Steal the pending value to unblock the sender; the
-					// non-blocking receive is essential because between our
-					// CAS above and the select below, either another
-					// concurrently-addeding subscriber could arrive and take
-					// the value first (in which case the select's default
-					// fires), or the sender could complete naturally (same).
-					select {
-					case <-x.C:
-					default:
-					}
+					// Steal the pending value to unblock the sender.
+					<-x.C
 				}
 				return int(newHi)
 			}

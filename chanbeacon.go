@@ -505,6 +505,9 @@ func (s *RelaySub[V]) Seq(ctx context.Context) iter.Seq[V] {
 					return
 				}
 			}
+			if s.beacon.ready.Load() == nil {
+				return
+			}
 			// Phase 2: Wait for new values or cancellation.
 			// Ready() returns the current notification channel, which
 			// will be closed by the next Send (or is already closed if

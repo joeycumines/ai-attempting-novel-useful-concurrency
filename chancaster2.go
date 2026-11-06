@@ -85,11 +85,7 @@ func (x *ChanCaster2[C, V]) Add(delta int) int {
 				return int(r)
 			case max + r:
 				for range delta {
-					select {
-					case <-x.C:
-					default:
-						panic(`bigbuff: chancaster2: steal without send - contract violation`)
-					}
+					<-x.C
 				}
 				return int(r)
 			}

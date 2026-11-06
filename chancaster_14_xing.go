@@ -31,8 +31,10 @@ func (x *ChanCaster14Xing[C, V]) Send(value V) int {
 	}
 
 	// Coarse grained protection: copy the current count while holding the
-	// write lock.  After the copy we never need to touch shared state again.
+	// write lock.
 	x.mutex.Lock()
+	defer x.mutex.Unlock()
+
 	receivers := uint32(x.state.Load() >> 32)
 	if receivers > maxReceivers {
 		panic(`bigbuff: chancaster: send: state invariant violation`)
@@ -49,7 +51,7 @@ func (x *ChanCaster14Xing[C, V]) Send(value V) int {
 	// Initialise the tracker to maxReceivers + receivers, atomically syncing
 	// with any concurrent decrements.
 	tracker += maxReceivers
-	success := x.state.CompareAndSwap(uint64(receivers)<<32|uint64(tracker),
+	success := x.state.CompareAndSwap(uint64(receivers)<<32|uint64(receivers),
 		uint64(receivers)<<32|uint64(tracker))
 	if !success {
 		// Should not happen because the write lock excludes other writers,
@@ -57,26 +59,22 @@ func (x *ChanCaster14Xing[C, V]) Send(value V) int {
 		panic(`bigbuff: chancaster: send: invariant CAS failed`)
 	}
 
-	// Broadcast loop – NO LOCK HELD DURING SENDS TO AVOID BLOCKING CONSUMERS.
-	var delivered int
+	// Broadcast loop
 	for range receivers {
 		x.C <- value
-		delivered++
 	}
 
 	// Final invariant check: after the loop the number of receivers must still
 	// be unchanged (or decreased) and the low 32 bits must equal
 	// maxReceivers + finalReceiverCount.
-	finalLo := uint32(x.state.Load())
-	finalHi := uint32(x.state.Load() >> 32)
-	if finalHi != receivers || finalLo != tracker {
+	state := x.state.Load()
+	finalHi := uint32(state >> 32)
+	finalLo := uint32(state)
+	if finalHi > receivers || finalLo != finalHi+maxReceivers || !x.state.CompareAndSwap(state, 0) {
 		panic(`bigbuff: chancaster: send: state invariant violation`)
 	}
 
-	// Clear the tracker band.  Because no receiver was added while we held the
-	// lock, we can simply reset to zero safely.
-	x.state.Store(0)
-	return delivered
+	return int(finalHi)
 }
 
 // Add increments or decrements the receiver count.

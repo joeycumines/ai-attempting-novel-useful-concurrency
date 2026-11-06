@@ -247,24 +247,23 @@ func (b *ChanFanout[V]) SubscribeContext(ctx context.Context) iter.Seq[V] {
 	// Unsubscribe even if the iterator is never called. Closing the sub
 	// also unblocks any Recv in progress (via the sub's done channel).
 	stop := context.AfterFunc(ctx, sub.Close)
+	var started atomic.Bool
 	return func(yield func(V) bool) {
 		if yield == nil {
-			if stop() {
-				sub.Close()
-			}
+			stop()
+			sub.Close()
 			panic(`bigbuff: chanfanout: iterator yield func is nil`)
 		}
-		if !stop() {
-			// Context already cancelled (AfterFunc has run or will run
-			// and close sub), or the iterator has already been used.
+		if started.Swap(true) || ctx.Err() != nil {
+			stop()
+			sub.Close()
 			return
 		}
+		defer stop()
 		defer sub.Close()
 		for {
-			select {
-			case <-ctx.Done():
+			if ctx.Err() != nil {
 				return
-			default:
 			}
 			value, _, ok := sub.Recv()
 			if !ok {
