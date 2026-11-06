@@ -4,7 +4,7 @@
 
 ## Premise
 
-Free chat and generous chat quotas are widely available - if you don't mind what happens to you data, anyway.
+Free chat and generous quotas (for chat-sized contexts) are widely available - if you don't mind what happens to your data, anyway.
 
 Armed with these various chatbots, I decided to test how well AI would respond to a highly technical programming challenge - something strictly in their wheelhouse - where *novelty* was one of the factors (part of the ask).
 
