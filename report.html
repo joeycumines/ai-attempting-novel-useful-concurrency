@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bigbuff: Evolution & Empirical Analysis of Go Channel Broadcast & PubSub</title>
+<style>
+:root {
+  --bg-primary: #0f141c;
+  --bg-secondary: #171f2c;
+  --bg-tertiary: #222d3d;
+  --bg-card: #1b2533;
+  --border-color: #2e3d52;
+  --text-primary: #e6edf3;
+  --text-secondary: #9da7b3;
+  --text-muted: #6e7681;
+  --accent-blue: #388bfd;
+  --accent-cyan: #39c5cf;
+  --accent-green: #3fb950;
+  --accent-purple: #bc8cff;
+  --accent-amber: #d29922;
+  --accent-red: #f85149;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+header {
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 28px 40px;
+}
+
+.header-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  font-size: 15px;
+  max-width: 900px;
+  margin-bottom: 20px;
+}
+
+.meta-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.badge strong {
+  color: var(--accent-cyan);
+  margin-right: 5px;
+}
+
+.nav-tabs {
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 40px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  padding: 14px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+  font-weight: 600;
+}
+
+main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 32px 40px 60px;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1000px) {
+  .grid-2, .grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stat-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 18px;
+}
+
+.stat-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  font-family: var(--font-mono);
+  margin: 6px 0 2px;
+}
+
+.stat-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+th, td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+th {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+td.num, th.num {
+  text-align: right;
+}
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.btn-group {
+  display: inline-flex;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.control-btn {
+  background: var(--bg-tertiary);
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  border-right: 1px solid var(--border-color);
+}
+
+.control-btn:last-child {
+  border-right: none;
+}
+
+.control-btn.active {
+  background: var(--accent-blue);
+  color: #fff;
+  font-weight: 600;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tag-rendezvous {
+  background: rgba(248, 81, 73, 0.15);
+  color: #ff7b72;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.tag-ring {
+  background: rgba(63, 185, 80, 0.15);
+  color: #56d364;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.tag-epoch {
+  background: rgba(56, 139, 253, 0.15);
+  color: #79c0ff;
+  border: 1px solid rgba(56, 139, 253, 0.3);
+}
+
+.tag-credit {
+  background: rgba(188, 140, 255, 0.15);
+  color: #d2a8ff;
+  border: 1px solid rgba(188, 140, 255, 0.3);
+}
+
+.tag-coalescing {
+  background: rgba(210, 153, 34, 0.15);
+  color: #e3b341;
+  border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
+.prose p {
+  margin-bottom: 14px;
+  color: var(--text-primary);
+}
+
+.prose ul, .prose ol {
+  margin: 0 0 16px 24px;
+}
+
+.prose li {
+  margin-bottom: 6px;
+}
+
+.prose code {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent-cyan);
+}
+
+.model-card {
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  border-radius: 6px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.model-card-header {
+  padding: 14px 20px;
+  background: var(--bg-tertiary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.model-card-body {
+  padding: 20px;
+}
+
+.model-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.model-types {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-cyan);
+  margin-top: 2px;
+}
+
+.defect-box {
+  background: rgba(248, 81, 73, 0.08);
+  border-left: 3px solid var(--accent-red);
+  padding: 12px 16px;
+  margin-top: 14px;
+  border-radius: 0 4px 4px 0;
+}
+
+.defect-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--accent-red);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.filter-input {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 320px;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 14px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <h1>Bigbuff: Evolution & Empirical Analysis of Go Channel Broadcast & PubSub</h1>
+    <div class="subtitle">
+      Comprehensive benchmarking, architectural taxonomy, and defect autopsy of 20 LLM implementations compared against Joseph Cumines' ChanCaster and ChanPubSub baselines.
+    </div>
+    <div class="meta-badges">
+      <div class="badge"><strong>Module</strong> bigbuff</div>
+      <div class="badge"><strong>Toolchain</strong> go1.27.3 darwin/arm64</div>
+      <div class="badge"><strong>Hardware</strong> Apple M2 Pro (10 cores)</div>
+      <div class="badge"><strong>Architectures</strong> 15 active systems</div>
+      <div class="badge"><strong>Observations</strong> 105 empirical data points</div>
+      <div class="badge"><strong>Verification</strong> Race-detected & Fuzzed</div>
+    </div>
+  </div>
+</header>
+
+<div class="nav-tabs">
+  <button class="tab-btn active" onclick="switchTab('tab-summary')">Executive Summary</button>
+  <button class="tab-btn" onclick="switchTab('tab-visualizations')">Interactive Charts</button>
+  <button class="tab-btn" onclick="switchTab('tab-taxonomy')">Concurrency Taxonomy</button>
+  <button class="tab-btn" onclick="switchTab('tab-models')">Model Autopsy (03–20)</button>
+  <button class="tab-btn" onclick="switchTab('tab-defects')">Repaired Defects</button>
+  <button class="tab-btn" onclick="switchTab('tab-raw')">Raw Observation Data</button>
+</div>
+
+<main>
+
+<!-- TAB 1: EXECUTIVE SUMMARY -->
+<div id="tab-summary" class="tab-content active">
+  <div class="grid-4" style="margin-bottom: 24px;">
+    <div class="stat-box">
+      <div class="stat-label">Fastest Multi-Sub Broadcast</div>
+      <div class="stat-value" style="color: var(--accent-cyan);">135.6 ns</div>
+      <div class="stat-desc">RingPubSub (18-ChatGPT) at 4 subs (0 allocs)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Best O(1) Multicast Scaling</div>
+      <div class="stat-value" style="color: var(--accent-purple);">226.1 ns</div>
+      <div class="stat-desc">GenCaster (06-Meta) flat through 256 subs</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Lowest Subscription Churn</div>
+      <div class="stat-value" style="color: var(--accent-green);">9.64 ns</div>
+      <div class="stat-desc">EpochTape (10-Gemini) & GenCaster (06-Meta)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Rendezvous Scaling Penalty</div>
+      <div class="stat-value" style="color: var(--accent-red);">1,141×</div>
+      <div class="stat-desc">ChanPubSub: 485ns (1 sub) to 554,198ns (256 subs)</div>
+    </div>
+  </div>
+
+  <div class="card prose">
+    <div class="card-title">Empirical Findings & Key Insights</div>
+    <p>
+      The goal of this evaluation is to determine how modern LLMs approach concurrent multi-subscriber distribution in Go when challenged to evolve the baseline <code>ChanCaster</code> and <code>ChanPubSub</code> designs from prompt 02. Across 18 distinct responses, models produced 31 distinct concrete implementations spanning four concurrency paradigms.
+    </p>
+    <p>
+      <strong>1. The Synchronous Rendezvous Scalability Barrier:</strong> The original baseline (<code>ChanPubSub</code>) delivers strict lossless rendezvous guarantees with zero heap allocations on publish. However, its reliance on individual per-subscriber channel handoffs imposes an inescapable O(N) overhead. At 1 subscriber, publication completes in 485.4 ns. At 256 subscribers, publication takes 554,198 ns (over half a millisecond). <code>ChanGathererPubSub</code> (05-Qwen) and <code>ChanRotor</code> (17-Gemini) exhibit identical O(N) slopes.
+    </p>
+    <p>
+      <strong>2. Channel-Close Multicast Wakeup as True O(1) Fanout:</strong> Go provides exactly one O(1) multicast broadcast primitive in the runtime scheduler: closing a channel. <code>GenCaster</code> (06-Meta) and <code>ChanBeacon</code> (07-Qwen) exploit this property. <code>GenCaster</code> replaces an atomic generation pointer and closes the previous generation channel. It achieved 57.4 ns at 1 subscriber and remained practically flat at 226.1 ns at 256 subscribers—a 2,451× throughput advantage over synchronous rendezvous at scale.
+    </p>
+    <p>
+      <strong>3. Lock-Free Circular Ring Logs for Zero-Alloc Throughput:</strong> <code>RingPubSub</code> (18-ChatGPT) achieved the highest overall throughput among full pub/sub systems. By combining a fixed power-of-two circular buffer, atomic acquire-release cursors, and selective notification, it achieved 135.6 ns/op at 4 subscribers with 0 bytes allocated and 0 heap allocations per send.
+    </p>
+    <p>
+      <strong>4. The Reality Gap in LLM Concurrency Implementations:</strong> While models proposed advanced theoretical mechanisms (seqlocks, lock-free wait-free queues, two-phase commits), nearly 40% of the raw outputs contained severe runtime bugs:
+    </p>
+    <ul>
+      <li><code>ChanGathererPubSub</code> (05-Qwen) deadlocked on the second message due to desynchronized WaitGroup accounting and used an invalid <code>RLock()</code> on a <code>sync.Mutex</code>.</li>
+      <li><code>EpochTape</code> (10-Gemini) implemented a seqlock that triggered Go race detector violations on multi-word reads and suffered variable reset defects during missed-slot retry loops.</li>
+      <li>Condition variable snapshot adapters suffered subtle race conditions when checking <code>sub.Ready()</code> and <code>sub.Consume()</code> out of order.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>Architectural Leaderboard</span>
+      <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">Sorted by 16-subscriber publication latency</span>
+    </div>
+    <div style="overflow-x: auto;">
+      <table id="leaderboard-table">
+        <thead>
+          <tr>
+            <th>Implementation</th>
+            <th>Family</th>
+            <th class="num">1 Sub (ns)</th>
+            <th class="num">4 Subs (ns)</th>
+            <th class="num">16 Subs (ns)</th>
+            <th class="num">64 Subs (ns)</th>
+            <th class="num">256 Subs (ns)</th>
+            <th class="num">Alloc (B/op)</th>
+            <th class="num">Churn (ns)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 2: INTERACTIVE CHARTS -->
+<div id="tab-visualizations" class="tab-content">
+  <div class="card">
+    <div class="card-title">
+      <span>Publication Latency vs. Subscriber Count</span>
+      <div class="chart-controls">
+        <div class="btn-group">
+          <button class="control-btn active" id="btn-scale-log" onclick="setChartScale('log')">Log Scale</button>
+          <button class="control-btn" id="btn-scale-linear" onclick="setChartScale('linear')">Linear Scale</button>
+        </div>
+        <div class="btn-group">
+          <button class="control-btn active" id="btn-fam-all" onclick="filterChartFamily('all')">All</button>
+          <button class="control-btn" id="btn-fam-rendezvous" onclick="filterChartFamily('rendezvous')">Rendezvous</button>
+          <button class="control-btn" id="btn-fam-ring" onclick="filterChartFamily('ring')">Ring Buffer</button>
+          <button class="control-btn" id="btn-fam-epoch" onclick="filterChartFamily('epoch')">Epoch Close</button>
+          <button class="control-btn" id="btn-fam-credit" onclick="filterChartFamily('credit')">Credit Relay</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-container">
+      <svg id="scaling-chart" width="100%" height="450" viewBox="0 0 1000 450"></svg>
+      <div id="chart-legend" class="legend"></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Subscription Churn Latency (ns/op)</div>
+      <div class="chart-container">
+        <svg id="churn-chart" width="100%" height="320" viewBox="0 0 500 320"></svg>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Memory Allocation on Send (Bytes/op)</div>
+      <div class="chart-container">
+        <svg id="alloc-chart" width="100%" height="320" viewBox="0 0 500 320"></svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 3: CONCURRENCY TAXONOMY -->
+<div id="tab-taxonomy" class="tab-content prose">
+  <div class="card">
+    <div class="card-title">Taxonomy of Broadcast Concurrency in Go</div>
+    <p>
+      Broadcasting in Go exists in tension between language primitives and hardware reality. Channels are point-to-point rendezvous queues designed for pipeline concurrency, not fan-out multicast. Across all evaluated responses, implementations cluster into four distinct structural paradigms:
+    </p>
+
+    <div class="grid-2" style="margin-top: 20px;">
+      <div class="card" style="border-left: 4px solid var(--accent-red); margin-bottom: 0;">
+        <h3 style="color: #ff7b72; margin-bottom: 8px;">1. Synchronous Rendezvous</h3>
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+          <strong>Implementations:</strong> ChanCaster, ChanPubSub, ChanGathererPubSub, ChanPubSubV2, ChanPubSub09/10/14/16/17, ReliableBeacon.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Mechanism:</strong> Sender directly pushes to each subscriber channel or coordinates parallel fan-out goroutines with a dual WaitGroup (ping/pong) barrier.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Guarantees:</strong> Strictly lossless, exact delivery, zero memory allocation during broadcast.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Bottleneck:</strong> O(N) context handoffs. A single slow receiver or blocked goroutine immediately stalls the entire broadcast plane.
+        </p>
+      </div>
+
+      <div class="card" style="border-left: 4px solid var(--accent-green); margin-bottom: 0;">
+        <h3 style="color: #56d364; margin-bottom: 8px;">2. Lock-Free Circular Ring Logs</h3>
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+          <strong>Implementations:</strong> RingPubSub, ChanLatest, ChanFeed, ChanFanout, ChanRotor, ChanRelay.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Mechanism:</strong> Data is written into a contiguous circular array indexed by monotonic 64-bit sequence numbers. Subscribers track local cursors independently.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Guarantees:</strong> Decoupled sender and receiver throughput. Zero heap allocation per message when capacity is sufficient.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Bottleneck:</strong> Buffer overrun policy. If slow consumers fall behind, systems must either block the sender or discard messages (drop oldest/newest).
+        </p>
+      </div>
+
+      <div class="card" style="border-left: 4px solid var(--accent-blue); margin-bottom: 0; margin-top: 20px;">
+        <h3 style="color: #79c0ff; margin-bottom: 8px;">3. Epoch Channel-Close Cascades</h3>
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+          <strong>Implementations:</strong> GenCaster, EpochTape, ChanBeacon, Beacon, EpochCasterGemini, EpochPubSub11, EpochCaster13.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Mechanism:</strong> Exploits the runtime property that <code>close(ch)</code> broadcasts an immediate receive event to all listening goroutines simultaneously. The sender closes the current generation channel and atomically installs a new one.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Guarantees:</strong> True O(1) scheduler fan-out latency. Unaffected by the number of active subscribers.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Bottleneck:</strong> Requires 1 heap allocation per send (~96 bytes for a new channel), or complex seqlock synchronization for data payload extraction.
+        </p>
+      </div>
+
+      <div class="card" style="border-left: 4px solid var(--accent-purple); margin-bottom: 0; margin-top: 20px;">
+        <h3 style="color: #d2a8ff; margin-bottom: 8px;">4. Credit-Based Coordinated Relays</h3>
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+          <strong>Implementations:</strong> PhasePubSub, RelayPubSub.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Mechanism:</strong> Avoids per-send channel allocations by managing an explicit credit and phase state machine across active consumers.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Guarantees:</strong> Zero heap allocations, predictable backpressure signaling, and explicit delivery acknowledgments.
+        </p>
+        <p style="font-size: 13px;">
+          <strong>Bottleneck:</strong> Phase coordination overhead. At high subscriber counts, atomic CAS contention on subscriber state masks benefits over circular rings.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 4: MODEL-BY-MODEL EVALUATION -->
+<div id="tab-models" class="tab-content">
+  <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+    <input type="text" id="model-search" class="filter-input" placeholder="Search models, files, or concepts..." oninput="filterModels()">
+    <div style="font-size: 13px; color: var(--text-secondary);">Showing all 18 evaluated LLM responses</div>
+  </div>
+
+  <div id="models-container">
+    <!-- Populated by JS -->
+  </div>
+</div>
+
+<!-- TAB 5: REPAIRED DEFECTS -->
+<div id="tab-defects" class="tab-content prose">
+  <div class="card">
+    <div class="card-title">Audit Log of Identified & Repaired LLM Defects</div>
+    <p>
+      To establish an apples-to-apples empirical benchmark, all extracted implementations were compiled into a single package <code>bigbuff</code> and executed under the Go race detector (<code>-race</code>) and fuzzing harness. The following severe concurrency defects and compilation gaps were diagnosed and repaired:
+    </p>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 1: 05-Qwen Mutex Method Undefined & Deadlock</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>changatherer.go</code> failed compilation with <code>x.sendMu.RLock undefined (type sync.Mutex has no field or method RLock)</code>.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> The model declared <code>sendMu sync.Mutex</code> but used <code>sendMu.RLock()</code> during subscription registration.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Changed <code>sendMu</code> to <code>sync.RWMutex</code>.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 2: 05-Qwen Double Increment Desynchronization</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>TestStandardHarness</code> hung permanently on message 2.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> Qwen added <code>x.pong.Add(delta)</code> in <code>Subscribe()</code> and also added <code>x.pong.Add(subs)</code> in <code>Send()</code>, while omitting <code>x.ping.Add(subs)</code> in <code>Send()</code>. Because the underlying <code>ChanCaster</code> resets counts on send completion, the second broadcast waited for pongs that were never released.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Corrected <code>Send()</code> to manage both <code>ping</code> and <code>pong</code> counters and cleaned <code>Subscribe()</code> to only track subscriber counts.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 3: 10-Gemini EpochTape Seqlock Data Race</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>go test -race</code> detected data races on multi-word struct access between <code>slot.val = value</code> in <code>Publish()</code> and <code>val := slot.val</code> in <code>TryNext()</code>.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> In Go's memory model, seqlocks without compiler-enforced atomic slot loads cause word tearing on interfaces and multi-word types. Unsynchronized concurrent reads and writes trigger the race detector.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Protected slot read/write with a fine-grained <code>sync.RWMutex</code> per slot, preserving lock-free epoch checking while ensuring race-free value transfer.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 4: 10-Gemini EpochTape Missed-Message Loss on Retry</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>TestEpochTape_BroadcastAndSelect</code> deadlocked when running 128 subscribers.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> In <code>TryNext()</code>, <code>var skipped uint64</code> was declared inside the retry loop. Whenever a seqlock collision or lag occurred, <code>skipped</code> was reset to 0, discarding previously counted drops and causing tests to block waiting for values that were never delivered.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Declared <code>var totalMissed uint64</code> outside the retry loop to accumulate missed message counts across retry iterations.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 5: 14-Xing Missing Private Helper Methods</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>chancaster_14_xing.go</code> failed compilation with undefined methods <code>checkBroken</code>, <code>markBroken</code>, <code>sanityCheckSubscribersDelta</code>.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> The model truncated the implementation with placeholder comments (<code>// ... other private helpers are unchanged</code>).
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Implemented the missing private helper methods in full conforming to the model's specified state invariants.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 6: Condition Variable Notification Race in Subscriber Adapters</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>BenchmarkUnified_Select</code> deadlocked intermittently on <code>ChanBeacon</code>, <code>EpochTape</code>, and <code>ChanFeed</code>.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> Calling <code>sub.Consume()</code> followed by <code>select { case &lt;-sub.Ready(): }</code> created a race window. If the publisher broadcasted and closed the ready channel after <code>Consume()</code> but before <code>Ready()</code> was called inside <code>select</code>, the consumer captured the next (open) channel and blocked indefinitely.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Enforced the canonical snapshot pattern: capture <code>ready := sub.Ready()</code> before checking <code>Consume()</code>, ensuring that any send occurring during the check will fire the captured ready channel immediately.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 7: RingSubscription Lock-Copy in Standard Harness</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>go vet ./...</code> failed with <code>literal copies lock value from sub: bigbuff.RingSubscription[int] contains bigbuff.ringPubSubNoCopy</code>.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> <code>RingSubscription</code> embeds <code>ringPubSubNoCopy</code> with <code>Lock()</code> and <code>Unlock()</code> methods specifically to enforce address-based ownership transfers. <code>ringPubSubSub</code> in <code>harness_test.go</code> stored the subscription struct by value rather than by pointer.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Updated <code>ringPubSubSub</code> to store <code>*RingSubscription[int]</code> and pass by reference, satisfying <code>go vet</code> and adhering to the no-copy cursor contract.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 8: Synchronous Rendezvous Barrier Deadlock in Fuzz Harness</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>go test -race .</code> hung permanently on <code>FuzzUnifiedBroadcaster/seed#2</code>.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> <code>ChanPubSub</code> is an unbuffered rendezvous barrier broadcast requiring all registered subscribers to actively consume concurrently in separate goroutines. The fuzz harness sequentially invoked operations on a single goroutine; when two subscribers were registered and only one received, that subscriber blocked in <code>Wait()</code> waiting for the publisher, while the publisher blocked sending to the unread subscriber on the unbuffered channel.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Constrained <code>FuzzUnifiedBroadcaster</code> to circular ring/tape/queue broadcasters with decoupled per-subscriber cursors, documenting that rendezvous barrier implementations require concurrent goroutine consumers.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 9: Unsynchronized Ring Buffer Overwrite Data Race in 07-Qwen ChanBeacon</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>go test -race -bench=BenchmarkUnified_Broadcast</code> detected a data race on <code>b.buf[idx]</code> between <code>ChanBeacon.Send()</code> and <code>RelaySub.Consume()</code>.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> 07-Qwen relied solely on atomic acquire-release on the write cursor (<code>head</code>) to synchronize buffer reads. Under consumer lag or wrap-around, the publisher overwrites a ring slot while a lagging consumer is still reading that slot, causing concurrent unsynchronized slice access.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Added fine-grained <code>slotMu []sync.RWMutex</code> to <code>ChanBeacon</code>, guarding slot read/write during wrap-around and overrun while keeping the public API signatures completely unchanged.
+      </p>
+    </div>
+
+    <div class="defect-box">
+      <div class="defect-title">Defect 10: Deferred Context Cancellation Causing 14s Stalls in Churn Harness</div>
+      <p style="font-size: 13px;">
+        <strong>Symptom:</strong> <code>TestStandardHarness_ConcurrentChurn</code> took over 14 seconds to execute, stalling for exactly 2.00s per broadcaster.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Root Cause:</strong> In <code>TestStandardHarness_ConcurrentChurn</code>, <code>cancel()</code> was deferred until test exit (after <code>wg.Wait()</code>). When <code>stop.Store(true)</code> was signaled, subscribers parked in <code>s.Receive(ctx)</code> waited for the full 2-second timeout before exiting.
+      </p>
+      <p style="font-size: 13px;">
+        <strong>Correction:</strong> Invoked <code>cancel()</code> immediately upon setting <code>stop.Store(true)</code> prior to <code>wg.Wait()</code>, unblocking parked subscriber goroutines instantly and reducing runtime from 14.41s to 0.75s.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 6: RAW OBSERVATION DATA -->
+<div id="tab-raw" class="tab-content">
+  <div class="card">
+    <div class="card-title">
+      <span>Observation Data Explorer</span>
+      <input type="text" id="raw-search" class="filter-input" placeholder="Filter benchmark entries..." oninput="filterRawData()">
+    </div>
+    <div style="overflow-x: auto; max-height: 600px;">
+      <table id="raw-table">
+        <thead>
+          <tr>
+            <th>Benchmark Name</th>
+            <th class="num">Iterations</th>
+            <th class="num">Latency (ns/op)</th>
+            <th class="num">Throughput (ops/sec)</th>
+            <th class="num">Alloc (B/op)</th>
+            <th class="num">Allocs/op</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+const BENCHMARK_DATA = {"broadcast": {"1": {"ChanPubSub_(Baseline)": {"ns_per_op": 485.4, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 2060156.5718994644}, "RingPubSub_(18-ChatGPT)": {"ns_per_op": 80.49, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 12423903.590508139}, "PhasePubSub_(19-ChatGPT)": {"ns_per_op": 235.6, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 4244482.173174873}, "RelayPubSub_(19-ChatGPT)": {"ns_per_op": 423.5, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 2361275.088547816}, "ChanRelay_(20-Arena)": {"ns_per_op": 334.6, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 2988643.1560071725}, "ChanLatest_(03-ChatGPT)": {"ns_per_op": 75.95, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 13166556.945358789}, "EpochTape_(10-Gemini)": {"ns_per_op": 82.54, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 12115338.0179307}, "GenCaster_(06-Meta)": {"ns_per_op": 57.43, "bytes_per_op": 144, "allocs_per_op": 2, "ops_per_sec": 17412502.17656277}, "ChanFanout_(12-OpenRouter)": {"ns_per_op": 71.53, "bytes_per_op": 136, "allocs_per_op": 3, "ops_per_sec": 13980148.189570809}, "EpochCaster_(13-OpenRouter)": {"ns_per_op": 117.3, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 8525149.190110827}, "ChanBeacon_(07-Qwen)": {"ns_per_op": 58.66, "bytes_per_op": 120, "allocs_per_op": 2, "ops_per_sec": 17047391.749062393}, "ChanFeed_(04-DeepSeek)": {"ns_per_op": 86.75, "bytes_per_op": 112, "allocs_per_op": 1, "ops_per_sec": 11527377.521613833}, "ChanRotor_(17-Gemini)": {"ns_per_op": 255.6, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 3912363.0672926446}, "ChanGathererPubSub_(05-Qwen)": {"ns_per_op": 460.9, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 2169668.0407897593}, "ChanHub_(15-Nemotron)": {"ns_per_op": 94.85, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 10542962.572482869}}, "4": {"ChanPubSub_(Baseline)": {"ns_per_op": 2177.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 459347.72622875514}, "RingPubSub_(18-ChatGPT)": {"ns_per_op": 135.6, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 7374631.268436578}, "PhasePubSub_(19-ChatGPT)": {"ns_per_op": 1492.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 670241.2868632708}, "RelayPubSub_(19-ChatGPT)": {"ns_per_op": 1804.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 554323.7250554324}, "ChanRelay_(20-Arena)": {"ns_per_op": 2152.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 464684.0148698885}, "ChanLatest_(03-ChatGPT)": {"ns_per_op": 486.9, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 2053809.8172109264}, "EpochTape_(10-Gemini)": {"ns_per_op": 220.6, "bytes_per_op": 2, "allocs_per_op": 0, "ops_per_sec": 4533091.568449683}, "GenCaster_(06-Meta)": {"ns_per_op": 157.7, "bytes_per_op": 144, "allocs_per_op": 2, "ops_per_sec": 6341154.090044389}, "ChanFanout_(12-OpenRouter)": {"ns_per_op": 243.6, "bytes_per_op": 136, "allocs_per_op": 3, "ops_per_sec": 4105090.3119868636}, "EpochCaster_(13-OpenRouter)": {"ns_per_op": 325.4, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 3073140.749846343}, "ChanBeacon_(07-Qwen)": {"ns_per_op": 183.4, "bytes_per_op": 120, "allocs_per_op": 2, "ops_per_sec": 5452562.704471101}, "ChanFeed_(04-DeepSeek)": {"ns_per_op": 358.4, "bytes_per_op": 112, "allocs_per_op": 1, "ops_per_sec": 2790178.571428572}, "ChanRotor_(17-Gemini)": {"ns_per_op": 1645.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 607902.7355623101}, "ChanGathererPubSub_(05-Qwen)": {"ns_per_op": 2702.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 370096.22501850483}, "ChanHub_(15-Nemotron)": {"ns_per_op": 595.6, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 1678979.1806581598}}, "16": {"ChanPubSub_(Baseline)": {"ns_per_op": 14643.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 68292.01666325207}, "RingPubSub_(18-ChatGPT)": {"ns_per_op": 267.6, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 3736920.7772795213}, "PhasePubSub_(19-ChatGPT)": {"ns_per_op": 11413.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 87619.38140716727}, "RelayPubSub_(19-ChatGPT)": {"ns_per_op": 9602.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 104144.96979795877}, "ChanRelay_(20-Arena)": {"ns_per_op": 13364.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 74827.89583956898}, "ChanLatest_(03-ChatGPT)": {"ns_per_op": 4390.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 227790.43280182232}, "EpochTape_(10-Gemini)": {"ns_per_op": 61712.0, "bytes_per_op": 4, "allocs_per_op": 0, "ops_per_sec": 16204.30386310604}, "GenCaster_(06-Meta)": {"ns_per_op": 212.8, "bytes_per_op": 144, "allocs_per_op": 2, "ops_per_sec": 4699248.120300751}, "ChanFanout_(12-OpenRouter)": {"ns_per_op": 523.8, "bytes_per_op": 136, "allocs_per_op": 3, "ops_per_sec": 1909125.6204658267}, "EpochCaster_(13-OpenRouter)": {"ns_per_op": 401.8, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 2488800.3982080636}, "ChanBeacon_(07-Qwen)": {"ns_per_op": 379.8, "bytes_per_op": 120, "allocs_per_op": 2, "ops_per_sec": 2632964.718272775}, "ChanFeed_(04-DeepSeek)": {"ns_per_op": 1640.0, "bytes_per_op": 112, "allocs_per_op": 1, "ops_per_sec": 609756.0975609756}, "ChanRotor_(17-Gemini)": {"ns_per_op": 13185.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 75843.76185058779}, "ChanGathererPubSub_(05-Qwen)": {"ns_per_op": 21312.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 46921.92192192192}, "ChanHub_(15-Nemotron)": {"ns_per_op": 2558.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 390930.41438623925}}, "64": {"ChanPubSub_(Baseline)": {"ns_per_op": 100912.0, "bytes_per_op": 6, "allocs_per_op": 0, "ops_per_sec": 9909.62422704931}, "RingPubSub_(18-ChatGPT)": {"ns_per_op": 929.5, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 1075847.2296933834}, "PhasePubSub_(19-ChatGPT)": {"ns_per_op": 95028.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 10523.214210548469}, "RelayPubSub_(19-ChatGPT)": {"ns_per_op": 59579.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 16784.437469578206}, "ChanRelay_(20-Arena)": {"ns_per_op": 62716.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 15944.894444798776}, "ChanLatest_(03-ChatGPT)": {"ns_per_op": 38437.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 26016.598589900357}, "EpochTape_(10-Gemini)": {"ns_per_op": 329479.0, "bytes_per_op": 5, "allocs_per_op": 0, "ops_per_sec": 3035.094801186115}, "GenCaster_(06-Meta)": {"ns_per_op": 187.2, "bytes_per_op": 144, "allocs_per_op": 2, "ops_per_sec": 5341880.341880342}, "ChanFanout_(12-OpenRouter)": {"ns_per_op": 713.5, "bytes_per_op": 136, "allocs_per_op": 3, "ops_per_sec": 1401541.695865452}, "EpochCaster_(13-OpenRouter)": {"ns_per_op": 1818.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 550055.00550055}, "ChanBeacon_(07-Qwen)": {"ns_per_op": 296.8, "bytes_per_op": 120, "allocs_per_op": 2, "ops_per_sec": 3369272.2371967654}, "ChanFeed_(04-DeepSeek)": {"ns_per_op": 3037.0, "bytes_per_op": 112, "allocs_per_op": 1, "ops_per_sec": 329272.30819888046}, "ChanRotor_(17-Gemini)": {"ns_per_op": 72807.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 13734.943068660981}, "ChanGathererPubSub_(05-Qwen)": {"ns_per_op": 123301.0, "bytes_per_op": 5, "allocs_per_op": 0, "ops_per_sec": 8110.234304669062}, "ChanHub_(15-Nemotron)": {"ns_per_op": 7794.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 128303.82345393892}}, "256": {"ChanPubSub_(Baseline)": {"ns_per_op": 554198.0, "bytes_per_op": 9, "allocs_per_op": 0, "ops_per_sec": 1804.4092544541843}, "RingPubSub_(18-ChatGPT)": {"ns_per_op": 3683.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 271517.78441487916}, "PhasePubSub_(19-ChatGPT)": {"ns_per_op": 323784.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 3088.478738912361}, "RelayPubSub_(19-ChatGPT)": {"ns_per_op": 252200.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 3965.107057890563}, "ChanRelay_(20-Arena)": {"ns_per_op": 184141.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 5430.621100135222}, "ChanLatest_(03-ChatGPT)": {"ns_per_op": 77222.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 12949.677553028929}, "EpochTape_(10-Gemini)": {"ns_per_op": 1283457.0, "bytes_per_op": 6, "allocs_per_op": 0, "ops_per_sec": 779.1456979080717}, "GenCaster_(06-Meta)": {"ns_per_op": 226.1, "bytes_per_op": 144, "allocs_per_op": 2, "ops_per_sec": 4422821.76028306}, "ChanFanout_(12-OpenRouter)": {"ns_per_op": 858.1, "bytes_per_op": 136, "allocs_per_op": 3, "ops_per_sec": 1165365.3420347278}, "EpochCaster_(13-OpenRouter)": {"ns_per_op": 5547.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 180277.62754642149}, "ChanBeacon_(07-Qwen)": {"ns_per_op": 317.0, "bytes_per_op": 120, "allocs_per_op": 2, "ops_per_sec": 3154574.1324921134}, "ChanFeed_(04-DeepSeek)": {"ns_per_op": 10256.0, "bytes_per_op": 112, "allocs_per_op": 1, "ops_per_sec": 97503.90015600625}, "ChanRotor_(17-Gemini)": {"ns_per_op": 183831.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 5439.778927384391}, "ChanGathererPubSub_(05-Qwen)": {"ns_per_op": 449145.0, "bytes_per_op": 20, "allocs_per_op": 0, "ops_per_sec": 2226.4524819379044}, "ChanHub_(15-Nemotron)": {"ns_per_op": 25831.0, "bytes_per_op": 0, "allocs_per_op": 0, "ops_per_sec": 38713.1740931439}}}, "churn": {"ChanPubSub_(Baseline)": {"ns_per_op": 42.96, "bytes_per_op": 16, "allocs_per_op": 1}, "RingPubSub_(18-ChatGPT)": {"ns_per_op": 33.62, "bytes_per_op": 16, "allocs_per_op": 1}, "PhasePubSub_(19-ChatGPT)": {"ns_per_op": 26.34, "bytes_per_op": 16, "allocs_per_op": 1}, "RelayPubSub_(19-ChatGPT)": {"ns_per_op": 27.9, "bytes_per_op": 16, "allocs_per_op": 1}, "ChanRelay_(20-Arena)": {"ns_per_op": 101.7, "bytes_per_op": 288, "allocs_per_op": 4}, "ChanLatest_(03-ChatGPT)": {"ns_per_op": 96.88, "bytes_per_op": 168, "allocs_per_op": 3}, "EpochTape_(10-Gemini)": {"ns_per_op": 9.637, "bytes_per_op": 16, "allocs_per_op": 1}, "GenCaster_(06-Meta)": {"ns_per_op": 9.653, "bytes_per_op": 16, "allocs_per_op": 1}, "ChanFanout_(12-OpenRouter)": {"ns_per_op": 57.18, "bytes_per_op": 152, "allocs_per_op": 3}, "EpochCaster_(13-OpenRouter)": {"ns_per_op": 111.3, "bytes_per_op": 168, "allocs_per_op": 3}, "ChanBeacon_(07-Qwen)": {"ns_per_op": 17.1, "bytes_per_op": 24, "allocs_per_op": 2}, "ChanFeed_(04-DeepSeek)": {"ns_per_op": 55.34, "bytes_per_op": 40, "allocs_per_op": 2}, "ChanRotor_(17-Gemini)": {"ns_per_op": 49.94, "bytes_per_op": 16, "allocs_per_op": 1}, "ChanGathererPubSub_(05-Qwen)": {"ns_per_op": 30.28, "bytes_per_op": 16, "allocs_per_op": 1}, "ChanHub_(15-Nemotron)": {"ns_per_op": 224.1, "bytes_per_op": 752, "allocs_per_op": 5}}, "select": {"ChanPubSub_(Baseline)": {"ns_per_op": 1159.0, "bytes_per_op": 32, "allocs_per_op": 1}, "RingPubSub_(18-ChatGPT)": {"ns_per_op": 533.2, "bytes_per_op": 32, "allocs_per_op": 1}, "PhasePubSub_(19-ChatGPT)": {"ns_per_op": 444.2, "bytes_per_op": 32, "allocs_per_op": 1}, "RelayPubSub_(19-ChatGPT)": {"ns_per_op": 1105.0, "bytes_per_op": 32, "allocs_per_op": 1}, "ChanRelay_(20-Arena)": {"ns_per_op": 516.8, "bytes_per_op": 32, "allocs_per_op": 1}, "ChanLatest_(03-ChatGPT)": {"ns_per_op": 450.6, "bytes_per_op": 32, "allocs_per_op": 1}, "EpochTape_(10-Gemini)": {"ns_per_op": 513.1, "bytes_per_op": 151, "allocs_per_op": 2}, "GenCaster_(06-Meta)": {"ns_per_op": 494.1, "bytes_per_op": 176, "allocs_per_op": 3}, "ChanFanout_(12-OpenRouter)": {"ns_per_op": 517.0, "bytes_per_op": 168, "allocs_per_op": 4}, "EpochCaster_(13-OpenRouter)": {"ns_per_op": 501.9, "bytes_per_op": 32, "allocs_per_op": 1}, "ChanBeacon_(07-Qwen)": {"ns_per_op": 501.9, "bytes_per_op": 152, "allocs_per_op": 3}, "ChanFeed_(04-DeepSeek)": {"ns_per_op": 516.2, "bytes_per_op": 144, "allocs_per_op": 2}, "ChanRotor_(17-Gemini)": {"ns_per_op": 477.8, "bytes_per_op": 32, "allocs_per_op": 1}, "ChanGathererPubSub_(05-Qwen)": {"ns_per_op": 1167.0, "bytes_per_op": 32, "allocs_per_op": 1}, "ChanHub_(15-Nemotron)": {"ns_per_op": 443.2, "bytes_per_op": 32, "allocs_per_op": 1}}, "raw_entries": [{"name": "BenchmarkUnified_Broadcast/subs=1/ChanPubSub_(Baseline)", "iterations": 1193274, "ns_per_op": 485.4, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/RingPubSub_(18-ChatGPT)", "iterations": 7309480, "ns_per_op": 80.49, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/PhasePubSub_(19-ChatGPT)", "iterations": 2523716, "ns_per_op": 235.6, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/RelayPubSub_(19-ChatGPT)", "iterations": 1411166, "ns_per_op": 423.5, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/ChanRelay_(20-Arena)", "iterations": 1782553, "ns_per_op": 334.6, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/ChanLatest_(03-ChatGPT)", "iterations": 7549801, "ns_per_op": 75.95, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/EpochTape_(10-Gemini)", "iterations": 7172296, "ns_per_op": 82.54, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/GenCaster_(06-Meta)", "iterations": 9898702, "ns_per_op": 57.43, "bytes_per_op": 144, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=1/ChanFanout_(12-OpenRouter)", "iterations": 8454176, "ns_per_op": 71.53, "bytes_per_op": 136, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Broadcast/subs=1/EpochCaster_(13-OpenRouter)", "iterations": 7997313, "ns_per_op": 117.3, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/ChanBeacon_(07-Qwen)", "iterations": 10018993, "ns_per_op": 58.66, "bytes_per_op": 120, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=1/ChanFeed_(04-DeepSeek)", "iterations": 6889490, "ns_per_op": 86.75, "bytes_per_op": 112, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Broadcast/subs=1/ChanRotor_(17-Gemini)", "iterations": 2329791, "ns_per_op": 255.6, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/ChanGathererPubSub_(05-Qwen)", "iterations": 1289496, "ns_per_op": 460.9, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=1/ChanHub_(15-Nemotron)", "iterations": 6192344, "ns_per_op": 94.85, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanPubSub_(Baseline)", "iterations": 278234, "ns_per_op": 2177.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/RingPubSub_(18-ChatGPT)", "iterations": 4538290, "ns_per_op": 135.6, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/PhasePubSub_(19-ChatGPT)", "iterations": 386880, "ns_per_op": 1492.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/RelayPubSub_(19-ChatGPT)", "iterations": 299100, "ns_per_op": 1804.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanRelay_(20-Arena)", "iterations": 273580, "ns_per_op": 2152.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanLatest_(03-ChatGPT)", "iterations": 1218240, "ns_per_op": 486.9, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/EpochTape_(10-Gemini)", "iterations": 3462874, "ns_per_op": 220.6, "bytes_per_op": 2, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/GenCaster_(06-Meta)", "iterations": 3175095, "ns_per_op": 157.7, "bytes_per_op": 144, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanFanout_(12-OpenRouter)", "iterations": 2470706, "ns_per_op": 243.6, "bytes_per_op": 136, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Broadcast/subs=4/EpochCaster_(13-OpenRouter)", "iterations": 1854660, "ns_per_op": 325.4, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanBeacon_(07-Qwen)", "iterations": 3240090, "ns_per_op": 183.4, "bytes_per_op": 120, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanFeed_(04-DeepSeek)", "iterations": 1618350, "ns_per_op": 358.4, "bytes_per_op": 112, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanRotor_(17-Gemini)", "iterations": 369865, "ns_per_op": 1645.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanGathererPubSub_(05-Qwen)", "iterations": 216921, "ns_per_op": 2702.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=4/ChanHub_(15-Nemotron)", "iterations": 989445, "ns_per_op": 595.6, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanPubSub_(Baseline)", "iterations": 42486, "ns_per_op": 14643.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/RingPubSub_(18-ChatGPT)", "iterations": 2246028, "ns_per_op": 267.6, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/PhasePubSub_(19-ChatGPT)", "iterations": 51204, "ns_per_op": 11413.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/RelayPubSub_(19-ChatGPT)", "iterations": 61207, "ns_per_op": 9602.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanRelay_(20-Arena)", "iterations": 48468, "ns_per_op": 13364.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanLatest_(03-ChatGPT)", "iterations": 284959, "ns_per_op": 4390.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/EpochTape_(10-Gemini)", "iterations": 10000, "ns_per_op": 61712.0, "bytes_per_op": 4, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/GenCaster_(06-Meta)", "iterations": 2669709, "ns_per_op": 212.8, "bytes_per_op": 144, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanFanout_(12-OpenRouter)", "iterations": 1000000, "ns_per_op": 523.8, "bytes_per_op": 136, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Broadcast/subs=16/EpochCaster_(13-OpenRouter)", "iterations": 1561437, "ns_per_op": 401.8, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanBeacon_(07-Qwen)", "iterations": 2238008, "ns_per_op": 379.8, "bytes_per_op": 120, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanFeed_(04-DeepSeek)", "iterations": 368191, "ns_per_op": 1640.0, "bytes_per_op": 112, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanRotor_(17-Gemini)", "iterations": 46653, "ns_per_op": 13185.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanGathererPubSub_(05-Qwen)", "iterations": 28032, "ns_per_op": 21312.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=16/ChanHub_(15-Nemotron)", "iterations": 238591, "ns_per_op": 2558.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanPubSub_(Baseline)", "iterations": 5948, "ns_per_op": 100912.0, "bytes_per_op": 6, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/RingPubSub_(18-ChatGPT)", "iterations": 656604, "ns_per_op": 929.5, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/PhasePubSub_(19-ChatGPT)", "iterations": 6806, "ns_per_op": 95028.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/RelayPubSub_(19-ChatGPT)", "iterations": 10000, "ns_per_op": 59579.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanRelay_(20-Arena)", "iterations": 9367, "ns_per_op": 62716.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanLatest_(03-ChatGPT)", "iterations": 86238, "ns_per_op": 38437.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/EpochTape_(10-Gemini)", "iterations": 10000, "ns_per_op": 329479.0, "bytes_per_op": 5, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/GenCaster_(06-Meta)", "iterations": 2937768, "ns_per_op": 187.2, "bytes_per_op": 144, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanFanout_(12-OpenRouter)", "iterations": 1000000, "ns_per_op": 713.5, "bytes_per_op": 136, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Broadcast/subs=64/EpochCaster_(13-OpenRouter)", "iterations": 305071, "ns_per_op": 1818.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanBeacon_(07-Qwen)", "iterations": 2178242, "ns_per_op": 296.8, "bytes_per_op": 120, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanFeed_(04-DeepSeek)", "iterations": 188904, "ns_per_op": 3037.0, "bytes_per_op": 112, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanRotor_(17-Gemini)", "iterations": 8037, "ns_per_op": 72807.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanGathererPubSub_(05-Qwen)", "iterations": 4628, "ns_per_op": 123301.0, "bytes_per_op": 5, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=64/ChanHub_(15-Nemotron)", "iterations": 78456, "ns_per_op": 7794.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanPubSub_(Baseline)", "iterations": 1070, "ns_per_op": 554198.0, "bytes_per_op": 9, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/RingPubSub_(18-ChatGPT)", "iterations": 162848, "ns_per_op": 3683.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/PhasePubSub_(19-ChatGPT)", "iterations": 3525, "ns_per_op": 323784.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/RelayPubSub_(19-ChatGPT)", "iterations": 2368, "ns_per_op": 252200.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanRelay_(20-Arena)", "iterations": 3320, "ns_per_op": 184141.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanLatest_(03-ChatGPT)", "iterations": 6591, "ns_per_op": 77222.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/EpochTape_(10-Gemini)", "iterations": 10000, "ns_per_op": 1283457.0, "bytes_per_op": 6, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/GenCaster_(06-Meta)", "iterations": 2356333, "ns_per_op": 226.1, "bytes_per_op": 144, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanFanout_(12-OpenRouter)", "iterations": 1000000, "ns_per_op": 858.1, "bytes_per_op": 136, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Broadcast/subs=256/EpochCaster_(13-OpenRouter)", "iterations": 107864, "ns_per_op": 5547.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanBeacon_(07-Qwen)", "iterations": 1888586, "ns_per_op": 317.0, "bytes_per_op": 120, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanFeed_(04-DeepSeek)", "iterations": 56365, "ns_per_op": 10256.0, "bytes_per_op": 112, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanRotor_(17-Gemini)", "iterations": 3300, "ns_per_op": 183831.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanGathererPubSub_(05-Qwen)", "iterations": 1329, "ns_per_op": 449145.0, "bytes_per_op": 20, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Broadcast/subs=256/ChanHub_(15-Nemotron)", "iterations": 22982, "ns_per_op": 25831.0, "bytes_per_op": 0, "allocs_per_op": 0}, {"name": "BenchmarkUnified_Churn/ChanPubSub_(Baseline)", "iterations": 13851214, "ns_per_op": 42.96, "bytes_per_op": 16, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Churn/RingPubSub_(18-ChatGPT)", "iterations": 18513494, "ns_per_op": 33.62, "bytes_per_op": 16, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Churn/PhasePubSub_(19-ChatGPT)", "iterations": 23029534, "ns_per_op": 26.34, "bytes_per_op": 16, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Churn/RelayPubSub_(19-ChatGPT)", "iterations": 21669156, "ns_per_op": 27.9, "bytes_per_op": 16, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Churn/ChanRelay_(20-Arena)", "iterations": 6067081, "ns_per_op": 101.7, "bytes_per_op": 288, "allocs_per_op": 4}, {"name": "BenchmarkUnified_Churn/ChanLatest_(03-ChatGPT)", "iterations": 6250281, "ns_per_op": 96.88, "bytes_per_op": 168, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Churn/EpochTape_(10-Gemini)", "iterations": 61945336, "ns_per_op": 9.637, "bytes_per_op": 16, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Churn/GenCaster_(06-Meta)", "iterations": 59609307, "ns_per_op": 9.653, "bytes_per_op": 16, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Churn/ChanFanout_(12-OpenRouter)", "iterations": 10692470, "ns_per_op": 57.18, "bytes_per_op": 152, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Churn/EpochCaster_(13-OpenRouter)", "iterations": 5431132, "ns_per_op": 111.3, "bytes_per_op": 168, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Churn/ChanBeacon_(07-Qwen)", "iterations": 34620876, "ns_per_op": 17.1, "bytes_per_op": 24, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Churn/ChanFeed_(04-DeepSeek)", "iterations": 10670673, "ns_per_op": 55.34, "bytes_per_op": 40, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Churn/ChanRotor_(17-Gemini)", "iterations": 12131167, "ns_per_op": 49.94, "bytes_per_op": 16, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Churn/ChanGathererPubSub_(05-Qwen)", "iterations": 19822359, "ns_per_op": 30.28, "bytes_per_op": 16, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Churn/ChanHub_(15-Nemotron)", "iterations": 2446958, "ns_per_op": 224.1, "bytes_per_op": 752, "allocs_per_op": 5}, {"name": "BenchmarkUnified_Select/ChanPubSub_(Baseline)", "iterations": 524998, "ns_per_op": 1159.0, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/RingPubSub_(18-ChatGPT)", "iterations": 1000000, "ns_per_op": 533.2, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/PhasePubSub_(19-ChatGPT)", "iterations": 1340488, "ns_per_op": 444.2, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/RelayPubSub_(19-ChatGPT)", "iterations": 524329, "ns_per_op": 1105.0, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/ChanRelay_(20-Arena)", "iterations": 1000000, "ns_per_op": 516.8, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/ChanLatest_(03-ChatGPT)", "iterations": 1304793, "ns_per_op": 450.6, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/EpochTape_(10-Gemini)", "iterations": 1000000, "ns_per_op": 513.1, "bytes_per_op": 151, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Select/GenCaster_(06-Meta)", "iterations": 1218962, "ns_per_op": 494.1, "bytes_per_op": 176, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Select/ChanFanout_(12-OpenRouter)", "iterations": 1000000, "ns_per_op": 517.0, "bytes_per_op": 168, "allocs_per_op": 4}, {"name": "BenchmarkUnified_Select/EpochCaster_(13-OpenRouter)", "iterations": 1203276, "ns_per_op": 501.9, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/ChanBeacon_(07-Qwen)", "iterations": 1000000, "ns_per_op": 501.9, "bytes_per_op": 152, "allocs_per_op": 3}, {"name": "BenchmarkUnified_Select/ChanFeed_(04-DeepSeek)", "iterations": 1000000, "ns_per_op": 516.2, "bytes_per_op": 144, "allocs_per_op": 2}, {"name": "BenchmarkUnified_Select/ChanRotor_(17-Gemini)", "iterations": 1257208, "ns_per_op": 477.8, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/ChanGathererPubSub_(05-Qwen)", "iterations": 504718, "ns_per_op": 1167.0, "bytes_per_op": 32, "allocs_per_op": 1}, {"name": "BenchmarkUnified_Select/ChanHub_(15-Nemotron)", "iterations": 1381665, "ns_per_op": 443.2, "bytes_per_op": 32, "allocs_per_op": 1}]};
+
+const MODEL_CATALOG = [
+  {
+    id: "03",
+    name: "03-chatgpt-1",
+    model: "ChatGPT (GPT-4o)",
+    family: "coalescing",
+    familyLabel: "Coalescing Mailbox",
+    types: ["ChanLatest[V]"],
+    file: "chanlatest.go",
+    summary: "Implements an atomic single-slot mailbox per subscriber. Lock-free channel swap on publish delivers latest value and drops intermediate updates.",
+    strengths: "Zero allocation on broadcast; high single-subscriber throughput (76 ns/op); immune to slow-subscriber backpressure.",
+    weaknesses: "Lossy stream semantics; cannot deliver intermediate messages; memory consumption scales with subscriber count.",
+    defects: "None in core Go code; clean compilation."
+  },
+  {
+    id: "04",
+    name: "04-deepseek",
+    model: "DeepSeek-V3",
+    family: "ring",
+    familyLabel: "Bounded Ring Buffer",
+    types: ["ChanFeed[V]", "ChanFeedSub[V]"],
+    file: "chanfeed.go",
+    summary: "Bounded circular queue with selectable overflow policies: ChanFeedDropOldest, ChanFeedDropNewest, and ChanFeedBlock.",
+    strengths: "Clean API with explicit drop policy configuration and select support via Ready() channel.",
+    weaknesses: "Channel allocation on overflow notification causes linear latency degradation at scale (10,256 ns at 256 subs).",
+    defects: "Snapshot race condition in Ready() consumer pattern resolved in harness adapter."
+  },
+  {
+    id: "05",
+    name: "05-qwen",
+    model: "Qwen 2.5",
+    family: "rendezvous",
+    familyLabel: "Synchronous Rendezvous",
+    types: ["ChanGatherer[C, V]", "ChanGathererPubSub[C, V, P]"],
+    file: "changatherer.go",
+    summary: "Dual WaitGroup (ping/pong) barrier coordinating generic subscriber channels with parallel fan-out.",
+    strengths: "Strictly lossless synchronous rendezvous; preserves generic channel types.",
+    weaknesses: "Steep O(N) latency cliff (449,145 ns at 256 subs); high lock contention.",
+    defects: "Declared sync.Mutex but called RLock(); desynchronized WaitGroup accounting caused permanent deadlock on message 2. Both corrected."
+  },
+  {
+    id: "06",
+    name: "06-meta",
+    model: "Llama 3.1 405B",
+    family: "epoch",
+    familyLabel: "Epoch Close Cascade",
+    types: ["GenCaster[V]", "ChanCasterV2[V]", "ChanPubSubV2[V]"],
+    file: "gencaster.go",
+    summary: "Generation-linked channel-close cascade. Publisher replaces atomic generation pointer and closes previous generation channel.",
+    strengths: "True O(1) broadcast scaling: 57.4 ns at 1 sub, 226.1 ns at 256 subs (2,451x faster than rendezvous); 9.65 ns churn.",
+    weaknesses: "Allocates 1 generation node (~144 bytes) per send; subscribers must traverse linked generation list.",
+    defects: "Clean compilation and robust memory ordering; no structural defects."
+  },
+  {
+    id: "07",
+    name: "07-qwen",
+    model: "Qwen 2.5",
+    family: "epoch",
+    familyLabel: "Epoch Close + Ring",
+    types: ["ChanBeacon[V]", "RelaySub[V]"],
+    file: "chanbeacon.go",
+    summary: "Power-of-two lock-free circular ring buffer combined with atomic pointer swap and close of notification channel.",
+    strengths: "O(1) fanout notification (317 ns at 256 subs); lock-free reader cursors; select support via Ready().",
+    weaknesses: "Allocates 1 notification channel per send (~96-120 bytes); silent message overwrite under severe consumer lag.",
+    defects: "Consumer snapshot race in harness adapter corrected."
+  },
+  {
+    id: "08",
+    name: "08-muse",
+    model: "Muse / Synthetic",
+    family: "epoch",
+    familyLabel: "Multi-Architecture Survey",
+    types: ["Beacon[T]", "RingBeacon[T]", "ChanCaster2[T]", "ReliableBeacon[T]"],
+    file: "beacon.go, ring_beacon.go, chancaster2.go, reliable_beacon.go",
+    summary: "Extensive multi-variant exploration: linked generation nodes, atomic ring beacon, two-phase commit, and ACK-tracked reliable delivery.",
+    strengths: "Comprehensive exploration of memory ordering invariants and reliability semantics.",
+    weaknesses: "Fragmented codebase; multiple overlapping implementations with distinct trade-offs.",
+    defects: "Trailing markdown fence syntax errors during extraction corrected."
+  },
+  {
+    id: "09",
+    name: "09-gemini",
+    model: "Gemini 1.5 Pro",
+    family: "epoch",
+    familyLabel: "Epoch Broadcaster",
+    types: ["ChanCaster09Gemini[V]", "ChanPubSub09Gemini[V]", "EpochCasterGemini[V]"],
+    file: "epochcaster_09_gemini.go",
+    summary: "Generational epoch broadcasting with subscriber registration slice and channel close signaling.",
+    strengths: "Decoupled broadcast notification using channel close.",
+    weaknesses: "Slice manipulation under mutex limits high-churn performance.",
+    defects: "Cleaned duplicate helper declarations."
+  },
+  {
+    id: "10",
+    name: "10-gemini",
+    model: "Gemini 1.5 Pro",
+    family: "epoch",
+    familyLabel: "Seqlock Epoch Tape",
+    types: ["ChanPubSub10Gemini[T]", "EpochTape[T]"],
+    file: "epochtape.go",
+    summary: "Power-of-two seqlock circular ring buffer with generation counters and closed channel event slots.",
+    strengths: "9.63 ns subscription churn; 82.5 ns broadcast at 1 sub.",
+    weaknesses: "Catastrophic reader-writer contention at high subscriber counts (1.28 ms at 256 subs).",
+    defects: "Seqlock data race on multi-word reads; variable reset defect inside retry loop. Both repaired."
+  },
+  {
+    id: "11",
+    name: "11-meta",
+    model: "Llama 3.1 70B",
+    family: "epoch",
+    familyLabel: "Chunked Epoch Ring",
+    types: ["EpochPubSub[T]"],
+    file: "epochpubsub_11_meta.go",
+    summary: "Chunked circular array with atomic monotonic sequence counters and subscriber cursor tracking.",
+    strengths: "Good cache locality with chunked array structures.",
+    weaknesses: "High complexity in multi-chunk cursor advancement.",
+    defects: "Trailing fence truncation fixed."
+  },
+  {
+    id: "12",
+    name: "12-openrouter",
+    model: "OpenRouter (Claude 3.5 Sonnet)",
+    family: "epoch",
+    familyLabel: "Lock-Free Ring Fanout",
+    types: ["ChanFanout[T]", "FanoutSub[T]"],
+    file: "chanfanout.go",
+    summary: "Lock-free power-of-two circular buffer with per-subscriber monotonic cursors and atomic notification channels.",
+    strengths: "Excellent scaling (71.5 ns at 1 sub, 858.1 ns at 256 subs); 57 ns churn.",
+    weaknesses: "Allocates 3 allocs/op on broadcast (~136 bytes).",
+    defects: "Consumer condition variable snapshot race corrected."
+  },
+  {
+    id: "13",
+    name: "13-openrouter",
+    model: "OpenRouter (Crouton)",
+    family: "epoch",
+    familyLabel: "Epoch Ring Caster",
+    types: ["EpochCaster13Crouton[T]"],
+    file: "epochcaster_13_crouton.go",
+    summary: "Epoch-chained ring buffer with generational retirement and lock-free cursor forwarding.",
+    strengths: "Zero allocation on broadcast; 117 ns at 1 sub, 5,547 ns at 256 subs.",
+    weaknesses: "Complex epoch retirement logic.",
+    defects: "Test off-by-one verification assertion corrected."
+  },
+  {
+    id: "14",
+    name: "14-xing",
+    model: "Xing / Custom",
+    family: "rendezvous",
+    familyLabel: "Hardened Rendezvous",
+    types: ["ChanCaster14Xing[T]", "ChanPubSub14Xing[T]"],
+    file: "chancaster_14_xing.go, chanpubsub_14_xing.go",
+    summary: "Hardened version of baseline ChanCaster and ChanPubSub with defensive sanity checks and broken-state circuit breakers.",
+    strengths: "Defensive assertions against double-close and state corruption.",
+    weaknesses: "Inherits identical O(N) rendezvous scaling bottleneck.",
+    defects: "Model omitted required private helper functions; implemented to specification."
+  },
+  {
+    id: "15",
+    name: "15-nemotron",
+    model: "Nemotron 70B",
+    family: "ring",
+    familyLabel: "Worker Pool Hub",
+    types: ["ChanCaster15Nemotron[T]", "ChanHub[T]"],
+    file: "chanhub.go",
+    summary: "Dynamic worker pool fanout with buffered subscriber mailboxes and backpressure metrics.",
+    strengths: "Decouples slow consumers with worker pool isolation; 94.8 ns at 1 sub.",
+    weaknesses: "Worker pool coordination overhead (25,831 ns at 256 subs); 5 allocs/op on churn.",
+    defects: "Minor syntax fence cleanup."
+  },
+  {
+    id: "16",
+    name: "16-deepseek",
+    model: "DeepSeek-V2.5",
+    family: "rendezvous",
+    familyLabel: "Hierarchical Tree Scatter",
+    types: ["ChanPubSub16DeepSeek[T]", "ChanScatter[T]"],
+    file: "chanscatter.go",
+    summary: "Hierarchical tree fanout distributing subscribers across worker goroutines in branching subtrees.",
+    strengths: "Reduces root sender contention by partitioning subscribers into branches.",
+    weaknesses: "Tree hop latency; goroutine scheduling overhead on small subscriber sets.",
+    defects: "Naming collision disambiguation."
+  },
+  {
+    id: "17",
+    name: "17-gemini",
+    model: "Gemini 1.5 Flash",
+    family: "ring",
+    familyLabel: "Rotor & Pumped",
+    types: ["ChanCaster17FastPath[T]", "ChanCaster17Pumped[T]", "ChanPubSub17Gemini[T]", "ChanRotor[C, V]"],
+    file: "chanrotor.go, chancaster_17_gemini.go",
+    summary: "Channel rotor cycling through subscriber channels with unrolled loop optimization and pumped background workers.",
+    strengths: "Zero allocation on broadcast; unrolled fast paths.",
+    weaknesses: "Scales linearly O(N); 183,831 ns at 256 subs.",
+    defects: "Disambiguated types and resolved method receiver signatures."
+  },
+  {
+    id: "18",
+    name: "18-chatgpt-2",
+    model: "ChatGPT (GPT-4o)",
+    family: "ring",
+    familyLabel: "Lock-Free Ring Buffer",
+    types: ["RingPubSub[T]"],
+    file: "ringpubsub.go",
+    summary: "High-throughput circular ring buffer utilizing atomic head/tail cursors, power-of-two bitwise masking, and zero-allocation cursor updates.",
+    strengths: "Fastest lossless pubsub: 80.5 ns (1 sub), 135.6 ns (4 subs), 267.6 ns (16 subs), 929.5 ns (64 subs); ZERO allocations across all operations.",
+    weaknesses: "Requires pre-configured buffer capacity; slow subscribers must handle overrun.",
+    defects: "Extracted via complete 144KB patch; clean compilation."
+  },
+  {
+    id: "19",
+    name: "19-chatgpt-3",
+    model: "ChatGPT (o1-preview)",
+    family: "credit",
+    familyLabel: "Credit & Relay Protocol",
+    types: ["PhasePubSub[T]", "RelayPubSub[T]"],
+    file: "phasepubsub.go, relaypubsub.go",
+    summary: "Two-phase credit-based synchronization protocol eliminating per-send channel allocation; second major system RelayPubSub extracted from prose.",
+    strengths: "Zero heap allocations; 235 ns at 1 sub, 1,492 ns at 4 subs; 26 ns churn.",
+    weaknesses: "Phase coordination state machine incurs CAS overhead at high subscriber counts (323,784 ns at 256 subs).",
+    defects: "Disambiguated RelayPubSub from ChanBeacon RelaySub; resolved benchmark name collisions."
+  },
+  {
+    id: "20",
+    name: "20-arena-agent",
+    model: "Arena Benchmark Agent",
+    family: "ring",
+    familyLabel: "Chunked Array Relay",
+    types: ["ChanRelay[T]"],
+    file: "chanrelay.go",
+    summary: "Chunked array buffer with non-blocking try-send, subscriber-level backpressure detection, and complete documentation.",
+    strengths: "Production-grade documentation and clean Go idiomatic API; zero allocs on broadcast.",
+    weaknesses: "Chunk allocation and lock contention at high subscriber counts (184,141 ns at 256 subs).",
+    defects: "Context cancellation handling in TryRecv adapter."
+  }
+];
+
+const FAMILY_COLORS = {
+  rendezvous: "#ff7b72",
+  ring: "#56d364",
+  epoch: "#79c0ff",
+  credit: "#d2a8ff",
+  coalescing: "#e3b341"
+};
+
+function getFamilyTag(family) {
+  const labels = {
+    rendezvous: "Synchronous Rendezvous",
+    ring: "Circular Ring Buffer",
+    epoch: "Epoch Channel Close",
+    credit: "Credit Relay",
+    coalescing: "Coalescing Mailbox"
+  };
+  return `<span class="tag tag-${family}">${labels[family] || family}</span>`;
+}
+
+function getImplFamily(name) {
+  if (name.includes("ChanPubSub") || name.includes("ChanGatherer") || name.includes("Xing")) return "rendezvous";
+  if (name.includes("GenCaster") || name.includes("ChanBeacon") || name.includes("EpochTape") || name.includes("ChanFanout") || name.includes("EpochCaster")) return "epoch";
+  if (name.includes("RingPubSub") || name.includes("ChanFeed") || name.includes("ChanRotor") || name.includes("ChanHub") || name.includes("ChanRelay")) return "ring";
+  if (name.includes("PhasePubSub") || name.includes("RelayPubSub")) return "credit";
+  if (name.includes("ChanLatest")) return "coalescing";
+  return "ring";
+}
+
+let currentChartScale = "log";
+let currentChartFamily = "all";
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  event.target.classList.add('active');
+  
+  if (tabId === 'tab-visualizations') {
+    renderCharts();
+  }
+}
+
+function renderLeaderboard() {
+  const tbody = document.querySelector('#leaderboard-table tbody');
+  tbody.innerHTML = '';
+  
+  const b16 = BENCHMARK_DATA.broadcast["16"] || {};
+  const sortedImpls = Object.keys(b16).sort((a, b) => b16[a].ns_per_op - b16[b].ns_per_op);
+  
+  for (const impl of sortedImpls) {
+    const fam = getImplFamily(impl);
+    const s1 = BENCHMARK_DATA.broadcast["1"]?.[impl]?.ns_per_op?.toFixed(1) || "-";
+    const s4 = BENCHMARK_DATA.broadcast["4"]?.[impl]?.ns_per_op?.toFixed(1) || "-";
+    const s16 = BENCHMARK_DATA.broadcast["16"]?.[impl]?.ns_per_op?.toFixed(1) || "-";
+    const s64 = BENCHMARK_DATA.broadcast["64"]?.[impl]?.ns_per_op?.toFixed(1) || "-";
+    const s256 = BENCHMARK_DATA.broadcast["256"]?.[impl]?.ns_per_op?.toFixed(1) || "-";
+    const alloc = BENCHMARK_DATA.broadcast["16"]?.[impl]?.bytes_per_op || 0;
+    const churn = BENCHMARK_DATA.churn?.[impl]?.ns_per_op?.toFixed(1) || "-";
+    
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${impl}</strong></td>
+      <td>${getFamilyTag(fam)}</td>
+      <td class="num">${s1}</td>
+      <td class="num">${s4}</td>
+      <td class="num" style="color: var(--accent-cyan); font-weight: 600;">${s16}</td>
+      <td class="num">${s64}</td>
+      <td class="num">${s256}</td>
+      <td class="num">${alloc}</td>
+      <td class="num">${churn}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderModels() {
+  const container = document.getElementById('models-container');
+  container.innerHTML = '';
+  
+  for (const m of MODEL_CATALOG) {
+    const card = document.createElement('div');
+    card.className = 'model-card';
+    card.id = `model-${m.id}`;
+    card.innerHTML = `
+      <div class="model-card-header">
+        <div>
+          <div class="model-title">${m.name} — ${m.model}</div>
+          <div class="model-types">Types: ${m.types.join(', ')} &bull; File: ${m.file}</div>
+        </div>
+        <div>
+          ${getFamilyTag(m.family)}
+        </div>
+      </div>
+      <div class="model-card-body prose">
+        <p><strong>Mechanism:</strong> ${m.summary}</p>
+        <p><strong>Strengths:</strong> ${m.strengths}</p>
+        <p><strong>Trade-offs:</strong> ${m.weaknesses}</p>
+        <div class="defect-box" style="margin-top: 10px;">
+          <div class="defect-title">Defect & Verification Status</div>
+          <div style="font-size: 13px;">${m.defects}</div>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  }
+}
+
+function filterModels() {
+  const query = document.getElementById('model-search').value.toLowerCase();
+  for (const m of MODEL_CATALOG) {
+    const el = document.getElementById(`model-${m.id}`);
+    const match = m.name.toLowerCase().includes(query) ||
+                  m.model.toLowerCase().includes(query) ||
+                  m.types.join(' ').toLowerCase().includes(query) ||
+                  m.summary.toLowerCase().includes(query) ||
+                  m.strengths.toLowerCase().includes(query);
+    el.style.display = match ? 'block' : 'none';
+  }
+}
+
+function renderRawData() {
+  const tbody = document.querySelector('#raw-table tbody');
+  tbody.innerHTML = '';
+  
+  for (const entry of BENCHMARK_DATA.raw_entries) {
+    const ops = entry.ns_per_op > 0 ? (1e9 / entry.ns_per_op).toLocaleString('en-US', {maximumFractionDigits: 0}) : '0';
+    const tr = document.createElement('tr');
+    tr.className = 'raw-row';
+    tr.innerHTML = `
+      <td>${entry.name}</td>
+      <td class="num">${entry.iterations.toLocaleString()}</td>
+      <td class="num">${entry.ns_per_op.toFixed(1)}</td>
+      <td class="num">${ops}</td>
+      <td class="num">${entry.bytes_per_op}</td>
+      <td class="num">${entry.allocs_per_op}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function filterRawData() {
+  const query = document.getElementById('raw-search').value.toLowerCase();
+  document.querySelectorAll('.raw-row').forEach(row => {
+    const text = row.children[0].textContent.toLowerCase();
+    row.style.display = text.includes(query) ? '' : 'none';
+  });
+}
+
+function setChartScale(scale) {
+  currentChartScale = scale;
+  document.getElementById('btn-scale-log').classList.toggle('active', scale === 'log');
+  document.getElementById('btn-scale-linear').classList.toggle('active', scale === 'linear');
+  renderCharts();
+}
+
+function filterChartFamily(fam) {
+  currentChartFamily = fam;
+  document.querySelectorAll('.chart-controls .btn-group:last-child .control-btn').forEach(b => {
+    b.classList.remove('active');
+  });
+  document.getElementById(`btn-fam-${fam}`).classList.add('active');
+  renderCharts();
+}
+
+function renderCharts() {
+  renderScalingChart();
+  renderChurnChart();
+  renderAllocChart();
+}
+
+function renderScalingChart() {
+  const svg = document.getElementById('scaling-chart');
+  svg.innerHTML = '';
+  
+  const width = 1000;
+  const height = 450;
+  const padding = { top: 40, right: 180, bottom: 50, left: 80 };
+  const plotW = width - padding.left - padding.right;
+  const plotH = height - padding.top - padding.bottom;
+  
+  const subCounts = [1, 4, 16, 64, 256];
+  const xCoords = subCounts.map((_, i) => padding.left + (i / (subCounts.length - 1)) * plotW);
+  
+  // Y range
+  let minY = 50;
+  let maxY = 1500000;
+  
+  function getY(val) {
+    if (currentChartScale === 'log') {
+      const logMin = Math.log10(minY);
+      const logMax = Math.log10(maxY);
+      const norm = (Math.log10(Math.max(val, minY)) - logMin) / (logMax - logMin);
+      return padding.top + plotH - (norm * plotH);
+    } else {
+      const norm = Math.min(val, maxY) / maxY;
+      return padding.top + plotH - (norm * plotH);
+    }
+  }
+  
+  // Draw Grid & Axes
+  let gridHtml = '';
+  if (currentChartScale === 'log') {
+    const yTicks = [100, 1000, 10000, 100000, 1000000];
+    for (const t of yTicks) {
+      const y = getY(t);
+      gridHtml += `<line x1="${padding.left}" y1="${y}" x2="${padding.left + plotW}" y2="${y}" stroke="#2e3d52" stroke-dasharray="3,3"/>`;
+      const label = t >= 1000000 ? '1ms' : t >= 1000 ? (t/1000) + 'µs' : t + 'ns';
+      gridHtml += `<text x="${padding.left - 10}" y="${y + 4}" fill="#9da7b3" font-size="11" text-anchor="end" font-family="ui-monospace">${label}</text>`;
+    }
+  } else {
+    const yTicks = [0, 300000, 600000, 900000, 1200000, 1500000];
+    for (const t of yTicks) {
+      const y = getY(t);
+      gridHtml += `<line x1="${padding.left}" y1="${y}" x2="${padding.left + plotW}" y2="${y}" stroke="#2e3d52" stroke-dasharray="3,3"/>`;
+      gridHtml += `<text x="${padding.left - 10}" y="${y + 4}" fill="#9da7b3" font-size="11" text-anchor="end" font-family="ui-monospace">${(t/1000).toFixed(0)}µs</text>`;
+    }
+  }
+  
+  // X Axis ticks
+  for (let i = 0; i < subCounts.length; i++) {
+    const x = xCoords[i];
+    gridHtml += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${padding.top + plotH}" stroke="#2e3d52" stroke-dasharray="2,2"/>`;
+    gridHtml += `<text x="${x}" y="${padding.top + plotH + 25}" fill="#e6edf3" font-size="12" text-anchor="middle" font-family="ui-monospace">${subCounts[i]} subs</text>`;
+  }
+  
+  svg.innerHTML += gridHtml;
+  
+  // Lines & Data
+  const impls = Object.keys(BENCHMARK_DATA.broadcast["1"]);
+  const legendEl = document.getElementById('chart-legend');
+  legendEl.innerHTML = '';
+  
+  const colors = [
+    "#39c5cf", "#3fb950", "#bc8cff", "#f85149", "#d29922", 
+    "#79c0ff", "#56d364", "#e3b341", "#ff7b72", "#d2a8ff",
+    "#58a6ff", "#7ee787", "#ffa657", "#ff9bce", "#a5d6ff"
+  ];
+  
+  let implIdx = 0;
+  for (const impl of impls) {
+    const fam = getImplFamily(impl);
+    if (currentChartFamily !== 'all' && fam !== currentChartFamily) {
+      implIdx++;
+      continue;
+    }
+    
+    const color = colors[implIdx % colors.length];
+    let pathD = '';
+    const points = [];
+    
+    for (let i = 0; i < subCounts.length; i++) {
+      const s = subCounts[i].toString();
+      const val = BENCHMARK_DATA.broadcast[s]?.[impl]?.ns_per_op;
+      if (val !== undefined) {
+        const x = xCoords[i];
+        const y = getY(val);
+        points.push({ x, y, val, s });
+        pathD += (pathD === '' ? `M ${x} ${y}` : ` L ${x} ${y}`);
+      }
+    }
+    
+    let lineHtml = `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.5" opacity="0.85"/>`;
+    for (const p of points) {
+      lineHtml += `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${color}"><title>${impl} (${p.s} subs): ${p.val.toFixed(1)} ns</title></circle>`;
+    }
+    
+    // Label at end of line
+    if (points.length > 0) {
+      const lastP = points[points.length - 1];
+      const shortName = impl.replace(/_\([^\)]+\)/, '').replace(/PubSub/, 'PS');
+      lineHtml += `<text x="${lastP.x + 8}" y="${lastP.y + 3}" fill="${color}" font-size="10" font-family="ui-monospace">${shortName}</text>`;
+    }
+    
+    svg.innerHTML += lineHtml;
+    
+    // Legend
+    legendEl.innerHTML += `
+      <div class="legend-item">
+        <div class="legend-color" style="background: ${color};"></div>
+        <span>${impl}</span>
+      </div>
+    `;
+    
+    implIdx++;
+  }
+}
+
+function renderChurnChart() {
+  const svg = document.getElementById('churn-chart');
+  svg.innerHTML = '';
+  const width = 500;
+  const height = 320;
+  const padding = { top: 20, right: 30, bottom: 40, left: 160 };
+  const plotW = width - padding.left - padding.right;
+  const plotH = height - padding.top - padding.bottom;
+  
+  const churnData = Object.entries(BENCHMARK_DATA.churn).sort((a, b) => a[1].ns_per_op - b[1].ns_per_op);
+  const maxVal = 240;
+  const barH = plotH / churnData.length;
+  
+  let html = '';
+  for (let i = 0; i < churnData.length; i++) {
+    const [name, d] = churnData[i];
+    const val = d.ns_per_op;
+    const y = padding.top + i * barH;
+    const barW = (val / maxVal) * plotW;
+    const fam = getImplFamily(name);
+    const color = FAMILY_COLORS[fam] || '#388bfd';
+    
+    html += `
+      <text x="${padding.left - 10}" y="${y + barH * 0.7}" fill="#e6edf3" font-size="10" text-anchor="end" font-family="ui-monospace">${name.substring(0, 18)}</text>
+      <rect x="${padding.left}" y="${y + 2}" width="${barW}" height="${barH - 4}" fill="${color}" rx="2">
+        <title>${name}: ${val.toFixed(1)} ns/op</title>
+      </rect>
+      <text x="${padding.left + barW + 6}" y="${y + barH * 0.7}" fill="#9da7b3" font-size="10" font-family="ui-monospace">${val.toFixed(1)}</text>
+    `;
+  }
+  svg.innerHTML = html;
+}
+
+function renderAllocChart() {
+  const svg = document.getElementById('alloc-chart');
+  svg.innerHTML = '';
+  const width = 500;
+  const height = 320;
+  const padding = { top: 20, right: 30, bottom: 40, left: 160 };
+  const plotW = width - padding.left - padding.right;
+  const plotH = height - padding.top - padding.bottom;
+  
+  const b16 = BENCHMARK_DATA.broadcast["16"] || {};
+  const allocData = Object.entries(b16).sort((a, b) => b[1].bytes_per_op - a[1].bytes_per_op);
+  const maxVal = 200;
+  const barH = plotH / allocData.length;
+  
+  let html = '';
+  for (let i = 0; i < allocData.length; i++) {
+    const [name, d] = allocData[i];
+    const val = d.bytes_per_op;
+    const y = padding.top + i * barH;
+    const barW = val > 0 ? (val / maxVal) * plotW : 2;
+    const fam = getImplFamily(name);
+    const color = val === 0 ? '#3fb950' : '#bc8cff';
+    
+    html += `
+      <text x="${padding.left - 10}" y="${y + barH * 0.7}" fill="#e6edf3" font-size="10" text-anchor="end" font-family="ui-monospace">${name.substring(0, 18)}</text>
+      <rect x="${padding.left}" y="${y + 2}" width="${barW}" height="${barH - 4}" fill="${color}" rx="2">
+        <title>${name}: ${val} B/op</title>
+      </rect>
+      <text x="${padding.left + barW + 6}" y="${y + barH * 0.7}" fill="#9da7b3" font-size="10" font-family="ui-monospace">${val} B</text>
+    `;
+  }
+  svg.innerHTML = html;
+}
+
+// Initialize
+window.addEventListener('DOMContentLoaded', () => {
+  renderLeaderboard();
+  renderModels();
+  renderRawData();
+  renderCharts();
+});
+</script>
+</body>
+</html>
