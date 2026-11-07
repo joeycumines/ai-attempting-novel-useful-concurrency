@@ -1,5 +1,7 @@
 # Model benchmark: Novel concurrency implementations
 
+N.B. If you're reading this as a gist it is also an actual [repository](https://github.com/joeycumines/ai-attempting-novel-useful-concurrency).
+
 ## Introduction
 
 This gist contains a single ad-hoc benchmark and results for a prompt I found particularly interesting.
