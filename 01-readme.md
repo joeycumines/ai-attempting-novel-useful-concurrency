@@ -60,3 +60,4 @@ The tools available, especially the presence of a sandbox, search engine, and (i
 23. [25-claude-haiku-extra-prompt-mini.md](25-claude-haiku-extra-prompt-mini.md) ([link](https://claude.ai/share/b7f1326f-456f-4807-8d24-f77aed549dac))
 24. [26-kimi-ai-instant-prompt-mini.md](26-kimi-ai-instant-prompt-mini.md)
 25. [27-mistral-ai-chat-prompt-mini.md](27-mistral-ai-chat-prompt-mini.md)
+26. [28-openrouter-chat-flint-free-prompt-mini.md](28-openrouter-chat-flint-free-prompt-mini.md)
