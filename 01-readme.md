@@ -59,3 +59,4 @@ The tools available, especially the presence of a sandbox, search engine, and (i
 22. [24-meta-ai-prompt-mini.md](24-meta-ai-prompt-mini.md) ([link](https://meta.ai/share/TiLaDoJVDD))
 23. [25-claude-haiku-extra-prompt-mini.md](25-claude-haiku-extra-prompt-mini.md) ([link](https://claude.ai/share/b7f1326f-456f-4807-8d24-f77aed549dac))
 24. [26-kimi-ai-instant-prompt-mini.md](26-kimi-ai-instant-prompt-mini.md)
+25. [27-mistral-ai-chat-prompt-mini.md](27-mistral-ai-chat-prompt-mini.md)
