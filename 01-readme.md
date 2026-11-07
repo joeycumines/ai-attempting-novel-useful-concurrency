@@ -77,3 +77,8 @@ In cases where there were individual files attached, they are encoded as a txtar
 - [40-arena-gemini-3.8-flash-high-prompt-mini.md](40-arena-gemini-3.8-flash-high-prompt-mini.md)
 - [41-arena-claude-sonnet-5.5-high-prompt-mini.md](41-arena-claude-sonnet-5.5-high-prompt-mini.md)
 - [42-arena-muse-spark-1.3-xhigh-prompt-mini.md](42-arena-muse-spark-1.3-xhigh-prompt-mini.md)
+- [43-grok-chat-prompt-mini.md](43-grok-chat-prompt-mini.md)
+- [44-qwen-chat-qwen-3.7-max-prompt-mini.md](44-qwen-chat-qwen-3.7-max-prompt-mini.md)
+- [45-chatgpt-prompt-mini.md](45-chatgpt-prompt-mini.md)
+- [46-arena-grok-4.6-medium-prompt-mini.md](46-arena-grok-4.6-medium-prompt-mini.md)
+- [47-arena-gemini-3.8-flash.md](47-arena-gemini-3.8-flash.md)
