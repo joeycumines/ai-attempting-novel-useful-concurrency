@@ -47,3 +47,4 @@ I also performed empirical evaluation showing the memory benefit and the through
 16. [18-chatgpt-2.md](18-chatgpt-2.md)
 17. [19-chatgpt-3.md](19-chatgpt-3.md)
 18. [20-arena-agent.md](20-arena-agent.md)
+19. [21-claude-haiku-extra.md](21-claude-haiku-extra.md) ([link](https://claude.ai/share/bddce53b-2891-4698-95c7-b3af42f46dfd))
