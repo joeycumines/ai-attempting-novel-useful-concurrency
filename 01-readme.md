@@ -29,6 +29,10 @@ I also performed empirical evaluation showing the memory benefit and the through
 
 ## Responses
 
+I've tried to encode the more important details like provider, model, effort, and prompt, in the filename, where possible.
+Lacking in scientific rigor perhaps, but it's worth noting that models are often opaque when accessed through AI chat interfaces.
+The tools available, especially the presence of a sandbox, search engine, and (in this case) pre-installed or installable Go toolchain, are also often opaque, and can have a significant impact on the results produced.
+
 1. [03-chatgpt-1.md](03-chatgpt-1.md)
 2. [04-deepseek-v4.1-flash-chat.md](04-deepseek-v4.1-flash-chat.md)
 3. [05-qwen-3.8-max-chat.md](05-qwen-3.8-max-chat.md)
@@ -51,3 +55,4 @@ I also performed empirical evaluation showing the memory benefit and the through
 20. [22-chatgpt.md](22-chatgpt.md) ([link](https://chatgpt.com/share/6aee742e-fdc0-83ec-bb9c-7227206d2528))
 21. [23-meta-ai.md](23-meta-ai.md)
 22. [24-meta-ai-prompt-mini.md](24-meta-ai-prompt-mini.md) ([link](https://meta.ai/share/TiLaDoJVDD))
+23. [25-claude-haiku-extra-prompt-mini.md](25-claude-haiku-extra-prompt-mini.md) ([link](https://claude.ai/share/b7f1326f-456f-4807-8d24-f77aed549dac))
