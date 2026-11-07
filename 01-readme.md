@@ -35,6 +35,8 @@ I've tried to encode the more important details like provider, model, effort, an
 Lacking in scientific rigor perhaps, but it's worth noting that models are often opaque when accessed through AI chat interfaces.
 The tools available, especially the presence of a sandbox, search engine, and (in this case) pre-installed or installable Go toolchain, are also often opaque, and can have a significant impact on the results produced.
 
+In cases where there were individual files attached, they are encoded as a txtar down the bottom of the markdown, in a code block or similar.
+
 - [03-chatgpt-1.md](03-chatgpt-1.md)
 - [04-deepseek-v4.1-flash-chat.md](04-deepseek-v4.1-flash-chat.md)
 - [05-qwen-3.8-max-chat.md](05-qwen-3.8-max-chat.md)
@@ -68,3 +70,10 @@ The tools available, especially the presence of a sandbox, search engine, and (i
 - [33-openrouter-chat-north-mini-code-free-prompt-mini.md](33-openrouter-chat-north-mini-code-free-prompt-mini.md)
 - [34-openrouter-chat-nemotron-3.5-lightning-free-prompt-mini.md](34-openrouter-chat-nemotron-3.5-lightning-free-prompt-mini.md)
 - [35-chatjimmy-prompt-mini.md](35-chatjimmy-prompt-mini.md) (Generated in 0.149s)
+- [36-meta-ai-prompt-mini.md](36-meta-ai-prompt-mini.md)
+- [37-gemini-3.8-flash-high-prompt-mini.md](37-gemini-3.8-flash-high-prompt-mini.md)
+- [38-chatgpt-prompt-mini.md](38-chatgpt-prompt-mini.md) ([link](https://chatgpt.com/share/6aee8fc4-aad0-83ec-9cdc-d07e45cb9fab))
+- [39-arena-mistral-large-4-high-prompt-mini.md](39-arena-mistral-large-4-high-prompt-mini.md)
+- [40-arena-gemini-3.8-flash-high-prompt-mini.md](40-arena-gemini-3.8-flash-high-prompt-mini.md)
+- [41-arena-claude-sonnet-5.5-high-prompt-mini.md](41-arena-claude-sonnet-5.5-high-prompt-mini.md)
+- [42-arena-muse-spark-1.3-xhigh-prompt-mini.md](42-arena-muse-spark-1.3-xhigh-prompt-mini.md)
