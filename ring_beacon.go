@@ -26,7 +26,7 @@ type ringEnt[T any] struct {
 }
 
 func NewRingBeacon[T any](capacityPow2 int) *RingBeacon[T] {
-	if capacityPow2&(capacityPow2-1) != 0 {
+	if capacityPow2 <= 0 || capacityPow2&(capacityPow2-1) != 0 {
 		panic(`bigbuff: ring: capacity must be power of two`)
 	}
 	b := &RingBeacon[T]{mask: uint64(capacityPow2 - 1), ring: make([]atomic.Pointer[ringEnt[T]], capacityPow2)}
@@ -108,5 +108,3 @@ func (b *RingBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 		}
 	}
 }
-
-

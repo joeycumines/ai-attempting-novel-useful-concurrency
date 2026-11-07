@@ -45,10 +45,20 @@ see [baseline.go](./baseline.go)):
 
 | Variant                                  | Baseline                       |
 |------------------------------------------|--------------------------------|
-| Lock-step pub-sub (lossless broadcast)   | `ChanPubSub` (chanpubsub.go)   |
-| Rendezvous caster (N receivers per Send) | `ChanCaster` (chancaster.go)   |
-| Latest-value coalescing broadcast        | `ChanLatest` (chanlatest.go)   |
+| Lock-step pub-sub (lossless broadcast)   | `BaselineBarrierPubSub` (baseline.go) |
+| Rendezvous caster (N receivers per Send) | `BaselineRendezvousCaster` (baseline.go) |
+| Latest-value coalescing broadcast        | `BaselineLatestBroadcast` (baseline.go) |
+| Buffered lossless broadcast (backpressure) | `BaselineBufferedBroadcast` (baseline.go) |
+| Work distribution (exactly one receiver) | `BaselineScatterQueue` (baseline.go) |
+| Signal gathering (N senders, 1 waiter)   | `BaselineGatherBarrier` (baseline.go) |
 | Async fan-out (never blocks the sender)  | `BaselineFanout` (baseline.go) |
+
+Coverage is organised by scenario / case / attachment (see `scenario_test.go`):
+each scenario in `Scenarios` has a staff-engineer-in-a-vacuum baseline above
+attached to it, every ported implementation is attached to at least one
+scenario with remarks and an expected-good-fit flag, and known structural
+deficiencies are flagged as exposure-limited attachments whose facets avoid
+exercising them. `TestScenarioRegistryComplete` enforces that exhaustiveness.
 
 All baselines are wired into the unified harnesses (`TestStandardHarness_*`, `TestAsyncFamily`, `TestPubSubFamily`,
 `TestCasterFamily`, `BenchmarkUnified_*`, `BenchmarkAsync`).

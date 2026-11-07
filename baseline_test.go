@@ -76,7 +76,6 @@ func TestChanPubSub_Basic(t *testing.T) {
 	wg.Wait()
 }
 
-
 func TestBaselineFanoutDelivery(t *testing.T) {
 	b := NewBaselineFanout[int](8)
 	defer b.Close()
@@ -168,4 +167,130 @@ func TestBaselineFanoutClose(t *testing.T) {
 		t.Fatalf("Send after Close delivered to %d, want 0", n)
 	}
 	_ = id
+}
+
+func TestBaselineRendezvousCasterBasic(t *testing.T) {
+	x := NewBaselineRendezvousCaster[int]()
+	if got := x.Send(1); got != 0 {
+		t.Fatalf("Send with no receivers = %d, want 0", got)
+	}
+	const receivers = 3
+	for i := 0; i < receivers; i++ {
+		x.Add(1)
+	}
+	done := make(chan int, 1)
+	go func() { done <- x.Send(42) }()
+	for i := 0; i < receivers; i++ {
+		select {
+		case v := <-x.C:
+			if v != 42 {
+				t.Fatalf("received %d, want 42", v)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("receiver blocked")
+		}
+	}
+	select {
+	case n := <-done:
+		if n != receivers {
+			t.Fatalf("Send = %d, want %d", n, receivers)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Send blocked")
+	}
+}
+
+func TestBaselineScatterAndGatherBasic(t *testing.T) {
+	s := NewBaselineScatterQueue[int]()
+	if got := s.Send(1); got != 0 {
+		t.Fatalf("scatter Send with no receivers = %d, want 0", got)
+	}
+	s.Add(1)
+	done := make(chan int, 1)
+	go func() { done <- s.Send(7) }()
+	select {
+	case v := <-s.C:
+		if v != 7 {
+			t.Fatalf("scatter received %d, want 7", v)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("scatter receiver blocked")
+	}
+	if n := <-done; n != 1 {
+		t.Fatalf("scatter Send = %d, want 1", n)
+	}
+
+	g := NewBaselineGatherBarrier[int]()
+	if got := g.Wait(); got != 0 {
+		t.Fatalf("gather Wait with no senders = %d, want 0", got)
+	}
+	g.Add(2)
+	go func() { g.C <- 1 }()
+	go func() { g.C <- 2 }()
+	waitDone := make(chan int, 1)
+	go func() { waitDone <- g.Wait() }()
+	select {
+	case n := <-waitDone:
+		if n != 2 {
+			t.Fatalf("gather Wait = %d, want 2", n)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("gather Wait blocked")
+	}
+}
+
+func TestBaselineLatestAndBufferedBasic(t *testing.T) {
+	latest := NewBaselineLatestBroadcast[int]()
+	defer latest.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	seq := latest.SubscribeContext(ctx)
+	got := make(chan int, 4)
+	go func() {
+		for v := range seq {
+			got <- v
+			if v == 3 {
+				return
+			}
+		}
+	}()
+	latest.Send(1)
+	latest.Send(2)
+	latest.Send(3)
+	select {
+	case v := <-got:
+		if v != 3 && v != 1 && v != 2 {
+			t.Fatalf("latest received unexpected %d", v)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("latest subscriber blocked")
+	}
+
+	buffered := NewBaselineBufferedBroadcast[int](4)
+	defer buffered.Close()
+	bseq := buffered.SubscribeContext(ctx)
+	bgot := make(chan int, 4)
+	go func() {
+		n := 0
+		for v := range bseq {
+			bgot <- v
+			n++
+			if n == 3 {
+				return
+			}
+		}
+	}()
+	for i := 1; i <= 3; i++ {
+		buffered.Send(i)
+	}
+	for i := 1; i <= 3; i++ {
+		select {
+		case v := <-bgot:
+			if v != i {
+				t.Fatalf("buffered received %d, want %d", v, i)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("buffered subscriber blocked")
+		}
+	}
 }

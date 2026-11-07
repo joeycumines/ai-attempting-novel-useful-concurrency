@@ -21,8 +21,11 @@ func FuzzUnifiedBroadcaster(f *testing.F) {
 			return
 		}
 
-		// Test across representative architectures (excluding synchronous rendezvous ChanPubSub which
-		// requires lockstep concurrent goroutines per subscriber rather than single-threaded sequential ops)
+		// Representative architectures for this legacy op-stream fuzz. Every
+		// implementation in AllBroadcasters is fuzzed exhaustively by
+		// FuzzScenarioBroadcast / FuzzScenarioCasterScatterGather (driven by
+		// the scenario attachments); this target keeps a fast, historically
+		// stable subset so seed-corpus runs in `go test` stay quick.
 		factories := []func() Broadcaster{
 			func() Broadcaster { return newRingPubSubAdapter() },
 			func() Broadcaster { return newPhasePubSubAdapter() },
@@ -74,7 +77,14 @@ func FuzzUnifiedBroadcaster(f *testing.F) {
 			for _, s := range subs {
 				s.Unsubscribe()
 			}
-			wg.Wait()
+			done := make(chan struct{})
+			go func() { wg.Wait(); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s: publishers did not finish (deadlock)", b.Name())
+			}
+			b.Close()
 		}
 	})
 }

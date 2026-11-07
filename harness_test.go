@@ -51,6 +51,18 @@ func AllBroadcasters() []func() Broadcaster {
 		func() Broadcaster { return newEpochCasterGeminiAdapter() },
 		func() Broadcaster { return newEpochPubSubAdapter() },
 		func() Broadcaster { return newReliableBeaconAdapter() },
+		pubsubBroadcaster("ChanPubSubV2_06meta"),
+		pubsubBroadcaster("ChanPubSub09Gemini"),
+		pubsubBroadcaster("ChanPubSub10Gemini"),
+		pubsubBroadcaster("ChanPubSub14Xing"),
+		pubsubBroadcaster("ChanPubSub16DeepSeek"),
+		pubsubBroadcaster("ChanPubSub17Gemini"),
+		func() Broadcaster { return newBaselineBarrierAdapter() },
+		func() Broadcaster { return newBaselineLatestAdapter() },
+		func() Broadcaster { return newBaselineBufferedAdapter() },
+		func() Broadcaster { return newChanRelayTrySendAdapter() },
+		func() Broadcaster { return newChanHubTrySendAdapter() },
+		func() Broadcaster { return newRingPubSubTrySendAdapter() },
 	}
 }
 
@@ -125,9 +137,9 @@ func newBaselineFanoutAdapter() Broadcaster {
 }
 
 func (a *baselineFanoutAdapter) Name() string        { return "BaselineFanout (standard)" }
-func (a *baselineFanoutAdapter) Publish(val int) int  { return a.b.Send(val) }
-func (a *baselineFanoutAdapter) IsCoalescing() bool   { return true }
-func (a *baselineFanoutAdapter) Close()               { a.b.Close() }
+func (a *baselineFanoutAdapter) Publish(val int) int { return a.b.Send(val) }
+func (a *baselineFanoutAdapter) IsCoalescing() bool  { return true }
+func (a *baselineFanoutAdapter) Close()              { a.b.Close() }
 func (a *baselineFanoutAdapter) Subscribe() BroadcastSubscriber {
 	return pumpSubscribe(a.b.SubscribeContext)
 }
@@ -138,9 +150,9 @@ type beaconAdapter struct{ b *Beacon[int] }
 func newBeaconAdapter() Broadcaster { return &beaconAdapter{b: NewBeacon[int]()} }
 
 func (a *beaconAdapter) Name() string        { return "Beacon (01-baseline)" }
-func (a *beaconAdapter) Publish(val int) int  { a.b.Send(val); return 1 }
-func (a *beaconAdapter) IsCoalescing() bool   { return true }
-func (a *beaconAdapter) Close()               {}
+func (a *beaconAdapter) Publish(val int) int { a.b.Send(val); return 1 }
+func (a *beaconAdapter) IsCoalescing() bool  { return true }
+func (a *beaconAdapter) Close()              {}
 func (a *beaconAdapter) Subscribe() BroadcastSubscriber {
 	next := a.b.Seq() + 1 // captured synchronously
 	return newPumpSub(func(ctx context.Context, ch chan<- int) {
@@ -174,7 +186,7 @@ type ringBeaconAdapter struct{ b *RingBeacon[int] }
 
 func newRingBeaconAdapter() Broadcaster { return &ringBeaconAdapter{b: NewRingBeacon[int](64)} }
 
-func (a *ringBeaconAdapter) Name() string       { return "RingBeacon (08-Qwen)" }
+func (a *ringBeaconAdapter) Name() string        { return "RingBeacon (08-Qwen)" }
 func (a *ringBeaconAdapter) Publish(val int) int { a.b.Send(val); return 1 }
 func (a *ringBeaconAdapter) IsCoalescing() bool  { return true }
 func (a *ringBeaconAdapter) Close()              {}
@@ -244,7 +256,7 @@ type epochPubSubAdapter struct{ x *EpochPubSub[int] }
 
 func newEpochPubSubAdapter() Broadcaster { return &epochPubSubAdapter{x: NewEpochPubSub[int]()} }
 
-func (a *epochPubSubAdapter) Name() string       { return "EpochPubSub (11-meta)" }
+func (a *epochPubSubAdapter) Name() string        { return "EpochPubSub (11-meta)" }
 func (a *epochPubSubAdapter) Publish(val int) int { return a.x.Send(val) }
 func (a *epochPubSubAdapter) IsCoalescing() bool  { return true }
 func (a *epochPubSubAdapter) Close()              {}
@@ -285,7 +297,7 @@ func newReliableBeaconAdapter() Broadcaster {
 	return &reliableBeaconAdapter{x: NewReliableBeacon[int]()}
 }
 
-func (a *reliableBeaconAdapter) Name() string       { return "ReliableBeacon (14-Qwen)" }
+func (a *reliableBeaconAdapter) Name() string        { return "ReliableBeacon (14-Qwen)" }
 func (a *reliableBeaconAdapter) Publish(val int) int { return a.x.Send(val) }
 func (a *reliableBeaconAdapter) IsCoalescing() bool  { return true }
 func (a *reliableBeaconAdapter) Close()              {}
@@ -335,10 +347,10 @@ func newChanPubSubAdapter() Broadcaster {
 	return &chanPubSubAdapter{ch: ch, ps: NewChanPubSub(ch)}
 }
 
-func (a *chanPubSubAdapter) Name() string { return "ChanPubSub (Baseline)" }
+func (a *chanPubSubAdapter) Name() string        { return "ChanPubSub (Baseline)" }
 func (a *chanPubSubAdapter) Publish(val int) int { return a.ps.Send(val) }
-func (a *chanPubSubAdapter) IsCoalescing() bool { return false }
-func (a *chanPubSubAdapter) Close() { close(a.ch) }
+func (a *chanPubSubAdapter) IsCoalescing() bool  { return false }
+func (a *chanPubSubAdapter) Close()              { close(a.ch) }
 func (a *chanPubSubAdapter) Subscribe() BroadcastSubscriber {
 	a.ps.Subscribe()
 	return &chanPubSubSub{a: a}
@@ -402,7 +414,7 @@ func (a *ringPubSubAdapter) Publish(val int) int {
 	return n
 }
 func (a *ringPubSubAdapter) IsCoalescing() bool { return false }
-func (a *ringPubSubAdapter) Close() { a.hub.Close() }
+func (a *ringPubSubAdapter) Close()             { a.hub.Close() }
 func (a *ringPubSubAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.hub.Subscribe()
 	return &ringPubSubSub{sub: &sub}
@@ -434,10 +446,10 @@ func newPhasePubSubAdapter() Broadcaster {
 	return &phasePubSubAdapter{bus: NewPhasePubSub[int]()}
 }
 
-func (a *phasePubSubAdapter) Name() string { return "PhasePubSub (19-ChatGPT)" }
+func (a *phasePubSubAdapter) Name() string        { return "PhasePubSub (19-ChatGPT)" }
 func (a *phasePubSubAdapter) Publish(val int) int { return a.bus.Send(val) }
-func (a *phasePubSubAdapter) IsCoalescing() bool { return false }
-func (a *phasePubSubAdapter) Close() {}
+func (a *phasePubSubAdapter) IsCoalescing() bool  { return false }
+func (a *phasePubSubAdapter) Close()              {}
 func (a *phasePubSubAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.bus.Subscribe()
 	return &phasePubSubSub{sub: sub}
@@ -474,10 +486,10 @@ func newRelayPubSubAdapter() Broadcaster {
 	return &relayPubSubAdapter{bus: NewRelayPubSub[int](8)}
 }
 
-func (a *relayPubSubAdapter) Name() string { return "RelayPubSub (19-ChatGPT)" }
+func (a *relayPubSubAdapter) Name() string        { return "RelayPubSub (19-ChatGPT)" }
 func (a *relayPubSubAdapter) Publish(val int) int { return a.bus.Send(val) }
-func (a *relayPubSubAdapter) IsCoalescing() bool { return false }
-func (a *relayPubSubAdapter) Close() {}
+func (a *relayPubSubAdapter) IsCoalescing() bool  { return false }
+func (a *relayPubSubAdapter) Close()              {}
 func (a *relayPubSubAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.bus.Subscribe()
 	return &relayPubSubSub{sub: sub}
@@ -519,7 +531,7 @@ func (a *chanRelayAdapter) Publish(val int) int {
 	return a.relay.Send(val)
 }
 func (a *chanRelayAdapter) IsCoalescing() bool { return false }
-func (a *chanRelayAdapter) Close() { a.relay.Close() }
+func (a *chanRelayAdapter) Close()             { a.relay.Close() }
 func (a *chanRelayAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.relay.Subscribe()
 	return &chanRelaySub{sub: sub}
@@ -554,10 +566,10 @@ func newChanLatestAdapter() Broadcaster {
 	return &chanLatestAdapter{latest: NewChanLatest[int]()}
 }
 
-func (a *chanLatestAdapter) Name() string { return "ChanLatest (03-ChatGPT)" }
+func (a *chanLatestAdapter) Name() string        { return "ChanLatest (03-ChatGPT)" }
 func (a *chanLatestAdapter) Publish(val int) int { return a.latest.Send(val) }
-func (a *chanLatestAdapter) IsCoalescing() bool { return true }
-func (a *chanLatestAdapter) Close() { a.latest.Close() }
+func (a *chanLatestAdapter) IsCoalescing() bool  { return true }
+func (a *chanLatestAdapter) Close()              { a.latest.Close() }
 func (a *chanLatestAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.latest.Subscribe()
 	return &chanLatestSub{sub: sub}
@@ -600,7 +612,7 @@ func (a *epochTapeAdapter) Publish(val int) int {
 	return 1
 }
 func (a *epochTapeAdapter) IsCoalescing() bool { return false }
-func (a *epochTapeAdapter) Close() { a.tape.Close() }
+func (a *epochTapeAdapter) Close()             { a.tape.Close() }
 func (a *epochTapeAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.tape.Subscribe()
 	return &epochTapeSub{sub: sub}
@@ -648,7 +660,7 @@ func (a *genCasterAdapter) Publish(val int) int {
 	return 1
 }
 func (a *genCasterAdapter) IsCoalescing() bool { return false }
-func (a *genCasterAdapter) Close() {}
+func (a *genCasterAdapter) Close()             {}
 func (a *genCasterAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.caster.Subscribe()
 	return &genCasterSub{sub: sub}
@@ -684,10 +696,10 @@ func newChanFanoutAdapter() Broadcaster {
 	return &chanFanoutAdapter{fanout: NewChanFanout[int](64)}
 }
 
-func (a *chanFanoutAdapter) Name() string { return "ChanFanout (12-OpenRouter)" }
+func (a *chanFanoutAdapter) Name() string        { return "ChanFanout (12-OpenRouter)" }
 func (a *chanFanoutAdapter) Publish(val int) int { return a.fanout.Send(val) }
-func (a *chanFanoutAdapter) IsCoalescing() bool { return false }
-func (a *chanFanoutAdapter) Close() { a.fanout.Close() }
+func (a *chanFanoutAdapter) IsCoalescing() bool  { return false }
+func (a *chanFanoutAdapter) Close()              { a.fanout.Close() }
 func (a *chanFanoutAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.fanout.Subscribe()
 	return &chanFanoutSub{sub: sub}
@@ -725,10 +737,10 @@ func newEpochCaster13Adapter() Broadcaster {
 	return &epochCaster13Adapter{caster: NewEpochCasterWithRingSize13Crouton[int](64)}
 }
 
-func (a *epochCaster13Adapter) Name() string { return "EpochCaster (13-OpenRouter)" }
+func (a *epochCaster13Adapter) Name() string        { return "EpochCaster (13-OpenRouter)" }
 func (a *epochCaster13Adapter) Publish(val int) int { return int(a.caster.Send(val)) }
-func (a *epochCaster13Adapter) IsCoalescing() bool { return false }
-func (a *epochCaster13Adapter) Close() { a.caster.Close() }
+func (a *epochCaster13Adapter) IsCoalescing() bool  { return false }
+func (a *epochCaster13Adapter) Close()              { a.caster.Close() }
 func (a *epochCaster13Adapter) Subscribe() BroadcastSubscriber {
 	sub := a.caster.Subscribe()
 	return &epochCaster13Sub{sub: sub}
@@ -760,10 +772,10 @@ func newChanBeaconAdapter() Broadcaster {
 	return &chanBeaconAdapter{beacon: NewChanBeacon[int](64)}
 }
 
-func (a *chanBeaconAdapter) Name() string { return "ChanBeacon (07-Qwen)" }
+func (a *chanBeaconAdapter) Name() string        { return "ChanBeacon (07-Qwen)" }
 func (a *chanBeaconAdapter) Publish(val int) int { return a.beacon.Send(val) }
-func (a *chanBeaconAdapter) IsCoalescing() bool { return false }
-func (a *chanBeaconAdapter) Close() { a.beacon.Close() }
+func (a *chanBeaconAdapter) IsCoalescing() bool  { return false }
+func (a *chanBeaconAdapter) Close()              { a.beacon.Close() }
 func (a *chanBeaconAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.beacon.Subscribe()
 	return &chanBeaconSub{sub: sub}
@@ -801,10 +813,10 @@ func newChanFeedAdapter() Broadcaster {
 	return &chanFeedAdapter{feed: NewChanFeed[int](64, ChanFeedDropOldest)}
 }
 
-func (a *chanFeedAdapter) Name() string { return "ChanFeed (04-DeepSeek)" }
+func (a *chanFeedAdapter) Name() string        { return "ChanFeed (04-DeepSeek)" }
 func (a *chanFeedAdapter) Publish(val int) int { return a.feed.Send(val) }
-func (a *chanFeedAdapter) IsCoalescing() bool { return false }
-func (a *chanFeedAdapter) Close() { a.feed.Close() }
+func (a *chanFeedAdapter) IsCoalescing() bool  { return false }
+func (a *chanFeedAdapter) Close()              { a.feed.Close() }
 func (a *chanFeedAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.feed.Subscribe()
 	return &chanFeedSub{sub: sub}
@@ -851,7 +863,7 @@ func (a *chanRotorAdapter) Publish(val int) int {
 	return 1
 }
 func (a *chanRotorAdapter) IsCoalescing() bool { return false }
-func (a *chanRotorAdapter) Close() {}
+func (a *chanRotorAdapter) Close()             {}
 func (a *chanRotorAdapter) Subscribe() BroadcastSubscriber {
 	sub := a.rotor.Subscribe()
 	return &chanRotorSub{sub: sub}
@@ -906,10 +918,10 @@ func newChanGathererAdapter() Broadcaster {
 	}
 }
 
-func (a *chanGathererAdapter) Name() string { return "ChanGathererPubSub (05-Qwen)" }
+func (a *chanGathererAdapter) Name() string        { return "ChanGathererPubSub (05-Qwen)" }
 func (a *chanGathererAdapter) Publish(val int) int { return a.ps.Send(val) }
-func (a *chanGathererAdapter) IsCoalescing() bool { return false }
-func (a *chanGathererAdapter) Close() { close(a.ping) }
+func (a *chanGathererAdapter) IsCoalescing() bool  { return false }
+func (a *chanGathererAdapter) Close()              { close(a.ping) }
 func (a *chanGathererAdapter) Subscribe() BroadcastSubscriber {
 	a.ps.Subscribe()
 	return &chanGathererSub{a: a}
@@ -965,10 +977,10 @@ func newChanHubAdapter() Broadcaster {
 	return &chanHubAdapter{hub: NewChanHub[int]()}
 }
 
-func (a *chanHubAdapter) Name() string { return "ChanHub (15-Nemotron)" }
+func (a *chanHubAdapter) Name() string        { return "ChanHub (15-Nemotron)" }
 func (a *chanHubAdapter) Publish(val int) int { return a.hub.Send(val) }
-func (a *chanHubAdapter) IsCoalescing() bool { return false }
-func (a *chanHubAdapter) Close() {}
+func (a *chanHubAdapter) IsCoalescing() bool  { return false }
+func (a *chanHubAdapter) Close()              {}
 func (a *chanHubAdapter) Subscribe() BroadcastSubscriber {
 	ch := make(chan int, 64)
 	id := a.hub.Subscribe(ch)
@@ -1227,3 +1239,182 @@ func TestStandardHarness_TryReceive(t *testing.T) {
 	}
 }
 
+// --- Generic adapters for pubsub-family, caster-family and baselines ---
+
+// genericPubSubBroadcaster adapts any pubsubAPI (SubscribeContext-style) to Broadcaster.
+type genericPubSubBroadcaster struct {
+	name string
+	api  pubsubAPI
+}
+
+func (a *genericPubSubBroadcaster) Name() string       { return a.name }
+func (a *genericPubSubBroadcaster) Publish(v int) int  { return a.api.send(v) }
+func (a *genericPubSubBroadcaster) IsCoalescing() bool { return !a.api.lossless }
+func (a *genericPubSubBroadcaster) Close()             {}
+func (a *genericPubSubBroadcaster) Subscribe() BroadcastSubscriber {
+	return pumpSubscribe(func(ctx context.Context) iter.Seq[int] { return a.api.subscribe(ctx) })
+}
+
+func pubsubBroadcaster(name string) func() Broadcaster {
+	return func() Broadcaster {
+		mk, ok := pubsubImpls()[name]
+		if !ok {
+			panic("unknown pubsub impl " + name)
+		}
+		return &genericPubSubBroadcaster{name: name, api: mk()}
+	}
+}
+
+// casterBroadcaster adapts a ChanCaster-family value: Subscribe registers one
+// pending receive; each successful Receive re-registers for the next round;
+// Unsubscribe withdraws the pending registration.
+type casterBroadcaster struct {
+	name string
+	api  casterAPI
+}
+
+func (a *casterBroadcaster) Name() string       { return a.name }
+func (a *casterBroadcaster) Publish(v int) int  { return a.api.send(v) }
+func (a *casterBroadcaster) IsCoalescing() bool { return false }
+func (a *casterBroadcaster) Close()             {}
+func (a *casterBroadcaster) Subscribe() BroadcastSubscriber {
+	a.api.add(1)
+	return &casterSub{api: a.api}
+}
+
+type casterSub struct {
+	api  casterAPI
+	done bool
+}
+
+func (s *casterSub) Receive(ctx context.Context) (int, bool) {
+	if s.done {
+		return 0, false
+	}
+	select {
+	case <-ctx.Done():
+		return 0, false
+	case v, ok := <-s.api.c:
+		if !ok {
+			return 0, false
+		}
+		s.api.add(1) // register for the next round
+		return v, true
+	}
+}
+func (s *casterSub) TryReceive() (int, bool) {
+	select {
+	case v, ok := <-s.api.c:
+		if !ok {
+			return 0, false
+		}
+		s.api.add(1)
+		return v, true
+	default:
+		return 0, false
+	}
+}
+func (s *casterSub) Unsubscribe() {
+	if !s.done {
+		s.done = true
+		s.api.add(-1)
+	}
+}
+
+func casterBroadcasterFactory(key string) func() Broadcaster {
+	return func() Broadcaster {
+		mk, ok := casterImpls()[key]
+		if !ok {
+			panic("unknown caster impl " + key)
+		}
+		return &casterBroadcaster{name: "Caster:" + key, api: mk()}
+	}
+}
+
+// Baseline adapters (staff-engineer-in-a-vacuum baselines from baseline.go).
+type baselineBarrierAdapter struct{ x *BaselineBarrierPubSub[int] }
+
+func newBaselineBarrierAdapter() Broadcaster {
+	return &baselineBarrierAdapter{x: NewBaselineBarrierPubSub[int]()}
+}
+func (a *baselineBarrierAdapter) Name() string       { return "BaselineBarrierPubSub (baseline)" }
+func (a *baselineBarrierAdapter) Publish(v int) int  { return a.x.Send(v) }
+func (a *baselineBarrierAdapter) IsCoalescing() bool { return false }
+func (a *baselineBarrierAdapter) Close()             {}
+func (a *baselineBarrierAdapter) Subscribe() BroadcastSubscriber {
+	return pumpSubscribe(a.x.SubscribeContext)
+}
+
+type baselineLatestAdapter struct{ x *BaselineLatestBroadcast[int] }
+
+func newBaselineLatestAdapter() Broadcaster {
+	return &baselineLatestAdapter{x: NewBaselineLatestBroadcast[int]()}
+}
+func (a *baselineLatestAdapter) Name() string       { return "BaselineLatestBroadcast (baseline)" }
+func (a *baselineLatestAdapter) Publish(v int) int  { return a.x.Send(v) }
+func (a *baselineLatestAdapter) IsCoalescing() bool { return true }
+func (a *baselineLatestAdapter) Close()             { a.x.Close() }
+func (a *baselineLatestAdapter) Subscribe() BroadcastSubscriber {
+	return pumpSubscribe(a.x.SubscribeContext)
+}
+
+type baselineBufferedAdapter struct {
+	x *BaselineBufferedBroadcast[int]
+}
+
+func newBaselineBufferedAdapter() Broadcaster {
+	return &baselineBufferedAdapter{x: NewBaselineBufferedBroadcast[int](64)}
+}
+func (a *baselineBufferedAdapter) Name() string       { return "BaselineBufferedBroadcast (baseline)" }
+func (a *baselineBufferedAdapter) Publish(v int) int  { return a.x.Send(v) }
+func (a *baselineBufferedAdapter) IsCoalescing() bool { return false }
+func (a *baselineBufferedAdapter) Close()             { a.x.Close() }
+func (a *baselineBufferedAdapter) Subscribe() BroadcastSubscriber {
+	return pumpSubscribe(a.x.SubscribeContext)
+}
+
+// Variant adapters: same implementation, distinct operational mode.
+type chanRelayTrySendAdapter struct{ x *ChanRelay[int] }
+
+func newChanRelayTrySendAdapter() Broadcaster {
+	return &chanRelayTrySendAdapter{x: NewChanRelay[int](WithRelayWindow(1))}
+}
+func (a *chanRelayTrySendAdapter) Name() string       { return "ChanRelay TrySend (20-Arena)" }
+func (a *chanRelayTrySendAdapter) Publish(v int) int  { return a.x.TrySend(v) }
+func (a *chanRelayTrySendAdapter) IsCoalescing() bool { return true }
+func (a *chanRelayTrySendAdapter) Close()             { a.x.Close() }
+func (a *chanRelayTrySendAdapter) Subscribe() BroadcastSubscriber {
+	sub := a.x.Subscribe()
+	return &chanRelaySub{sub: sub}
+}
+
+type chanHubTrySendAdapter struct{ hub *ChanHub[int] }
+
+func newChanHubTrySendAdapter() Broadcaster {
+	return &chanHubTrySendAdapter{hub: NewChanHub[int]()}
+}
+func (a *chanHubTrySendAdapter) Name() string       { return "ChanHub TrySend (15-Nemotron)" }
+func (a *chanHubTrySendAdapter) Publish(v int) int  { return a.hub.TrySend(v) }
+func (a *chanHubTrySendAdapter) IsCoalescing() bool { return true }
+func (a *chanHubTrySendAdapter) Close()             {}
+func (a *chanHubTrySendAdapter) Subscribe() BroadcastSubscriber {
+	ch := make(chan int, 64)
+	id := a.hub.Subscribe(ch)
+	return &chanHubSub{hub: a.hub, ch: ch, id: id}
+}
+
+type ringPubSubTrySendAdapter struct{ hub *RingPubSub[int] }
+
+func newRingPubSubTrySendAdapter() Broadcaster {
+	return &ringPubSubTrySendAdapter{hub: NewRingPubSub[int](64)}
+}
+func (a *ringPubSubTrySendAdapter) Name() string      { return "RingPubSub TrySend (18-ChatGPT)" }
+func (a *ringPubSubTrySendAdapter) Publish(v int) int { n, _ := a.hub.TrySend(v); return n }
+func (a *ringPubSubTrySendAdapter) IsCoalescing() bool {
+	return false
+}
+func (a *ringPubSubTrySendAdapter) Close() { a.hub.Close() }
+func (a *ringPubSubTrySendAdapter) Subscribe() BroadcastSubscriber {
+	sub := a.hub.Subscribe()
+	return &ringPubSubSub{sub: &sub}
+}
