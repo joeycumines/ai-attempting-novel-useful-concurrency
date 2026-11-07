@@ -35,7 +35,7 @@ Essentially all outputs identified this characteristic.
 
 ## Output
 
-Still in the original gist flat project layout, so start at [01-readme.md](./01-readme.md).
+Still in the original gist flat project layout, so start at [01-readme.md](./01-readme.md). That file contains an index linking to each model response, in some cases annotated with a link to the actual chat session.
 
 ## Baselines
 
@@ -43,15 +43,14 @@ For apples-to-apples comparison, each major behavioral variant has a
 standard-practice baseline (simplest sound design, deliberately not novel -
 see [baseline.go](./baseline.go)):
 
-| Variant | Baseline |
-| --- | --- |
-| Lock-step pub-sub (lossless broadcast) | `ChanPubSub` (chanpubsub.go) |
-| Rendezvous caster (N receivers per Send) | `ChanCaster` (chancaster.go) |
-| Latest-value coalescing broadcast | `ChanLatest` (chanlatest.go) |
-| Async fan-out (never blocks the sender) | `BaselineFanout` (baseline.go) |
+| Variant                                  | Baseline                       |
+|------------------------------------------|--------------------------------|
+| Lock-step pub-sub (lossless broadcast)   | `ChanPubSub` (chanpubsub.go)   |
+| Rendezvous caster (N receivers per Send) | `ChanCaster` (chancaster.go)   |
+| Latest-value coalescing broadcast        | `ChanLatest` (chanlatest.go)   |
+| Async fan-out (never blocks the sender)  | `BaselineFanout` (baseline.go) |
 
-All baselines are wired into the unified harnesses
-(`TestStandardHarness_*`, `TestAsyncFamily`, `TestPubSubFamily`,
+All baselines are wired into the unified harnesses (`TestStandardHarness_*`, `TestAsyncFamily`, `TestPubSubFamily`,
 `TestCasterFamily`, `BenchmarkUnified_*`, `BenchmarkAsync`).
 
 ## License
