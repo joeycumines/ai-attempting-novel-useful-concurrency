@@ -11,7 +11,7 @@ import (
 // ReliableBeacon is ChanPubSub reimagined: Beacon for dissemination, atomic ack for Wait.
 // Achieves N+1 work (1 close + N acks) vs 2N (N sends + N acks), no hchan contention.
 type ReliableBeacon[T any] struct {
-	_ noCopy
+	_      noCopy
 	beacon Beacon[T]
 	// send serialization + subscriber count fence
 	sendingMu sync.RWMutex
@@ -47,7 +47,11 @@ func (x *ReliableBeacon[T]) Add(delta int) int {
 		return int(x.subs.Load())
 	}
 	if delta < 0 {
-		x.unsubscribe(nil)
+		// Honour the full magnitude: Add(-n) withdraws n subscriptions,
+		// each of which may owe compensation to an armed ack barrier.
+		for range -delta {
+			x.unsubscribe(nil)
+		}
 		return int(x.subs.Load())
 	}
 	x.sendingMu.RLock()

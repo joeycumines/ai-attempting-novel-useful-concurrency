@@ -20,10 +20,10 @@ import (
 	"context"
 	"iter"
 	"math"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
-
 
 // ChanPubSub16DeepSeek is a pub/sub implementation that uses a channel as the underlying
 // transport. This implementation's core benefits are scalability, particularly
@@ -341,7 +341,8 @@ func (x *ChanPubSub16DeepSeek[C, V]) Add(delta int) (subscribers int) {
 		ok := x.sendingMu.TryRLock()
 		// N.B. this loop is to handle state transition (send in progress)
 		for !ok && x.ping.Add(0) == 0 {
-			x.checkBroken() // attempts to mitigate deadlock risk on misuse...
+			x.checkBroken()   // attempts to mitigate deadlock risk on misuse...
+			runtime.Gosched() // do not starve the sender while it arms ping
 			ok = x.sendingMu.TryRLock()
 		}
 		subscribers = x.addSubscribers(delta)

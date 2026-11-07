@@ -18,6 +18,7 @@ package bigbuff
 
 import (
 	"math"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -89,6 +90,12 @@ type ChanScatter[C ~chan V, V any] struct {
 	// know whether a steal is required.
 	// Send uses CAS to enter and leave the sending state.
 	state atomic.Uint64
+
+	// stolen records that the in-flight send (if any) was consumed by a
+	// stealing Add(-1) rather than by a real receiver. It is only accessed
+	// while a send is in flight (or under sendMu), and is reset by Send
+	// before each dispatch.
+	stolen atomic.Bool
 }
 
 // NewChanScatter constructs a [ChanScatter] for the provided channel. It
@@ -141,6 +148,7 @@ func (x *ChanScatter[C, V]) Send(value V) int {
 	// Dispatch. Blocks until either a subscriber receives, or a deregistering
 	// subscriber performs a "steal" receive (which happens only if the
 	// subscriber count for the send drops to zero, see Add below).
+	x.stolen.Store(false)
 	x.C <- value
 
 	// Clear the sending flag (preserving any concurrent subscriber change).
@@ -154,9 +162,11 @@ func (x *ChanScatter[C, V]) Send(value V) int {
 			panic(chanScatterStateInvariantViolation)
 		}
 		if x.state.CompareAndSwap(state, uint64(hi)<<32) {
-			if hi == 0 {
-				return 0 // stolen
+			if hi == 0 && x.stolen.Load() {
+				return 0 // stolen by a deregistering receiver
 			}
+			// hi==0 without a steal means a real receiver took the value
+			// and the final deregistration raced with this teardown.
 			return 1
 		}
 	}
@@ -217,8 +227,26 @@ func (x *ChanScatter[C, V]) Add(delta int) int {
 			if x.state.CompareAndSwap(state, uint64(newHi)<<32|uint64(lo)) {
 				if newHi == 0 && lo != 0 {
 					// All subscribers have left while a send is in flight.
-					// Steal the pending value to unblock the sender.
-					<-x.C
+					// Steal the pending value to unblock the sender. The
+					// sender may not have parked on C yet (a plain blocking
+					// steal is correct then), or a real receiver may
+					// already have taken the value while this Add raced
+					// with Send's teardown (a plain blocking steal would
+					// then hang forever on a send that will never come).
+					// So: retry the non-blocking steal until it succeeds
+					// or the sending flag clears, which proves delivery.
+					// This is bounded by the sender's own progress, not
+					// by time. A successful steal is recorded so Send
+					// reports 0 rather than 1.
+					for uint32(x.state.Load()) == 1 {
+						select {
+						case <-x.C:
+							x.stolen.Store(true)
+							return int(newHi)
+						default:
+							runtime.Gosched()
+						}
+					}
 				}
 				return int(newHi)
 			}

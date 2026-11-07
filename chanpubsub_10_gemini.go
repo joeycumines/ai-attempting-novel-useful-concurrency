@@ -20,10 +20,10 @@ import (
 	"context"
 	"iter"
 	"math"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
-
 
 // ChanPubSub10Gemini is a pub/sub implementation that uses a channel as the underlying
 // transport. This implementation's core benefits are scalability, particularly
@@ -301,6 +301,7 @@ func (x *ChanPubSub10Gemini[C, V]) Add(delta int) (subscribers int) {
 		ok := x.sendingMu.TryRLock()
 		for !ok && !x.pingArmed.Load() {
 			x.checkBroken()
+			runtime.Gosched() // do not starve the sender while it arms ping
 			ok = x.sendingMu.TryRLock()
 		}
 		subscribers = x.addSubscribers(delta)

@@ -151,7 +151,18 @@ func (x *EpochPubSub[V]) pongNLoad() int32 {
 }
 
 func (x *EpochPubSub[V]) SubscribeContext(ctx context.Context) iter.Seq[V] {
-    x.Subscribe()
+    if ctx == nil {
+        ctx = context.Background()
+    }
+    // Register and capture the current epoch atomically with respect to
+    // Send (which holds the write lock for a whole round): the captured
+    // sequence is therefore the last *completed* round, never a round this
+    // subscription is about to owe an ack for. Values published before
+    // this subscription existed are not replayed.
+    x.sendMu.RLock()
+    x.subs.Add(1)
+    startSeq := x.cur.Load().seq
+    x.sendMu.RUnlock()
     // lastAcked is read under pongMu by unsubscribe, and written under pongMu
     // by Ack, so the ack/compensation guard is race-free.
     lastAcked := &atomic.Uint64{}
@@ -159,18 +170,22 @@ func (x *EpochPubSub[V]) SubscribeContext(ctx context.Context) iter.Seq[V] {
     return func(yield func(V) bool) {
         if !stop() { return }
         defer x.unsubscribe(lastAcked)
-        lastYielded := uint64(0)
+        lastYielded := startSeq
+        lastAcked.Store(startSeq)
         for {
             e := x.cur.Load()
             // Ack every round this subscription was counted in, even if a
             // newer epoch superseded the value before we yielded it -
             // otherwise Send can deadlock waiting for a phantom ack.
+            // Acknowledge BEFORE yielding, matching ChanPubSub semantics:
+            // Send is released once the value has been received, not once
+            // the consumer has finished processing it.
             if e.seq != 0 && e.seq != lastAcked.Load() {
+                x.ackTracked(e.seq, lastAcked)
                 if e.seq != lastYielded {
                     lastYielded = e.seq
                     if !yield(e.val) { return }
                 }
-                x.ackTracked(e.seq, lastAcked)
             }
             select {
             case <-ctx.Done(): return

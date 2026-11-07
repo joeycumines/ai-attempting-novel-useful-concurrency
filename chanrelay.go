@@ -591,7 +591,6 @@ func (x *ChanRelay[V]) compact() {
 
 	var (
 		head, tail *relayChunk[V]
-		live       int32
 	)
 
 	for chunk := x.head; chunk != nil; chunk = chunk.next.Load() {
@@ -613,7 +612,6 @@ func (x *ChanRelay[V]) compact() {
 			j := tail.n.Load()
 			tail.slots[j].Store(sub)
 			tail.n.Store(j + 1)
-			live++
 		}
 	}
 
@@ -625,7 +623,10 @@ func (x *ChanRelay[V]) compact() {
 	x.head, x.tail = head, tail
 	x.headPub.Store(head)
 	x.grey = 0
-	x.count.Store(live)
+	// NOTE: x.count is deliberately NOT rewritten here. It is owned solely
+	// by register (+1), detach (-1) and Close (0). Rewriting it from a
+	// traversal count races with a concurrent detach/register between the
+	// traversal and the store, resurrecting dead subscriptions in Len().
 }
 
 // RelaySubscription is a single subscription to a [ChanRelay].
@@ -845,4 +846,3 @@ func (s *RelaySubscription[V]) trySend(value V) bool {
 	s.dropped.Add(1)
 	return false
 }
-
