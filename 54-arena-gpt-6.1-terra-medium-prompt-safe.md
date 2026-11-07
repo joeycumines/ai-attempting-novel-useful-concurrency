@@ -1,0 +1,277 @@
+I’d add a complementary **epoch broadcaster** rather than extend the shared-channel handshake. It broadcasts a selectable notification by closing one shared channel per message; subscribers then read the value from the published epoch and acknowledge it.
+
+This changes the trade-off substantially:
+
+- No subscriber registry, per-subscriber channel, or per-subscriber goroutine.
+- Subscription churn is O(1); publication does not walk subscribers.
+- Each nonempty broadcast creates one epoch and one channel, independently of subscriber count. Empty sends allocate nothing.
+- A slow subscriber applies backpressure. Every subscriber in the publication snapshot must consume or unsubscribe before the next publication.
+- Select operates on a notification channel, not a channel carrying the value directly.
+
+I can’t access or modify the repository from this session, so the implementation below is supplied as a new file. It has not been run or benchmarked; in particular, performance comparable to the existing implementations needs measurement.
+
+### `epochbroadcast.go`
+
+```go
+/*
+   Copyright 2026 Joseph Cumines
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
+package bigbuff
+
+import (
+	"math"
+	"sync"
+	"sync/atomic"
+)
+
+// EpochBroadcast broadcasts values using a shared notification channel for
+// each publication. Construct it with NewEpochBroadcast; do not copy it.
+//
+// Send serializes publications and waits until every subscriber in its
+// publication snapshot has either received the value or unsubscribed.
+// Subscriptions created after publication begins do not receive that value.
+//
+// There is no subscriber registry: subscription and unsubscription do not
+// require traversing other subscribers. A broadcast with subscribers creates
+// one new epoch and one channel, regardless of subscriber count.
+//
+// A subscriber that neither receives nor unsubscribes can block Send
+// indefinitely. In particular, a subscriber must not synchronously call Send
+// while remaining subscribed unless some other goroutine can operate that
+// subscription.
+type EpochBroadcast[V any] struct {
+	sendMu sync.Mutex
+
+	mu          sync.Mutex
+	cond        sync.Cond
+	subscribers int32
+	next        *broadcastEpoch[V]
+}
+
+// broadcastEpoch is initially unpublished. Publication initializes value,
+// next, and state, then closes ready. The close synchronizes those writes with
+// every subscriber observing ready.
+//
+// state packs two uint32s:
+//   - high: number of subscribers that received the value
+//   - low:  number of subscribers still required to receive or unsubscribe
+//
+// The subscriber limit is MaxInt32, so neither half can overflow in valid use.
+type broadcastEpoch[V any] struct {
+	ready chan struct{}
+	value V
+	next  *broadcastEpoch[V]
+	state atomic.Uint64
+}
+
+func newBroadcastEpoch[V any]() *broadcastEpoch[V] {
+	return &broadcastEpoch[V]{ready: make(chan struct{})}
+}
+
+// NewEpochBroadcast constructs an EpochBroadcast.
+func NewEpochBroadcast[V any]() *EpochBroadcast[V] {
+	x := &EpochBroadcast[V]{}
+	x.cond.L = &x.mu
+	x.next = newBroadcastEpoch[V]()
+	return x
+}
+
+// EpochSubscription is a single-consumer subscription.
+//
+// Its methods must not be called concurrently with one another, and the
+// subscription must not be copied. Different subscriptions may be operated
+// concurrently.
+//
+// A subscription remains registered until Close is called. A caller can
+// select on Ready, call Next when it fires, and call Close when no longer
+// interested.
+type EpochSubscription[V any] struct {
+	owner  *EpochBroadcast[V]
+	epoch  *broadcastEpoch[V]
+	closed bool
+}
+
+// Subscribe creates a subscription. It starts with the next publication after
+// Subscribe acquires the broadcaster's membership lock. It does not receive a
+// publication already in progress.
+func (x *EpochBroadcast[V]) Subscribe() *EpochSubscription[V] {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+
+	if x.next == nil {
+		panic("bigbuff: epochbroadcast: must use constructor")
+	}
+	if x.subscribers == math.MaxInt32 {
+		panic("bigbuff: epochbroadcast: too many subscribers")
+	}
+
+	s := &EpochSubscription[V]{owner: x, epoch: x.next}
+	x.subscribers++
+	return s
+}
+
+// Ready returns the notification channel for the subscription's next value.
+// Once it is closed, Next can be called without waiting for publication.
+//
+// Fetch Ready again after each Next. A previously returned channel remains
+// closed and must not be used as the notification for a later value.
+//
+// Ready panics after Close.
+func (s *EpochSubscription[V]) Ready() <-chan struct{} {
+	if s.closed {
+		panic("bigbuff: epochbroadcast: subscription closed")
+	}
+	return s.epoch.ready
+}
+
+// Next waits for and receives the subscription's next value, then acknowledges
+// it to the sender before returning.
+//
+// Next panics after Close. To cancel a wait, select on Ready and a cancellation
+// channel instead of calling Next before Ready fires.
+func (s *EpochSubscription[V]) Next() V {
+	if s.closed {
+		panic("bigbuff: epochbroadcast: subscription closed")
+	}
+
+	e := s.epoch
+	<-e.ready
+
+	// The channel close publishes value and next.
+	value := e.value
+	s.epoch = e.next
+	s.owner.ack(e, true)
+	return value
+}
+
+// Close unsubscribes. It is safe to call Close more than once, but, like all
+// subscription methods, it must not run concurrently with another method on
+// the same subscription.
+//
+// If a publication is outstanding for this subscription, Close releases its
+// contribution to that publication without receiving the value.
+func (s *EpochSubscription[V]) Close() {
+	if s.closed {
+		return
+	}
+
+	x := s.owner
+	x.mu.Lock()
+	s.closed = true
+	x.subscribers--
+
+	// At most one publication can be outstanding for a subscriber: Send
+	// cannot publish another until this subscriber acknowledges the current
+	// one. If the cursor differs from next, it is that outstanding epoch.
+	e := s.epoch
+	outstanding := e != x.next
+	s.epoch = nil
+	x.mu.Unlock()
+
+	if outstanding {
+		x.ack(e, false)
+	}
+}
+
+// Send publishes value to the current subscriber snapshot and waits for each
+// member of that snapshot to receive or unsubscribe. It returns the number
+// that received the value.
+//
+// Concurrent Send calls are serialized. No ordering is promised between
+// concurrent callers before they acquire the send lock.
+//
+// As with ordinary channel sends, the caller must synchronize any subsequent
+// mutation of data reachable through value.
+func (x *EpochBroadcast[V]) Send(value V) int {
+	x.sendMu.Lock()
+	defer x.sendMu.Unlock()
+
+	x.mu.Lock()
+	if x.next == nil {
+		x.mu.Unlock()
+		panic("bigbuff: epochbroadcast: must use constructor")
+	}
+	if x.subscribers == 0 {
+		x.mu.Unlock()
+		return 0
+	}
+
+	e := x.next
+	next := newBroadcastEpoch[V]()
+	e.value = value
+	e.next = next
+	e.state.Store(uint64(x.subscribers))
+	x.next = next
+
+	// Closing under mu makes publication and membership changes linearizable:
+	// a subscriber is either in this snapshot or starts at next.
+	close(e.ready)
+
+	// The final acknowledgement signals under mu. Checking the predicate
+	// while holding mu prevents a signal from being lost before Wait.
+	for uint32(e.state.Load()) != 0 {
+		x.cond.Wait()
+	}
+	delivered := uint32(e.state.Load() >> 32)
+	x.mu.Unlock()
+
+	return int(delivered)
+}
+
+// ack removes one outstanding obligation. For a receive, adding 0xffffffff
+// simultaneously decrements the low half and, because the low half was
+// nonzero, carries one into the high half. For an unsubscribe, subtracting
+// one only decrements the low half.
+func (x *EpochBroadcast[V]) ack(e *broadcastEpoch[V], received bool) {
+	var state uint64
+	if received {
+		state = e.state.Add(uint64(math.MaxUint32))
+	} else {
+		state = e.state.Add(^uint64(0))
+	}
+
+	if uint32(state) == 0 {
+		x.mu.Lock()
+		x.cond.Signal()
+		x.mu.Unlock()
+	}
+}
+```
+
+Typical selectable use:
+
+```go
+sub := broadcaster.Subscribe()
+defer sub.Close()
+
+for {
+	select {
+	case <-ctx.Done():
+		return
+	case <-sub.Ready():
+		value := sub.Next()
+		handle(value)
+	}
+}
+```
+
+### Important characteristics and limits
+
+The design’s useful property is that **membership is represented by a count and each subscriber’s epoch cursor**, rather than a central collection of subscribers. A publisher can therefore take a snapshot and notify it without enumerating its members. A subscriber’s cursor also tells `Close` whether it owes an acknowledgement, including when unsubscription races publication.
+
+The shared acknowledgement word is still a contention point, and closing a channel wakes all waiting subscribers at once. Consequently, this is not automatically faster at large fan-out; scheduler behavior, cache-line contention, payload size, and subscriber work matter. It also intentionally provides synchronous backpressure rather than buffering or dropping messages.
+
+Before adopting it, I’d run race-enabled stress tests for publication versus subscribe/close, consecutive sends, and concurrent senders, and benchmark allocations and latency across subscriber counts and churn rates. The allocation description above is a design expectation, not a measured Go runtime guarantee.
