@@ -16,6 +16,7 @@ func FuzzScenarioBroadcast(f *testing.F) {
 	f.Add([]byte{0, 1, 2, 3, 4, 1, 2})
 	f.Add([]byte{1, 1, 1, 0, 2, 4})
 	f.Add([]byte{3, 2, 1, 0, 4, 4, 1})
+	f.Add([]byte("\x00\x01\x02te"))
 	f.Fuzz(func(t *testing.T, ops []byte) {
 		if len(ops) == 0 || len(ops) > 24 {
 			return
