@@ -2,56 +2,6 @@
 
 N.B. If you're reading this as a gist it is also an actual [repository](https://github.com/joeycumines/ai-attempting-novel-useful-concurrency).
 
-## Extraction status (integration tracker)
-
-Responses 21-58 have extracted sources and integration wiring. This tracker
-distinguishes source extraction from project integration: implementations are
-registered in the relevant harnesses, represented by scenarios/cases/attachments,
-and covered by meaningful tests/fuzz/benchmarks where applicable. Documented
-exposure limits remain where the source semantics cannot satisfy a facet. See
-`AGENTS.md`, `extraction_audit.md`, and provenance comments for the repair policy.
-
-| Response | Implementation | Source file(s) | Current state |
-|---|---|---|---|
-| 21 | `Carillon` | `carillon.go` | adapter + broadcast scenario attachments; focused tests/benchmarks |
-| 22 | `ChanPubSubPacked` | `chanpubsub_packed.go` | adapter + lockstep attachment; focused tests |
-| 23 | `SeqCaster23Meta`, `AdaptiveCaster23Meta` | `seqcaster_23_meta.go`, `chancaster_23_meta.go` | `SeqCaster` adapter + loss scenario, loss/close/redirect tests and send benchmark; adaptive focused test |
-| 24 | `QueuedFanout24Meta` | `queuedfanout_24_meta.go` | Extracted and wired to nonblocking unbounded overflow with `BaselineQueuedFanout`; repaired concurrent per-producer FIFO admission and withdrawal backlog drain; focused tests, FIFO fuzz, mailbox/overflow benchmarks. |
-| 25 | `SenseCaster` | `sensecaster.go` | adapter + lockstep attachment; focused tests/benchmarks |
-| 26 | `ChanRing26Kimi` | `chanring_26_kimi.go` | adapter + lossy-ring attachment; focused tests |
-| 27 | `Multicast27Mistral` | `multicast_27_mistral.go` | eager-subscription adapter + synchronous-handoff attachment; focused tests |
-| 28 | `Broadcast28Flint` | `broadcast_28_flint.go` | adapter + synchronous-handoff attachment; source-level validation only |
-| 29 | `Relay29Nemotron` | `relay_29_nemotron.go` | adapter + lossy-ring attachment; source-level validation only |
-| 30 | `Arcadia` | `arcadia_30_dots3.go` | adapter + lossy-ring attachment; probe test passed, repository-specific test still outstanding |
-| 31 | `Vecast` | `vecast_31_nemotron.go` | adapter + synchronous-handoff attachment; probe test passed, repository-specific test still outstanding |
-| 32 | `StableRing32Nano` | `stablering_32_nano.go` | Extracted and wired to bounded competing-consumer overflow with `BaselineBoundedScatterQueue`; exact eviction tests/fuzz/admission benchmark. Explicit poor-fit attachment for work-distribution scatter. |
-| 33 | `ChanMulticast33North` | `chanmulticast_33_north.go` | adapter + handoff attachment; probe test passed, repository-specific test still outstanding |
-| 34 | `ChanMultiCast34Lightning` | `chanmulticast_34_lightning.go` | exposure-limited adapter + focused test; churn excluded because removal can deadlock behind Send |
-| 35 | `ChanPubSub35ChatJimmy` | `chanpubsub_35_chatjimmy.go` | caster-family registration + single-receiver acknowledged facet; explicit no-churn/identity exposure limit |
-| 36 | `ShardCaster36Meta` | `shardcaster_36_meta.go` | adapter + synchronous-handoff attachment; direct unsubscribe/send tests; node pooling removed to prevent stale snapshot reuse |
-| 37 | `SelectCaster37Gemini` | `selectcaster_37_gemini.go` | adapter + latest attachment; policy and concurrent Subscribe/Close tests; membership mutex added while Send remains lock-free |
-| 38 | `SelectFanout` | `selectfanout.go` | Unified adapter + synchronous-handoff/churn/lifecycle/edge attachments; cancellation/close and churn benchmark coverage. |
-| 39 | `ShardCast39Mistral` | `shardcast_39_mistral.go` | latest-policy adapter + latest attachment; drop/latest/close tests |
-| 40 | `SlabCaster40Gemini` | `slabcaster_40_gemini.go` | DropOldest-only exposure-limited adapter + latest attachment; policy tests; concurrent slot lifecycle excluded |
-| 41 | `EpochCast41Sonnet` | `epochcast_41_sonnet.go` | lossy adapter + bounded-ring attachment; lossless/lossy/cancel/close tests |
-| 42 | `Broadcast42Spark` | `broadcast_42_spark.go` | adapter + bounded-ring attachment; batch/replay/overrun/close tests |
-| 43 | `SlotPubSub43Grok` | `slotpubsub_43_grok.go` | exposure-limited lockstep adapter + acknowledgement attachment; deterministic fan-out test |
-| 44 | `PhantomCast44Qwen` | `phantomcast_44_qwen.go` | repaired atomic-version ring + adapter + bounded-ring attachment; cursor/loss/wide-payload/close tests |
-| 45 | `Fanout`, `RingFanout` | `fanout.go`, `ringfanout.go` | Unified sync/buffered Fanout and RingFanout adapters; handoff/backpressure/bounded-ring/replay/churn/lifecycle/edge attachments; replay repair and shared coverage. |
-| 46 | `ChanHub46Grok` | `chanhub_46_grok.go` | cursor-ring adapter + buffered/churn/lifecycle/zero-subscriber attachments; atomic payload/closure/cursor repair; focused backpressure/close tests; shared broadcast fuzz + benchmark |
-| 47 | `ChanCaster47Gemini`, `ChanPubSub47Gemini`, `ChanRing47Gemini` | `chancaster_47_gemini.go`, `chanpubsub_47_gemini.go`, `chanring_47_gemini.go` | caster + broadcaster adapters; lockstep, buffered, churn, cancellation, and edge attachments; direct tests/benchmarks + shared fuzz; repaired pong/cancellation accounting, serialized iterator cleanup, and removed racy slot clearing (payload retention bounded by capacity). Local probes observed nonzero allocations for both pub/sub and ring sends, so the response's zero-allocation claims are not treated as verified. |
-| 48 | `WatchCaster48Grok` | `watchcaster_48_grok.go` | latest-watch adapter + latest/churn/edge attachments; coherent-snapshot, nil-payload, multi-observer wake tests; benchmark + shared fuzz. Replaced the non-broadcast cap-1 signal and split value/generation atomics with a rotating close-notify channel and locked snapshot; measured 1 alloc/send, so zero-allocation claim is not verified. |
-| 49 | `SelectBroadcaster49Qwen` | `selectbroadcaster_49_qwen.go` | latest/churn/edge attachments plus explicit bad-fit attachment to detectable-loss scenario (no loss counter); immutable epochs, sequence-stamped slots, eager subscription point; overrun/multi-observer/state tests + terminal-checked benchmark + shared fuzz. One-shot benchmark observed 3 allocs/send; no zero-allocation claim accepted. |
-| 50 | `GenPubSub50Meta` | `genpubsub_50_meta.go` | Completed the disconnected generation-wait design into a runnable namespaced implementation; repaired pre-ping round arming versus parity epoch identity and added a same-round Done gate. Wired to lockstep/churn/lifecycle/edge with send benchmark; measured 1 alloc/Send. |
-| 51 | `ChanReplay51DeepSeek` | `chanreplay_51_deepseek.go` | lockstep/live adapter + new bounded-catch-up scenario with `BaselineBoundedReplay`; synchronized replay/live-boundary test, churn/edge/lifecycle coverage, snapshot + live-send benchmarks, shared fuzz. Bounded retention is evaluated separately from the unbounded-history scenario; one-shot probes observed nonzero allocations, so the source’s zero-allocation claim is not verified. |
-| 52 | `ChanCascade52Opus` | `chancascade_52_opus.go` | Namespaced cooperative two-phase relay; fixed disabled-instance `Subscribe` contract gap; wired to synchronous handoff with exact fan-out, active-round join/withdraw tests, fuzz/harness/churn, and warmed direct send benchmark (observed 0 allocs/op for the measured Send loop). Continue adversarial lifecycle review with later batches. |
-| 53 | `ReplayCast53Gpt6Sol` | `replaycast_53_gpt6sol.go` | Bounded lossy ring + generation signal wired to bounded-ring and large-fanout scenarios; exact-missed-count model/fuzz, zero-subscriber/close/concurrent-publisher tests, adapter lifecycle/churn, direct publish benchmark. Fixed a zero-value guard race found by `-race`; active Publish measured 1 alloc/op (112 B/op), consistent with the one-notification-channel design. |
-| 54 | `EpochBroadcast54Terra` | `epochbroadcast_54_terra.go` | Selectable epoch notification + receipt barrier integrated into lockstep, churn, zero-subscriber, lifecycle (per-subscription only; no hub Close), and large-fanout (explicit poor-fit measurement). Added membership-boundary/mid-send withdrawal tests and direct benchmark; focused race passed, warmed 8-subscriber probe observed 2 allocs/op. |
-| 55 | `RingCaster55Haiku` | `ringcaster_55_haiku.go` | Immutable slab cells + caller-owned cursors wired to bounded-ring, large-fanout, churn, zero-subscriber, lifecycle; direct no-sleep Arm/recheck/Close test, concurrent publication, exact resume/lap accounting, allocation assertions, and ring-model fuzz/bench. Repaired resume-gap accounting, lapping that skipped still-retained cells, zero-value errors, late Arm-after-Close, and uint64 sequence wrap. Full tests/vet, focused race and fuzz passed; direct probes: slab allocation 1/256 values, TryRecv 0 allocs. |
-| 56 | `Fanout56MaiCode` | `fanout_56_maicode.go` | Namespaced COW subscriber-slice fan-out attached to buffered backpressure, churn, zero-subscriber, lifecycle (sub-close only), and explicitly poor-fit lockstep/large-fanout reports. Added per-sub send/close exclusion and serialized Send order to honor no-post-Close delivery and consistent subscriber ordering; full tests/vet and focused race passed. Warmed 8-subscriber send measured 0 allocs/op. |
-| 57 | `ChanPubSub57DeepSeek` | `chanpubsub_57_deepseek.go` | Namespaced phase-gated shared-channel pub/sub with an atomic acknowledgement plane and one-slot final-ack notification; retains ChanCaster withdrawal protocol. Adapter/harness/scenario attachments, direct tests, model-free shared fuzz, and eight-subscriber benchmark added. `go vet ./...`, `go test ./...`, shared FuzzScenarioBroadcast, focused race tests (direct x10 and churn/TryReceive x3) pass. Direct Send benchmark: 0 allocs/op. No hub-wide Close exists; lifecycle is explicitly cancellation/unsubscribe only. |
-| 58 | `ChanCaster58Spark`, `ChanPubSub58Spark`, `Broadcaster58Spark` | `chancaster_58_spark.go`, `chanpubsub_58_spark.go`, `broadcaster_58_spark.go` | All three designs extracted and wired. PubSub uses a same-round Done gate (1 alloc/Send measured); caster TryRecv steal-block documented; broadcaster ring model fuzz/wide-payload/send benchmark. |
-
 ## Introduction
 
 This gist contains a single ad-hoc benchmark and results for a prompt I found particularly interesting.
@@ -145,3 +95,50 @@ In cases where there were individual files attached, they are encoded as a txtar
 - [56-github-cloud-mai-code-1.1-flash-high.md](56-github-cloud-mai-code-1.1-flash-high.md)
 - [57-arena-deepseek-v4.1-flash-high-prompt-safe.md](57-arena-deepseek-v4.1-flash-high-prompt-safe.md)
 - [58-arena-muse-spark-1.3-xhigh-prompt-safe.md](58-arena-muse-spark-1.3-xhigh-prompt-safe.md)
+
+## Extraction status (integration tracker)
+
+This tracker distinguishes source extraction from project integration: implementations are registered in the relevant harnesses, represented by scenarios/cases/attachments, and covered by meaningful tests/fuzz/benchmarks where applicable.
+Documented exposure limits remain where the source semantics cannot satisfy a facet.
+See also `AGENTS.md` for the repair policy.
+
+| Response | Implementation | Source file(s) | Current state |
+|---|---|---|---|
+| 21 | `Carillon` | `carillon.go` | adapter + broadcast scenario attachments; focused tests/benchmarks |
+| 22 | `ChanPubSubPacked` | `chanpubsub_packed.go` | adapter + lockstep attachment; focused tests |
+| 23 | `SeqCaster23Meta`, `AdaptiveCaster23Meta` | `seqcaster_23_meta.go`, `chancaster_23_meta.go` | `SeqCaster` adapter + loss scenario, loss/close/redirect tests and send benchmark; adaptive focused test |
+| 24 | `QueuedFanout24Meta` | `queuedfanout_24_meta.go` | Extracted and wired to nonblocking unbounded overflow with `BaselineQueuedFanout`; repaired concurrent per-producer FIFO admission and withdrawal backlog drain; focused tests, FIFO fuzz, mailbox/overflow benchmarks. |
+| 25 | `SenseCaster` | `sensecaster.go` | adapter + lockstep attachment; focused tests/benchmarks |
+| 26 | `ChanRing26Kimi` | `chanring_26_kimi.go` | adapter + lossy-ring attachment; focused tests |
+| 27 | `Multicast27Mistral` | `multicast_27_mistral.go` | eager-subscription adapter + synchronous-handoff attachment; focused tests |
+| 28 | `Broadcast28Flint` | `broadcast_28_flint.go` | adapter + synchronous-handoff attachment; source-level validation only |
+| 29 | `Relay29Nemotron` | `relay_29_nemotron.go` | adapter + lossy-ring attachment; source-level validation only |
+| 30 | `Arcadia` | `arcadia_30_dots3.go` | adapter + lossy-ring attachment; probe test passed, repository-specific test still outstanding |
+| 31 | `Vecast` | `vecast_31_nemotron.go` | adapter + synchronous-handoff attachment; probe test passed, repository-specific test still outstanding |
+| 32 | `StableRing32Nano` | `stablering_32_nano.go` | Extracted and wired to bounded competing-consumer overflow with `BaselineBoundedScatterQueue`; exact eviction tests/fuzz/admission benchmark. Explicit poor-fit attachment for work-distribution scatter. |
+| 33 | `ChanMulticast33North` | `chanmulticast_33_north.go` | adapter + handoff attachment; probe test passed, repository-specific test still outstanding |
+| 34 | `ChanMultiCast34Lightning` | `chanmulticast_34_lightning.go` | exposure-limited adapter + focused test; churn excluded because removal can deadlock behind Send |
+| 35 | `ChanPubSub35ChatJimmy` | `chanpubsub_35_chatjimmy.go` | caster-family registration + single-receiver acknowledged facet; explicit no-churn/identity exposure limit |
+| 36 | `ShardCaster36Meta` | `shardcaster_36_meta.go` | adapter + synchronous-handoff attachment; direct unsubscribe/send tests; node pooling removed to prevent stale snapshot reuse |
+| 37 | `SelectCaster37Gemini` | `selectcaster_37_gemini.go` | adapter + latest attachment; policy and concurrent Subscribe/Close tests; membership mutex added while Send remains lock-free |
+| 38 | `SelectFanout` | `selectfanout.go` | Unified adapter + synchronous-handoff/churn/lifecycle/edge attachments; cancellation/close and churn benchmark coverage. |
+| 39 | `ShardCast39Mistral` | `shardcast_39_mistral.go` | latest-policy adapter + latest attachment; drop/latest/close tests |
+| 40 | `SlabCaster40Gemini` | `slabcaster_40_gemini.go` | DropOldest-only exposure-limited adapter + latest attachment; policy tests; concurrent slot lifecycle excluded |
+| 41 | `EpochCast41Sonnet` | `epochcast_41_sonnet.go` | lossy adapter + bounded-ring attachment; lossless/lossy/cancel/close tests |
+| 42 | `Broadcast42Spark` | `broadcast_42_spark.go` | adapter + bounded-ring attachment; batch/replay/overrun/close tests |
+| 43 | `SlotPubSub43Grok` | `slotpubsub_43_grok.go` | exposure-limited lockstep adapter + acknowledgement attachment; deterministic fan-out test |
+| 44 | `PhantomCast44Qwen` | `phantomcast_44_qwen.go` | repaired atomic-version ring + adapter + bounded-ring attachment; cursor/loss/wide-payload/close tests |
+| 45 | `Fanout`, `RingFanout` | `fanout.go`, `ringfanout.go` | Unified sync/buffered Fanout and RingFanout adapters; handoff/backpressure/bounded-ring/replay/churn/lifecycle/edge attachments; replay repair and shared coverage. |
+| 46 | `ChanHub46Grok` | `chanhub_46_grok.go` | cursor-ring adapter + buffered/churn/lifecycle/zero-subscriber attachments; atomic payload/closure/cursor repair; focused backpressure/close tests; shared broadcast fuzz + benchmark |
+| 47 | `ChanCaster47Gemini`, `ChanPubSub47Gemini`, `ChanRing47Gemini` | `chancaster_47_gemini.go`, `chanpubsub_47_gemini.go`, `chanring_47_gemini.go` | caster + broadcaster adapters; lockstep, buffered, churn, cancellation, and edge attachments; direct tests/benchmarks + shared fuzz; repaired pong/cancellation accounting, serialized iterator cleanup, and removed racy slot clearing (payload retention bounded by capacity). Local probes observed nonzero allocations for both pub/sub and ring sends, so the response's zero-allocation claims are not treated as verified. |
+| 48 | `WatchCaster48Grok` | `watchcaster_48_grok.go` | latest-watch adapter + latest/churn/edge attachments; coherent-snapshot, nil-payload, multi-observer wake tests; benchmark + shared fuzz. Replaced the non-broadcast cap-1 signal and split value/generation atomics with a rotating close-notify channel and locked snapshot; measured 1 alloc/send, so zero-allocation claim is not verified. |
+| 49 | `SelectBroadcaster49Qwen` | `selectbroadcaster_49_qwen.go` | latest/churn/edge attachments plus explicit bad-fit attachment to detectable-loss scenario (no loss counter); immutable epochs, sequence-stamped slots, eager subscription point; overrun/multi-observer/state tests + terminal-checked benchmark + shared fuzz. One-shot benchmark observed 3 allocs/send; no zero-allocation claim accepted. |
+| 50 | `GenPubSub50Meta` | `genpubsub_50_meta.go` | Completed the disconnected generation-wait design into a runnable namespaced implementation; repaired pre-ping round arming versus parity epoch identity and added a same-round Done gate. Wired to lockstep/churn/lifecycle/edge with send benchmark; measured 1 alloc/Send. |
+| 51 | `ChanReplay51DeepSeek` | `chanreplay_51_deepseek.go` | lockstep/live adapter + new bounded-catch-up scenario with `BaselineBoundedReplay`; synchronized replay/live-boundary test, churn/edge/lifecycle coverage, snapshot + live-send benchmarks, shared fuzz. Bounded retention is evaluated separately from the unbounded-history scenario; one-shot probes observed nonzero allocations, so the source’s zero-allocation claim is not verified. |
+| 52 | `ChanCascade52Opus` | `chancascade_52_opus.go` | Namespaced cooperative two-phase relay; fixed disabled-instance `Subscribe` contract gap; wired to synchronous handoff with exact fan-out, active-round join/withdraw tests, fuzz/harness/churn, and warmed direct send benchmark (observed 0 allocs/op for the measured Send loop). Continue adversarial lifecycle review with later batches. |
+| 53 | `ReplayCast53Gpt6Sol` | `replaycast_53_gpt6sol.go` | Bounded lossy ring + generation signal wired to bounded-ring and large-fanout scenarios; exact-missed-count model/fuzz, zero-subscriber/close/concurrent-publisher tests, adapter lifecycle/churn, direct publish benchmark. Fixed a zero-value guard race found by `-race`; active Publish measured 1 alloc/op (112 B/op), consistent with the one-notification-channel design. |
+| 54 | `EpochBroadcast54Terra` | `epochbroadcast_54_terra.go` | Selectable epoch notification + receipt barrier integrated into lockstep, churn, zero-subscriber, lifecycle (per-subscription only; no hub Close), and large-fanout (explicit poor-fit measurement). Added membership-boundary/mid-send withdrawal tests and direct benchmark; focused race passed, warmed 8-subscriber probe observed 2 allocs/op. |
+| 55 | `RingCaster55Haiku` | `ringcaster_55_haiku.go` | Immutable slab cells + caller-owned cursors wired to bounded-ring, large-fanout, churn, zero-subscriber, lifecycle; direct no-sleep Arm/recheck/Close test, concurrent publication, exact resume/lap accounting, allocation assertions, and ring-model fuzz/bench. Repaired resume-gap accounting, lapping that skipped still-retained cells, zero-value errors, late Arm-after-Close, and uint64 sequence wrap. Full tests/vet, focused race and fuzz passed; direct probes: slab allocation 1/256 values, TryRecv 0 allocs. |
+| 56 | `Fanout56MaiCode` | `fanout_56_maicode.go` | Namespaced COW subscriber-slice fan-out attached to buffered backpressure, churn, zero-subscriber, lifecycle (sub-close only), and explicitly poor-fit lockstep/large-fanout reports. Added per-sub send/close exclusion and serialized Send order to honor no-post-Close delivery and consistent subscriber ordering; full tests/vet and focused race passed. Warmed 8-subscriber send measured 0 allocs/op. |
+| 57 | `ChanPubSub57DeepSeek` | `chanpubsub_57_deepseek.go` | Namespaced phase-gated shared-channel pub/sub with an atomic acknowledgement plane and one-slot final-ack notification; retains ChanCaster withdrawal protocol. Adapter/harness/scenario attachments, direct tests, model-free shared fuzz, and eight-subscriber benchmark added. `go vet ./...`, `go test ./...`, shared FuzzScenarioBroadcast, focused race tests (direct x10 and churn/TryReceive x3) pass. Direct Send benchmark: 0 allocs/op. No hub-wide Close exists; lifecycle is explicitly cancellation/unsubscribe only. |
+| 58 | `ChanCaster58Spark`, `ChanPubSub58Spark`, `Broadcaster58Spark` | `chancaster_58_spark.go`, `chanpubsub_58_spark.go`, `broadcaster_58_spark.go` | All three designs extracted and wired. PubSub uses a same-round Done gate (1 alloc/Send measured); caster TryRecv steal-block documented; broadcaster ring model fuzz/wide-payload/send benchmark. |
