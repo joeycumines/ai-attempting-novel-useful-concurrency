@@ -55,6 +55,9 @@ func BenchmarkScenarioBroadcast(b *testing.B) {
 func BenchmarkScenarioCaster(b *testing.B) {
 	for _, a := range casterAttachments {
 		b.Run(a.Impl, func(b *testing.B) {
+			if a.ExposureLimited {
+				b.Skip("exposure-limited attachment has no safe representative multi-receiver benchmark")
+			}
 			mk := casterLikes()[a.Impl]
 			x := mk()
 			const receivers = 8
@@ -63,10 +66,18 @@ func BenchmarkScenarioCaster(b *testing.B) {
 			for r := 0; r < receivers; r++ {
 				go func() {
 					defer func() { done <- struct{}{} }()
-					for {
+					if !x.rearmEach {
 						x.add(1)
+					}
+					for {
+						if x.rearmEach {
+							x.add(1)
+						}
 						select {
 						case <-x.c:
+							if x.ack != nil {
+								x.ack()
+							}
 						case <-stop:
 							x.add(-1)
 							return
