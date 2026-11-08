@@ -47,7 +47,7 @@ provenance comments in extracted source files for the repair policy.
 | 52 | `ChanCascade52Opus` | `chancascade_52_opus.go` | Namespaced cooperative two-phase relay; fixed disabled-instance `Subscribe` contract gap; wired to synchronous handoff with exact fan-out, active-round join/withdraw tests, fuzz/harness/churn, and warmed direct send benchmark (observed 0 allocs/op for the measured Send loop). Continue adversarial lifecycle review with later batches. |
 | 53 | `ReplayCast53Gpt6Sol` | `replaycast_53_gpt6sol.go` | Bounded lossy ring + generation signal wired to bounded-ring and large-fanout scenarios; exact-missed-count model/fuzz, zero-subscriber/close/concurrent-publisher tests, adapter lifecycle/churn, direct publish benchmark. Fixed a zero-value guard race found by `-race`; active Publish measured 1 alloc/op (112 B/op), consistent with the one-notification-channel design. |
 | 54 | `EpochBroadcast54Terra` | `epochbroadcast_54_terra.go` | Selectable epoch notification + receipt barrier integrated into lockstep, churn, zero-subscriber, lifecycle (per-subscription only; no hub Close), and large-fanout (explicit poor-fit measurement). Added membership-boundary/mid-send withdrawal tests and direct benchmark; focused race passed, warmed 8-subscriber probe observed 2 allocs/op. |
-| 55 | `RingCaster` | — | not integrated |
+| 55 | `RingCaster55Haiku` | `ringcaster_55_haiku.go` | Immutable slab cells + caller-owned cursors wired to bounded-ring, large-fanout, churn, zero-subscriber, lifecycle; direct no-sleep Arm/recheck/Close test, concurrent publication, exact resume/lap accounting, allocation assertions, and ring-model fuzz/bench. Repaired resume-gap accounting, lapping that skipped still-retained cells, zero-value errors, late Arm-after-Close, and uint64 sequence wrap. Full tests/vet, focused race and fuzz passed; direct probes: slab allocation 1/256 values, TryRecv 0 allocs. |
 | 56 | `Fanout56MaiCode` | — | not integrated |
 | 57 | `ChanPubSub57DeepSeek` | — | not integrated |
 | 58 | `Broadcaster58Spark` | — | not integrated |
@@ -87,7 +87,7 @@ The tools available, especially the presence of a sandbox, search engine, and (i
 
 In cases where there were individual files attached, they are encoded as a txtar down the bottom of the markdown, in a code block or similar.
 
-**Integration progress:** responses 46–49 and 51–54 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with responses 55–58 and the remaining tracker follow-ups.
+**Integration progress:** responses 46–49 and 51–55 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with responses 56–58 and the remaining tracker follow-ups.
 
 - [03-chatgpt-1.md](03-chatgpt-1.md)
 - [04-deepseek-v4.1-flash-chat.md](04-deepseek-v4.1-flash-chat.md)
