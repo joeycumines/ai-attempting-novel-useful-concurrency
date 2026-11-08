@@ -12,6 +12,12 @@ root. This is intentional — the repository is kept in sync with a gist that
 was published from this layout. Do not introduce packages, subdirectories or
 a module restructure, however tidier they might seem.
 
+## Make and build
+
+Build and automation tooling must use modular, composable GNU Make (4.0+) following best practices: all module makefiles (such as `go.mk`) must reside directly at the repository root due to the flat-gist constraint, use target prefixes (e.g., `go.`) to avoid collisions, and compose into root standard GNU targets (`all`, `check`, `clean`).
+The root Makefile must establish `PROJECT_ROOT` before any includes to anchor path resolution, tool execution, and recursive makes across modules per the monorepo example.
+User-specific and project configuration must remain cleanly overrideable via `config.mk`, supporting configurable defaults such as test timeouts while preserving easy composition.
+
 ## Terminology: scenarios, cases, attachments, baselines
 
 Coverage is organised around four concepts; use these words precisely and do
