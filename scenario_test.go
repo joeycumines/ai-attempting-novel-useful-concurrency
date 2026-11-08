@@ -166,6 +166,9 @@ var Cases = []Case{
 	{"lockstep/test/ordered-ack-fanout", "lockstep-barrier-lossless", CaseTest, "Ordered fan-out with ack barrier, 4 subscribers x 20 values", "TestScenarioBroadcast"},
 	{"lockstep/bench/fanout", "lockstep-barrier-lossless", CaseBenchmark, "Publish throughput at 8 subscribers", "BenchmarkScenarioBroadcast"},
 	{"lockstep/fuzz/op-stream", "lockstep-barrier-lossless", CaseFuzz, "Randomised subscribe/publish/receive/unsubscribe stream", "FuzzScenarioBroadcast"},
+	{"epochbroadcast/test/fanout-count", "lockstep-barrier-lossless", CaseTest, "Eight cursors receive each value before Send returns", "TestEpochBroadcast54Fanout"},
+	{"epochbroadcast/test/join-withdraw", "lockstep-barrier-lossless", CaseTest, "Join at epoch boundary and release an outstanding obligation by unsubscribe", "TestEpochBroadcast54MembershipAndUnsubscribe"},
+	{"epochbroadcast/bench/send", "lockstep-barrier-lossless", CaseBenchmark, "Eight-subscriber epoch publication and receive acknowledgement", "BenchmarkEpochBroadcast54Send"},
 	{"cast/test/steady-and-churn", "rendezvous-cast-no-ack", CaseTest, "Caster steady + churn stress (return == actual receives)", "TestScenarioCaster"},
 	{"cast/bench/rendezvous", "rendezvous-cast-no-ack", CaseBenchmark, "Rendezvous cost at 8 receivers", "BenchmarkScenarioCaster"},
 	{"cast/fuzz/op-stream", "rendezvous-cast-no-ack", CaseFuzz, "Randomised add/send/withdraw stream", "FuzzScenarioCasterScatterGather"},
@@ -388,6 +391,7 @@ var broadcastAttachments = []Attachment{
 	attX("large-fanout-scalability", bGenCaster, "O(1) publish (one alloc + one close) at any fan-out.", true, "Exposure limited: no Close and unbounded retention; fan-out facets bound volume and never close."),
 	att("large-fanout-scalability", bEpochTape, "Shared-tape broadcast at fan-out.", true),
 	att("large-fanout-scalability", bChanRelay, "Registry-sweep broadcast at fan-out.", true),
+	att("large-fanout-scalability", "EpochBroadcast54Terra (54-GPT-6.1-Terra)", "Correct lossless handoff, but the per-publication barrier waits for every receiver and is deliberately measured as a poor fit for high-fan-out, nonblocking notification workloads.", false),
 
 	// cancellation-and-close-lifecycle
 	att("cancellation-and-close-lifecycle", bBaselineFan, "Vacuum baseline: Close is idempotent and closes subscriber channels.", true),

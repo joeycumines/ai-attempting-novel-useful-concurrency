@@ -572,6 +572,10 @@ func extractedBroadcastAttachments() []Attachment {
 		att("zero-subscriber-and-edge-lifecycle", "WatchCaster48Grok (48-Grok)", "Send is independent of observer count; each observer begins at the current generation and observes later updates only.", true),
 		att("lockstep-barrier-lossless", "ChanReplay51DeepSeek (51-DeepSeek)", "The response-51 extension preserves synchronous receive acknowledgements for live subscribers while retaining a bounded history for late joins.", true),
 		att("synchronous-handoff-no-barrier", "ChanCascade52Opus (52-ClaudeOpus)", "Two phase-alternating unbuffered transports carry cooperative relays; Send waits for all receipt/relay handoffs, but not for application processing after Received.", true),
+		att("lockstep-barrier-lossless", "EpochBroadcast54Terra (54-GPT-6.1-Terra)", "Every subscriber in the membership snapshot receives each value before Send returns; Close of an outstanding subscription releases its share without counting delivery.", true),
+		att("ephemeral-churn-membership", "EpochBroadcast54Terra (54-GPT-6.1-Terra)", "Membership is a locked count rather than a subscriber registry; independent subscription cursors can join or close around publication snapshots.", true),
+		att("zero-subscriber-and-edge-lifecycle", "EpochBroadcast54Terra (54-GPT-6.1-Terra)", "Send with no registered subscriptions returns zero without allocating an epoch; later subscriptions participate only in later sends.", true),
+		attX("cancellation-and-close-lifecycle", "EpochBroadcast54Terra (54-GPT-6.1-Terra)", "Per-subscription Close and context cancellation release an outstanding receive obligation.", false, "The primitive has no broadcaster-wide Close; lifecycle facets exercise per-subscription cancellation only, and the adapter's Close is intentionally a no-op."),
 		att("bounded-ring-lossy-detectable", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "O(1)-with-fanout sequence ring retains bounded history; each Next reports exact overwritten publications while Publish only replaces one shared generation signal.", true),
 		att("large-fanout-scalability", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "Publication does not sweep subscriber state; a shared generation notification wakes independently paced cursors, with scheduling work paid by actual awakened readers.", true),
 		att("ephemeral-churn-membership", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "Subscriptions own independent cursors and Done channels; attach/detach does not mutate publication fan-out work.", true),
@@ -722,5 +726,55 @@ func (s *replayCast53Sub) TryReceive() (int, bool) {
 func (s *replayCast53Sub) Unsubscribe() {
 	if s.sub != nil && s.unsubscribed.CompareAndSwap(false, true) {
 		s.sub.Unsubscribe()
+	}
+}
+
+type epochBroadcast54Adapter struct{ x *EpochBroadcast54Terra[int] }
+
+func newEpochBroadcast54Adapter() Broadcaster {
+	return &epochBroadcast54Adapter{x: NewEpochBroadcast54Terra[int]()}
+}
+func (a *epochBroadcast54Adapter) Name() string       { return "EpochBroadcast54Terra (54-GPT-6.1-Terra)" }
+func (a *epochBroadcast54Adapter) Publish(v int) int  { return a.x.Send(v) }
+func (a *epochBroadcast54Adapter) Close()             {} // this primitive has no broadcaster-wide Close
+func (a *epochBroadcast54Adapter) IsCoalescing() bool { return false }
+func (a *epochBroadcast54Adapter) Subscribe() BroadcastSubscriber {
+	return &epochBroadcast54Sub{sub: a.x.Subscribe()}
+}
+
+type epochBroadcast54Sub struct {
+	sub    *EpochSubscription54Terra[int]
+	closed bool
+}
+
+func (s *epochBroadcast54Sub) Receive(ctx context.Context) (int, bool) {
+	if s.closed {
+		return 0, false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return 0, false
+	case <-s.sub.Ready():
+		return s.sub.Next(), true
+	}
+}
+func (s *epochBroadcast54Sub) TryReceive() (int, bool) {
+	if s.closed {
+		return 0, false
+	}
+	select {
+	case <-s.sub.Ready():
+		return s.sub.Next(), true
+	default:
+		return 0, false
+	}
+}
+func (s *epochBroadcast54Sub) Unsubscribe() {
+	if !s.closed {
+		s.closed = true
+		s.sub.Close()
 	}
 }
