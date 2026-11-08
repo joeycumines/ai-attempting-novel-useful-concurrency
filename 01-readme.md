@@ -45,7 +45,7 @@ provenance comments in extracted source files for the repair policy.
 | 50 | `GenPubSub` | — | assessed: response is design prose plus disconnected snippets, not a complete implementation; its claimed no-`Done` unsubscribe accounting and two-generation WaitGroup reuse do not establish correct participant pairing/reuse. Revisit against response 57; no runnable source claimed. |
 | 51 | `ChanReplay51DeepSeek` | `chanreplay_51_deepseek.go` | lockstep/live adapter + new bounded-catch-up scenario with `BaselineBoundedReplay`; synchronized replay/live-boundary test, churn/edge/lifecycle coverage, snapshot + live-send benchmarks, shared fuzz. Bounded retention is evaluated separately from the unbounded-history scenario; one-shot probes observed nonzero allocations, so the source’s zero-allocation claim is not verified. |
 | 52 | `ChanCascade52Opus` | `chancascade_52_opus.go` | Namespaced cooperative two-phase relay; fixed disabled-instance `Subscribe` contract gap; wired to synchronous handoff with exact fan-out, active-round join/withdraw tests, fuzz/harness/churn, and warmed direct send benchmark (observed 0 allocs/op for the measured Send loop). Continue adversarial lifecycle review with later batches. |
-| 53 | `ReplayCast` | — | not integrated |
+| 53 | `ReplayCast53Gpt6Sol` | `replaycast_53_gpt6sol.go` | Bounded lossy ring + generation signal wired to bounded-ring and large-fanout scenarios; exact-missed-count model/fuzz, zero-subscriber/close/concurrent-publisher tests, adapter lifecycle/churn, direct publish benchmark. Fixed a zero-value guard race found by `-race`; active Publish measured 1 alloc/op (112 B/op), consistent with the one-notification-channel design. |
 | 54 | `EpochBroadcast` | — | not integrated |
 | 55 | `RingCaster` | — | not integrated |
 | 56 | `Fanout56MaiCode` | — | not integrated |
@@ -87,7 +87,7 @@ The tools available, especially the presence of a sandbox, search engine, and (i
 
 In cases where there were individual files attached, they are encoded as a txtar down the bottom of the markdown, in a code block or similar.
 
-**Integration progress:** responses 46–49 and 51–52 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with responses 53–58 and the remaining tracker follow-ups.
+**Integration progress:** responses 46–49 and 51–53 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with responses 54–58 and the remaining tracker follow-ups.
 
 - [03-chatgpt-1.md](03-chatgpt-1.md)
 - [04-deepseek-v4.1-flash-chat.md](04-deepseek-v4.1-flash-chat.md)

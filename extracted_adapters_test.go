@@ -2,8 +2,10 @@ package bigbuff
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"sync"
+	"sync/atomic"
 )
 
 // Adapters for extracted response implementations. These intentionally adapt
@@ -570,6 +572,11 @@ func extractedBroadcastAttachments() []Attachment {
 		att("zero-subscriber-and-edge-lifecycle", "WatchCaster48Grok (48-Grok)", "Send is independent of observer count; each observer begins at the current generation and observes later updates only.", true),
 		att("lockstep-barrier-lossless", "ChanReplay51DeepSeek (51-DeepSeek)", "The response-51 extension preserves synchronous receive acknowledgements for live subscribers while retaining a bounded history for late joins.", true),
 		att("synchronous-handoff-no-barrier", "ChanCascade52Opus (52-ClaudeOpus)", "Two phase-alternating unbuffered transports carry cooperative relays; Send waits for all receipt/relay handoffs, but not for application processing after Received.", true),
+		att("bounded-ring-lossy-detectable", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "O(1)-with-fanout sequence ring retains bounded history; each Next reports exact overwritten publications while Publish only replaces one shared generation signal.", true),
+		att("large-fanout-scalability", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "Publication does not sweep subscriber state; a shared generation notification wakes independently paced cursors, with scheduling work paid by actual awakened readers.", true),
+		att("ephemeral-churn-membership", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "Subscriptions own independent cursors and Done channels; attach/detach does not mutate publication fan-out work.", true),
+		att("cancellation-and-close-lifecycle", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "Unsubscribe is idempotent and signals Done; Close wakes selectors, permits retained values to drain, then reports closed.", true),
+		att("zero-subscriber-and-edge-lifecycle", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "With no active cursors Publish advances sequence without copying; later subscriptions start at the next publication and cannot read stale ring slots.", true),
 		att("bounded-catchup-replay", "ChanReplay51DeepSeek (51-DeepSeek)", "Atomic replay-snapshot plus live registration yields the retained suffix without a gap or duplicate; capacity is fixed and older history is intentionally unavailable.", true),
 		att("bounded-catchup-replay", "BaselineBoundedReplay (baseline)", "Textbook mutex-protected bounded history plus per-subscriber buffered channels; snapshot and registration share one lock, with send backpressure on slow readers.", true),
 		att("buffered-lossless-backpressured", "BaselineBoundedReplay (baseline)", "Mutex-protected per-subscriber bounded queues provide ordinary lossless backpressure; replay history is an additional bounded retention cost.", true),
@@ -647,5 +654,73 @@ func (s *chanCascade52Sub) Unsubscribe() {
 	if !s.closed {
 		s.closed = true
 		s.r.Unsubscribe()
+	}
+}
+
+type replayCast53Adapter struct{ x *ReplayCast53Gpt6Sol[int] }
+
+func newReplayCast53Adapter() Broadcaster {
+	return &replayCast53Adapter{x: NewReplayCast53Gpt6Sol[int](64)}
+}
+func (a *replayCast53Adapter) Name() string { return "ReplayCast53Gpt6Sol (53-GPT-6-Sol)" }
+func (a *replayCast53Adapter) Publish(v int) int {
+	if err := a.x.Publish(v); err != nil {
+		return 0
+	}
+	return 1 // accepted publication; this API does not synchronously count readers
+}
+func (a *replayCast53Adapter) Close()             { a.x.Close() }
+func (a *replayCast53Adapter) IsCoalescing() bool { return false }
+func (a *replayCast53Adapter) Subscribe() BroadcastSubscriber {
+	sub, err := a.x.Subscribe()
+	if err != nil {
+		return &replayCast53Sub{}
+	}
+	return &replayCast53Sub{sub: sub}
+}
+
+type replayCast53Sub struct {
+	sub          *ReplaySubscription53Gpt6Sol[int]
+	unsubscribed atomic.Bool
+}
+
+func (s *replayCast53Sub) Receive(ctx context.Context) (int, bool) {
+	if s.sub == nil || s.unsubscribed.Load() {
+		return 0, false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for {
+		value, _, err := s.sub.Next()
+		if err == nil {
+			return value, true
+		}
+		switch {
+		case errors.Is(err, ErrReplayEmpty53Gpt6Sol):
+			select {
+			case <-ctx.Done():
+				return 0, false
+			case <-s.sub.Done():
+				return 0, false
+			case <-s.sub.Ready():
+			}
+		case errors.Is(err, ErrReplayClosed53Gpt6Sol), errors.Is(err, ErrReplayUnsubscribed53Gpt6Sol):
+			return 0, false
+		default:
+			return 0, false
+		}
+	}
+}
+func (s *replayCast53Sub) TryReceive() (int, bool) {
+	if s.sub == nil || s.unsubscribed.Load() {
+		return 0, false
+	}
+	value, _, err := s.sub.Next()
+	return value, err == nil
+}
+func (s *replayCast53Sub) Unsubscribe() {
+	if s.sub != nil && s.unsubscribed.CompareAndSwap(false, true) {
+		s.sub.Unsubscribe()
 	}
 }
