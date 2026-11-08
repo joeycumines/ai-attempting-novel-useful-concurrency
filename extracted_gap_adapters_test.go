@@ -338,7 +338,7 @@ func (a *baselineAsyncAdapter) Subscribe() BroadcastSubscriber {
 func gapBroadcastAttachments() []Attachment {
 	return []Attachment{
 		att("nonblocking-lossless-overflow", "BaselineQueuedFanout (baseline)", "Ordinary mutex plus private unbounded slice queues and a coalescing wake channel; sender never waits for a consumer.", true),
-		att("nonblocking-lossless-overflow", "QueuedFanout24Meta (24-MetaAI)", "COW membership, lock-free mailbox fast path and receiver-pumped private overflow preserve every value without sender backpressure; lagging consumers grow memory.", true),
+		att("nonblocking-lossless-overflow", "QueuedFanout24Meta (24-MetaAI)", "COW membership, a serialized nonblocking mailbox/overflow admission step and receiver-pumped private FIFO preserve every value without sender backpressure; lagging consumers grow memory.", true),
 		att("ephemeral-churn-membership", "QueuedFanout24Meta (24-MetaAI)", "Membership edits copy a snapshot rather than locking the publish traversal; per-subscriber leases make withdrawal safe.", true),
 		att("zero-subscriber-and-edge-lifecycle", "QueuedFanout24Meta (24-MetaAI)", "An empty snapshot accepts no delivery and returns zero; later subscriptions see future publications.", true),
 		attX("cancellation-and-close-lifecycle", "QueuedFanout24Meta (24-MetaAI)", "RecvContext and Done provide a cancellation escape without closing the data channel.", false, "The response has no hub-wide Close; lifecycle facets use cancellation and per-subscription Unsubscribe, never adapter Close as global shutdown."),

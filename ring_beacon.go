@@ -90,13 +90,28 @@ func (c *Cursor[T]) Ready() <-chan struct{} {
 	return c.b.Signal()
 }
 
+// SubscribeContext captures a cursor synchronously at call time, then yields
+// bounded history from that cursor until ctx cancel. Capturing before the
+// iterator is invoked prevents a publisher from overwriting the subscription
+// point in the gap between obtaining the iterator and starting it.
 func (b *RingBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	cur := b.Cursor()
 	return func(yield func(T) bool) {
-		cur := b.Cursor()
 		for {
+			if v, _, ok := cur.Next(); ok {
+				if !yield(v) {
+					return
+				}
+				continue
+			}
+			sig := cur.Ready()
+			// Re-check after capturing the signal: Send may have published
+			// between Next and Ready, closing the previous signal while Ready
+			// returned the new one. Without this drain the iterator can sleep
+			// on a future notification despite available data.
 			if v, _, ok := cur.Next(); ok {
 				if !yield(v) {
 					return
@@ -106,7 +121,7 @@ func (b *RingBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 			select {
 			case <-ctx.Done():
 				return
-			case <-cur.Ready():
+			case <-sig:
 			}
 		}
 	}

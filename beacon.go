@@ -106,17 +106,20 @@ func (b *Beacon[T]) ReadyFor(next uint64) <-chan struct{} {
 	return b.Signal()
 }
 
-// SubscribeContext yields every published value from now until ctx cancel.
-// No registration - churn is free. 0 allocs beyond Send.
+// SubscribeContext yields every published value from the call to SubscribeContext
+// until ctx cancel. The starting sequence is captured synchronously, before the
+// returned iterator is invoked, so a publisher cannot slip a value into the gap
+// between obtaining the iterator and starting it. No registration - churn is
+// free. 0 allocs beyond Send.
 func (b *Beacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	next := b.seq.Load() + 1
 	return func(yield func(T) bool) {
 		if yield == nil {
 			panic(`bigbuff: beacon: nil yield`)
 		}
-		next := b.seq.Load() + 1
 		// if no value yet, wait; else catch up immediately
 		for {
 			s := b.val.Load()

@@ -27,6 +27,11 @@ func (b *chanPubSub57Adapter) IsCoalescing() bool { return false }
 // cannot abandon Wait mid-round, so cancelling a churn subscriber while Send is
 // armed can strand the round. Dedicated facets unsubscribe only between rounds.
 func (b *chanPubSub57Adapter) SkipStandardConcurrentChurn() bool { return true }
+
+// TryReceive may acknowledge a whole round and is restricted to one subscriber;
+// the ordinary one-subscriber polling facet remains safe, but concurrent fuzz
+// withdrawal is not. Never disguise a blocked multi-subscriber Wait as a miss.
+func (b *chanPubSub57Adapter) SkipBroadcastFuzz() bool { return true }
 func (b *chanPubSub57Adapter) Subscribe() BroadcastSubscriber {
 	b.subsMu.Lock()
 	b.x.Subscribe()

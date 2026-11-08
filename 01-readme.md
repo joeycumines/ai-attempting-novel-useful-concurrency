@@ -87,7 +87,7 @@ The tools available, especially the presence of a sandbox, search engine, and (i
 
 In cases where there were individual files attached, they are encoded as a txtar down the bottom of the markdown, in a code block or similar.
 
-**Integration progress (2026-11-08):** Markdown-only implementations extracted/integrated (including 11, 14 RingFanOut, 24, 32, 38, 45, 50, 58); responses 03–20 cross-checked in `extraction_audit.md`. Go 1.27.3 vet, full ordinary/race suites, focused fuzz campaigns and allocation benchmarks pass; exposure limits are documented in attachments/provenance.
+**Integration progress (2026-11-08):** Markdown-only implementations extracted/integrated (including 11, 14 RingFanOut, 24, 32, 38, 45, 50, 58); responses 03–20 cross-checked in `extraction_audit.md`. Go 1.27.3 vet, full ordinary/race suites, focused fuzz campaigns and allocation benchmarks pass; the final stress harness is deterministic ack/ready, and exposure limits are documented in attachments/provenance.
 
 - [03-chatgpt-1.md](03-chatgpt-1.md)
 - [04-deepseek-v4.1-flash-chat.md](04-deepseek-v4.1-flash-chat.md)

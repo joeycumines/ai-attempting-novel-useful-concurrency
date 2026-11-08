@@ -310,6 +310,10 @@ var Cases = []Case{
 	{"bounded-scatter/bench/admission", "bounded-competing-consumer-overflow", CaseBenchmark, "Nonblocking admission into a full bounded queue", "BenchmarkBoundedScatterAdmission"},
 	{"bounded-scatter/fuzz/model", "bounded-competing-consumer-overflow", CaseFuzz, "Ring and ordinary baseline admission/drain operations compared with a bounded FIFO eviction model", "FuzzBoundedScatterModel"},
 	{"bounded-scatter/test/competing-exactly-one", "bounded-competing-consumer-overflow", CaseTest, "Non-overflow dispatch to competing workers is exactly once for ring and baseline", "TestBoundedScatterCompetingExactlyOne"},
+	{"beacon08/test/call-point", "latest-value-conflating-watch", CaseTest, "Beacon and RingBeacon capture the subscription point at SubscribeContext call time", "TestBeaconSubscribeContextCapturesCallPoint"},
+	{"beacon08/test/ring-call-point", "bounded-ring-lossy-detectable", CaseTest, "RingBeacon iterator observes values published before first invocation", "TestRingBeaconSubscribeContextCapturesCallPoint"},
+	{"beacon08/test/ring-wakeup", "bounded-ring-lossy-detectable", CaseTest, "RingBeacon re-checks after Ready capture so a concurrent Send cannot strand the iterator", "TestRingBeaconSubscribeContextNoLostWakeup"},
+	{"beacon08/test/reliable-armed-round", "lockstep-barrier-lossless", CaseTest, "ReliableBeacon registration captures the armed round so churn cannot leave an unacknowledged subscription", "TestReliableBeaconSubscribeContextCapturesArmedRound"},
 }
 
 var caseByID map[CaseID]Case
@@ -356,7 +360,7 @@ const (
 	bChanHub     = "ChanHub (15-Nemotron)"
 	bBaselineFan = "BaselineFanout (standard)"
 	bBeacon      = "Beacon (01-baseline)"
-	bRingBeacon  = "RingBeacon (08-Qwen)"
+	bRingBeacon  = "RingBeacon (08-MuseSpark)"
 	bEpochGemini = "EpochCasterGemini (09-Gemini)"
 	bEpochPubSub = "EpochPubSub (11-meta)"
 	bReliable    = "ReliableBeacon (08-MuseSpark)"

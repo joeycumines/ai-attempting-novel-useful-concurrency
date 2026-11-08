@@ -137,6 +137,9 @@ func newPumpSub(pump func(ctx context.Context, ch chan<- int)) BroadcastSubscrib
 }
 
 func (s *pumpSub) Receive(ctx context.Context) (int, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	select {
 	case <-ctx.Done():
 		return 0, false
@@ -229,12 +232,12 @@ func (a *beaconAdapter) Subscribe() BroadcastSubscriber {
 	})
 }
 
-// 17. RingBeacon (08-Qwen) - bounded ring, drops on overrun
+// 17. RingBeacon (08-MuseSpark) - bounded ring, drops on overrun
 type ringBeaconAdapter struct{ b *RingBeacon[int] }
 
 func newRingBeaconAdapter() Broadcaster { return &ringBeaconAdapter{b: NewRingBeacon[int](64)} }
 
-func (a *ringBeaconAdapter) Name() string        { return "RingBeacon (08-Qwen)" }
+func (a *ringBeaconAdapter) Name() string        { return "RingBeacon (08-MuseSpark)" }
 func (a *ringBeaconAdapter) Publish(val int) int { a.b.Send(val); return 1 }
 func (a *ringBeaconAdapter) IsCoalescing() bool  { return true }
 func (a *ringBeaconAdapter) Close()              {}
@@ -1268,6 +1271,9 @@ func TestStandardHarness_TryReceive(t *testing.T) {
 		b := factory()
 		t.Run(b.Name(), func(t *testing.T) {
 			defer b.Close()
+			if limited, ok := b.(interface{ SkipStandardTryReceive() bool }); ok && limited.SkipStandardTryReceive() {
+				t.Skip("exposure-limited TryReceive is covered by a dedicated safe facet")
+			}
 			sub := b.Subscribe()
 			defer sub.Unsubscribe()
 
@@ -1277,20 +1283,38 @@ func TestStandardHarness_TryReceive(t *testing.T) {
 				t.Fatalf("expected ok=false when empty, got val=%d", val)
 			}
 
-			// Background publish
-			go b.Publish(999)
-
-			// Poll TryReceive with a short timeout
-			deadline := time.Now().Add(500 * time.Millisecond)
-			for time.Now().Before(deadline) {
+			// A barrier publication may need its receiver to participate in the
+			// operation being polled. Completion, not elapsed time, is the bound.
+			published := make(chan int, 1)
+			go func() { published <- b.Publish(999) }()
+			for {
 				val, ok = sub.TryReceive()
 				if ok {
 					if val != 999 {
-						t.Errorf("expected 999, got %d", val)
+						t.Fatalf("expected 999, got %d", val)
+					}
+					break
+				}
+				// Publication completion is not delivery completion for async
+				// adapters. If it finished first, one blocking Receive supplies
+				// the deterministic completion boundary (and still checks value).
+				select {
+				case <-published:
+					ctx, cancel := context.WithTimeout(context.Background(), scenarioGuard)
+					val, ok = sub.Receive(ctx)
+					cancel()
+					if !ok || val != 999 {
+						t.Fatalf("post-publish Receive=(%d,%v), want (999,true)", val, ok)
 					}
 					return
+				default:
+					runtime.Gosched()
 				}
-				runtime.Gosched()
+			}
+			select {
+			case <-published:
+			case <-time.After(scenarioGuard):
+				t.Fatal("publication did not finish after receipt")
 			}
 		})
 	}

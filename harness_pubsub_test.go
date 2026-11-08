@@ -3,7 +3,6 @@ package bigbuff
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -139,103 +138,151 @@ func pubsubImpls() map[string]func() pubsubAPI {
 	}
 }
 
-// runPubSubStress: S subscriber goroutines each run consecutive subscription
-// sessions. Within a session, a lossless lock-step broadcast must yield a
-// strictly consecutive run of values (no gaps, no duplicates).
+// runPubSubStress uses the same exact ack/ready round handoff as the async
+// family. The ack releases a lock-step Send; the ready signal confirms the
+// subscriber is parked on the next round or has registered its churn replacement.
+// Values are exact and ordered within each session; the steady facet additionally
+// checks Send's reported count.
 func runPubSubStress(t *testing.T, mk func() pubsubAPI, subs, sends int, churn bool) {
+	t.Helper()
 	x := mk()
-	lossless := x.lossless
-	stop := make(chan struct{})
-	var gaps, dups, yielded atomic.Int64
-	var first atomic.Value
-	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	acks := make(chan struct{}, subs)
 	ready := make(chan struct{}, subs)
-	for s := 0; s < subs; s++ {
-		wg.Add(1)
-		go func(seed int64) {
-			defer wg.Done()
-			rng := rand.New(rand.NewSource(seed))
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
-				var ctx context.Context
-				var cancel context.CancelFunc
-				if churn {
-					ctx, cancel = context.WithTimeout(context.Background(), time.Duration(rng.Intn(300))*time.Microsecond)
-				} else {
-					ctx, cancel = context.WithCancel(context.Background())
-				}
-				go func() {
-					select {
-					case <-stop:
-						cancel()
-					case <-ctx.Done():
-					}
-				}()
-				last := -1
-				seq := x.subscribe(ctx)
-				if !churn {
-					ready <- struct{}{}
-				}
-				for v := range seq {
-					yielded.Add(1)
-					if last != -1 {
-						if v <= last {
-							if dups.Add(1) == 1 {
-								first.Store(fmt.Sprintf("dup/reorder: %d after %d", v, last))
-							}
-						} else if v != last+1 && lossless {
-							if gaps.Add(1) == 1 {
-								first.Store(fmt.Sprintf("gap: %d after %d", v, last))
-							}
-						}
-					}
-					last = v
-				}
-				cancel()
-			}
-		}(int64(s))
-	}
-	if !churn {
-		for s := 0; s < subs; s++ {
-			<-ready
+	initialReady := make(chan struct{}, subs)
+	var wg sync.WaitGroup
+	var total atomic.Int64
+	var churnOps atomic.Int64
+	var firstViolation atomic.Value
+	fail := func(format string, args ...any) {
+		if firstViolation.CompareAndSwap(nil, fmt.Sprintf(format, args...)) {
+			cancel()
 		}
 	}
-	var total int64
-	done := make(chan struct{})
+	for id := 0; id < subs; id++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			last := 0
+			pendingReady := false
+			for session := 0; session < 4; session++ {
+				sessionCtx, retire := context.WithCancel(ctx)
+				seq := x.subscribe(sessionCtx) // concrete factories register synchronously
+				if pendingReady {
+					select {
+					case ready <- struct{}{}:
+					case <-sessionCtx.Done():
+						retire()
+						return
+					}
+					pendingReady = false
+				} else if session == 0 {
+					initialReady <- struct{}{}
+				}
+				received := 0
+				resubscribe := false
+				seq(func(v int) bool {
+					if v != last+1 {
+						fail("duplicate/reorder/gap: got %d after %d", v, last)
+						return false
+					}
+					last = v
+					received++
+					total.Add(1)
+					select {
+					case acks <- struct{}{}:
+					case <-sessionCtx.Done():
+						return false
+					}
+					if churn && session < 3 && received == 4 {
+						resubscribe = true
+						pendingReady = true
+						return false
+					}
+					select {
+					case ready <- struct{}{}:
+					case <-sessionCtx.Done():
+						return false
+					}
+					return v != sends
+				})
+				retire()
+				if ctx.Err() != nil {
+					return
+				}
+				if resubscribe {
+					churnOps.Add(1)
+					continue
+				}
+				return
+			}
+		}()
+	}
+	for i := 0; i < subs; i++ {
+		select {
+		case <-initialReady:
+		case <-ctx.Done():
+			t.Fatal("subscriber registration cancelled")
+		}
+	}
+	pubDone := make(chan struct{})
 	go func() {
-		defer close(done)
-		for i := 1; i <= sends; i++ {
-			total += int64(x.send(i))
-			if !churn && i == 1 {
-				// let everybody subscribe for the steady test
+		defer close(pubDone)
+		for v := 1; v <= sends; v++ {
+			if ctx.Err() != nil {
+				return
+			}
+			n := x.send(v)
+			if !churn && n != subs {
+				fail("Send(%d)=%d want %d", v, n, subs)
+				return
+			}
+			for i := 0; i < subs; i++ {
+				select {
+				case <-acks:
+				case <-ctx.Done():
+					return
+				}
+			}
+			// Wait for every subscriber to be parked on the next round (or,
+			// at a churn boundary, to have registered its replacement). This
+			// is essential for lock-step impls whose Add/Subscribe fences
+			// against an in-flight Send: the ack releases Send before the
+			// replacement registers, and ready prevents the next Send from
+			// racing that registration.
+			for i := 0; i < subs; i++ {
+				select {
+				case <-ready:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()
 	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatalf("DEADLOCK: sender stuck (subs=%d churn=%v, yielded=%d)", subs, churn, yielded.Load())
+	case <-pubDone:
+	case <-time.After(30 * time.Second):
+		cancel()
+		t.Fatal("publisher did not finish")
 	}
-	close(stop)
-	wdone := make(chan struct{})
-	go func() { wg.Wait(); close(wdone) }()
+	cancel()
+	waitDone := make(chan struct{})
+	go func() { wg.Wait(); close(waitDone) }()
 	select {
-	case <-wdone:
-	case <-time.After(10 * time.Second):
-		t.Fatalf("DEADLOCK: subscribers stuck after sender finished")
+	case <-waitDone:
+	case <-time.After(30 * time.Second):
+		t.Fatal("subscribers did not terminate")
 	}
-	if yielded.Load() > total {
-		t.Logf("yielded %d > Send-reported deliveries %d", yielded.Load(), total)
+	if v, ok := firstViolation.Load().(string); ok {
+		t.Fatal(v)
 	}
-	if gaps.Load() > 0 || dups.Load() > 0 {
-		v, _ := first.Load().(string)
-		t.Fatalf("MISDELIVERY: gaps=%d dups=%d (%s) yielded=%d reported=%d", gaps.Load(), dups.Load(), v, yielded.Load(), total)
+	if got := total.Load(); got != int64(subs*sends) {
+		t.Fatalf("total=%d want %d", got, subs*sends)
 	}
-	t.Logf("ok: reported deliveries=%d yielded=%d", total, yielded.Load())
+	if churn && churnOps.Load() != int64(subs*3) {
+		t.Fatalf("churn transitions=%d want %d", churnOps.Load(), subs*3)
+	}
 }
 
 func TestPubSubFamily(t *testing.T) {

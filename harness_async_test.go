@@ -3,7 +3,7 @@ package bigbuff
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -190,115 +190,163 @@ func asyncImpls() map[string]func() asyncAPI {
 	}
 }
 
+// runAsyncStress drives an exact, round-based ack/ready handoff. The publisher
+// does not advance until every subscriber has acknowledged the current value and
+// signalled readiness for the next; a churn boundary acknowledges first (releasing
+// any lock-step Send), then retires and re-registers before signalling readiness.
+// This keeps counts exact and bounded without sleeps, timers, or a shared receipt
+// queue that can fill while a backpressured publisher is waiting for readers.
+// Overflow/eviction behaviour is covered by the dedicated burst, model and fuzz
+// cases; this facet checks payload integrity, ordering, liveness and lifecycle.
 func runAsyncStress(t *testing.T, mk func() asyncAPI, subs, sends int, churn bool, slow bool) {
+	t.Helper()
 	x := mk()
-	stop := make(chan struct{})
-	var gaps, dups, torn, yielded atomic.Int64
-	var first atomic.Value
-	lastSeen := make([]atomic.Int64, subs)
-	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	acks := make(chan struct{}, subs)
 	ready := make(chan struct{}, subs)
-	for s := 0; s < subs; s++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			rng := rand.New(rand.NewSource(int64(id)))
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
-				var ctx context.Context
-				var cancel context.CancelFunc
-				if churn {
-					ctx, cancel = context.WithTimeout(context.Background(), time.Duration(rng.Intn(300))*time.Microsecond)
-				} else {
-					ctx, cancel = context.WithCancel(context.Background())
-				}
-				go func() {
-					select {
-					case <-stop:
-						cancel()
-					case <-ctx.Done():
-					}
-				}()
-				last := int64(-1)
-				seq := x.subscribe(ctx)
-				if !churn {
-					ready <- struct{}{}
-				}
-				for v := range seq {
-					yielded.Add(1)
-					if v[0] != v[1] || v[1] != v[2] || v[2] != v[3] {
-						if torn.Add(1) == 1 {
-							first.Store(fmt.Sprintf("torn read %v", v))
-						}
-					}
-					n := int64(v[0])
-					if last != -1 {
-						if n <= last {
-							if dups.Add(1) == 1 {
-								first.Store(fmt.Sprintf("dup/reorder %d after %d", n, last))
-							}
-						} else if n != last+1 && x.lossless {
-							if gaps.Add(1) == 1 {
-								first.Store(fmt.Sprintf("gap %d after %d", n, last))
-							}
-						}
-					}
-					last = n
-					lastSeen[id].Store(n)
-					if slow && id == 0 && rng.Intn(8) == 0 {
-						time.Sleep(20 * time.Microsecond)
-					}
-				}
-				cancel()
-			}
-		}(s)
-	}
-	if !churn {
-		for s := 0; s < subs; s++ {
-			<-ready
+	initialReady := make(chan struct{}, subs)
+	var wg sync.WaitGroup
+	var total atomic.Int64
+	var churnOps atomic.Int64
+	var firstViolation atomic.Value
+	fail := func(format string, args ...any) {
+		if firstViolation.CompareAndSwap(nil, fmt.Sprintf(format, args...)) {
+			cancel()
 		}
 	}
-	done := make(chan struct{})
+	for id := 0; id < subs; id++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			last := int64(0)
+			pendingReady := false
+			for session := 0; session < 4; session++ {
+				sessionCtx, retire := context.WithCancel(ctx)
+				seq := x.subscribe(sessionCtx)
+				if pendingReady {
+					select {
+					case ready <- struct{}{}:
+					case <-sessionCtx.Done():
+						retire()
+						return
+					}
+					pendingReady = false
+				} else if session == 0 {
+					initialReady <- struct{}{}
+				}
+				received := 0
+				resubscribe := false
+				seq(func(v pv) bool {
+					if v[0] != v[1] || v[0] != v[2] || v[0] != v[3] {
+						fail("torn payload: %v", v)
+						return false
+					}
+					n := int64(v[0])
+					if n != last+1 {
+						fail("duplicate/reorder/gap: got %d after %d", n, last)
+						return false
+					}
+					last = n
+					received++
+					total.Add(1)
+					select {
+					case acks <- struct{}{}:
+					case <-sessionCtx.Done():
+						return false
+					}
+					if churn && session < 3 && received == 4 {
+						resubscribe = true
+						pendingReady = true
+						return false
+					}
+					select {
+					case ready <- struct{}{}:
+					case <-sessionCtx.Done():
+						return false
+					}
+					if slow {
+						runtime.Gosched()
+					}
+					return n != int64(sends)
+				})
+				retire()
+				if ctx.Err() != nil {
+					return
+				}
+				if resubscribe {
+					churnOps.Add(1)
+					// Register the replacement before acknowledging the round,
+					// so the publisher cannot publish the next value into a gap.
+					continue
+				}
+				return
+			}
+		}()
+	}
+	for i := 0; i < subs; i++ {
+		select {
+		case <-initialReady:
+		case <-ctx.Done():
+			t.Fatal("subscriber registration cancelled")
+		}
+	}
+	pubDone := make(chan struct{})
 	go func() {
-		defer close(done)
-		for i := 1; i <= sends; i++ {
-			x.send(mkpv(i))
+		defer close(pubDone)
+		for v := 1; v <= sends; v++ {
+			if ctx.Err() != nil {
+				return
+			}
+			x.send(mkpv(v))
+			for i := 0; i < subs; i++ {
+				select {
+				case <-acks:
+				case <-ctx.Done():
+					return
+				}
+			}
+			// Wait for every subscriber to be parked on the next round (or,
+			// at a churn boundary, to have registered its replacement). This
+			// is essential for lock-step impls whose Add/Subscribe fences
+			// against an in-flight Send: the ack releases Send before the
+			// replacement registers, and ready prevents the next Send from
+			// racing that registration.
+			for i := 0; i < subs; i++ {
+				select {
+				case <-ready:
+				case <-ctx.Done():
+					return
+				}
+			}
+			if slow {
+				runtime.Gosched()
+			}
 		}
 	}()
 	select {
-	case <-done:
+	case <-pubDone:
 	case <-time.After(30 * time.Second):
-		t.Fatalf("DEADLOCK: sender stuck (yielded=%d)", yielded.Load())
+		cancel()
+		t.Fatal("publisher did not finish")
 	}
-	if !churn {
-		// liveness: every long-lived subscriber must observe the final value
-		deadline := time.Now().Add(5 * time.Second)
-		for s := 0; s < subs; s++ {
-			for lastSeen[s].Load() != int64(sends) {
-				if time.Now().After(deadline) {
-					t.Fatalf("STALL/LOST-WAKEUP: subscriber %d stuck at %d of %d", s, lastSeen[s].Load(), sends)
-				}
-				time.Sleep(time.Millisecond)
-			}
-		}
-	}
-	close(stop)
-	wdone := make(chan struct{})
-	go func() { wg.Wait(); close(wdone) }()
+	cancel()
+	waitDone := make(chan struct{})
+	go func() { wg.Wait(); close(waitDone) }()
 	select {
-	case <-wdone:
-	case <-time.After(10 * time.Second):
-		t.Fatalf("DEADLOCK: subscribers stuck after sender finished")
+	case <-waitDone:
+	case <-time.After(30 * time.Second):
+		t.Fatal("subscribers did not terminate")
 	}
-	if gaps.Load()+dups.Load()+torn.Load() > 0 {
-		v, _ := first.Load().(string)
-		t.Fatalf("MISDELIVERY: gaps=%d dups=%d torn=%d (%s)", gaps.Load(), dups.Load(), torn.Load(), v)
+	if v, ok := firstViolation.Load().(string); ok {
+		t.Fatal(v)
 	}
-	t.Logf("ok: yielded=%d (%.1f%% of max %d)", yielded.Load(), 100*float64(yielded.Load())/float64(subs*sends), subs*sends)
+	if got := total.Load(); got != int64(subs*sends) {
+		t.Fatalf("total=%d want %d", got, subs*sends)
+	}
+	if churn && churnOps.Load() != int64(subs*3) {
+		t.Fatalf("churn transitions=%d want %d", churnOps.Load(), subs*3)
+	}
 }
 
 func TestAsyncFamily(t *testing.T) {

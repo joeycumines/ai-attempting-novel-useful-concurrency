@@ -1,25 +1,29 @@
 package bigbuff
 
 // BaselineAsyncFanout is the ordinary staff-engineer answer to bounded
-// asynchronous lossy fan-out: a buffered input channel, one dispatcher
-// goroutine, and the standard drop-oldest per-subscriber fan-out. It uses no
-// pooled channels or custom ring; composition is the entire baseline.
+// asynchronous lossy fan-out: a buffered input channel, one dispatcher and a
+// mutex-guarded set of drop-oldest subscriber mailboxes. No channel pool or
+// custom ring is used. Unlike composing BaselineFanout directly, admission and
+// subscriber retirement share one mutex so removing/closing a channel cannot
+// race a dispatcher's send. Send reports queued acceptance, not delivery.
 
 import (
 	"context"
 	"iter"
 	"sync"
-	"sync/atomic"
 )
 
 type BaselineAsyncFanout[V any] struct {
+	mu           sync.Mutex
 	input        chan V
-	fan          *BaselineFanout[V]
+	subs         map[uint64]chan V
+	nextID       uint64
+	capacity     int
+	inputDropped uint64
 	done         chan struct{}
-	closed       atomic.Bool
-	sendMu       sync.Mutex
-	wg           sync.WaitGroup
-	inputDropped atomic.Uint64
+	closed       bool
+	stopped      bool
+	shutdown     sync.Cond
 }
 
 func NewBaselineAsyncFanout[V any](queueCapacity, subscriberCapacity int) *BaselineAsyncFanout[V] {
@@ -27,60 +31,142 @@ func NewBaselineAsyncFanout[V any](queueCapacity, subscriberCapacity int) *Basel
 		panic("bigbuff: baseline async fanout capacities must be positive")
 	}
 	x := &BaselineAsyncFanout[V]{
-		input: make(chan V, queueCapacity),
-		fan:   NewBaselineFanout[V](subscriberCapacity),
-		done:  make(chan struct{}),
+		input:    make(chan V, queueCapacity),
+		subs:     make(map[uint64]chan V),
+		capacity: subscriberCapacity,
+		done:     make(chan struct{}),
 	}
-	x.wg.Add(1)
-	go func() {
-		defer x.wg.Done()
-		for {
-			select {
-			case <-x.done:
-				return
-			case v := <-x.input:
-				x.fan.Send(v)
-			}
-		}
-	}()
+	x.shutdown.L = &x.mu
+	go x.run()
 	return x
 }
 
+func (x *BaselineAsyncFanout[V]) run() {
+	defer func() {
+		x.mu.Lock()
+		x.stopped = true
+		x.shutdown.Broadcast()
+		x.mu.Unlock()
+	}()
+	for {
+		select {
+		case <-x.done:
+			return
+		case v := <-x.input:
+			x.mu.Lock()
+			if !x.closed {
+				for _, ch := range x.subs {
+					select {
+					case ch <- v:
+					default:
+						<-ch
+						ch <- v
+					}
+				}
+			}
+			x.mu.Unlock()
+		}
+	}
+}
+
 func (x *BaselineAsyncFanout[V]) Send(v V) int {
-	x.sendMu.Lock()
-	defer x.sendMu.Unlock()
-	if x.closed.Load() || x.fan.Subscribers() == 0 {
-		return 0 // live-start: idle-period sends are not queued for late subscribers
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if x.closed || len(x.subs) == 0 {
+		return 0 // idle-period sends are not queued for future subscribers
 	}
 	select {
 	case x.input <- v:
 	default:
-		select {
-		case <-x.input:
-			x.inputDropped.Add(1)
-		default:
-		}
+		<-x.input
+		x.inputDropped++
 		x.input <- v
 	}
-	return x.fan.Subscribers()
+	return len(x.subs)
 }
 
-func (x *BaselineAsyncFanout[V]) Subscribe() uint64     { return x.fan.Subscribe() }
-func (x *BaselineAsyncFanout[V]) Unsubscribe(id uint64) { x.fan.Unsubscribe(id) }
-func (x *BaselineAsyncFanout[V]) C(id uint64) <-chan V  { return x.fan.C(id) }
-func (x *BaselineAsyncFanout[V]) InputDropped() uint64  { return x.inputDropped.Load() }
-func (x *BaselineAsyncFanout[V]) SubscribeContext(ctx context.Context) iter.Seq[V] {
-	return x.fan.SubscribeContext(ctx)
-}
-
-func (x *BaselineAsyncFanout[V]) Close() {
-	x.sendMu.Lock()
-	if x.closed.Swap(true) {
-		x.sendMu.Unlock()
-		return
+func (x *BaselineAsyncFanout[V]) Subscribe() uint64 {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.nextID++
+	id := x.nextID
+	if !x.closed {
+		x.subs[id] = make(chan V, x.capacity)
 	}
-	close(x.done)
-	x.sendMu.Unlock()
-	x.wg.Wait()
-	x.fan.Close()
+	return id
+}
+
+func (x *BaselineAsyncFanout[V]) Unsubscribe(id uint64) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if ch, ok := x.subs[id]; ok {
+		delete(x.subs, id)
+		close(ch)
+	}
+}
+
+func (x *BaselineAsyncFanout[V]) C(id uint64) <-chan V {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return x.subs[id]
+}
+
+func (x *BaselineAsyncFanout[V]) Subscribers() int {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return len(x.subs)
+}
+
+func (x *BaselineAsyncFanout[V]) InputDropped() uint64 {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return x.inputDropped
+}
+
+func (x *BaselineAsyncFanout[V]) SubscribeContext(ctx context.Context) iter.Seq[V] {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	id := x.Subscribe()
+	ch := x.C(id)
+	return func(yield func(V) bool) {
+		defer x.Unsubscribe(id)
+		if ch == nil {
+			return
+		}
+		if yield == nil {
+			panic("bigbuff: baseline async fanout: nil iterator yield")
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		for {
+			select {
+			case v, ok := <-ch:
+				if !ok || !yield(v) {
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+}
+
+// Close waits for dispatcher exit and all earlier Close callers. Subscriber
+// channels retain already dispatched values for draining, then report closed.
+func (x *BaselineAsyncFanout[V]) Close() {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if !x.closed {
+		x.closed = true
+		close(x.done)
+	}
+	for !x.stopped {
+		x.shutdown.Wait()
+	}
+	for id, ch := range x.subs {
+		delete(x.subs, id)
+		close(ch)
+	}
 }
