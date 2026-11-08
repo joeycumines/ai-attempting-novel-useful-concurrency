@@ -580,6 +580,12 @@ func extractedBroadcastAttachments() []Attachment {
 		att("large-fanout-scalability", "RingCaster55Haiku (55-ClaudeHaiku)", "Publish writes one immutable cell and signals a shared armed generation rather than traversing subscribers; parked readers share the wake.", true),
 		att("ephemeral-churn-membership", "RingCaster55Haiku (55-ClaudeHaiku)", "Subscriber cursors are caller-owned values and never enter publisher state; attach/detach churn is local to each session.", true),
 		att("cancellation-and-close-lifecycle", "RingCaster55Haiku (55-ClaudeHaiku)", "Context-aware Recv and idempotent caster Close wake parked readers, allow retained values to drain, then return ErrRingClosed.", true),
+		att("buffered-lossless-backpressured", "Fanout56MaiCode (56-MaiCode)", "Each subscription has an independent bounded channel; publications are lossless in order and a full queue backpressures Send until read or per-subscription Close.", true),
+		att("lockstep-barrier-lossless", "Fanout56MaiCode (56-MaiCode)", "The one-element queue can accept a value before the subscriber reads it, so this is explicitly not a receive barrier; attached as a measured mismatch.", false),
+		att("large-fanout-scalability", "Fanout56MaiCode (56-MaiCode)", "Correct exact delivery, but Send walks and synchronously enqueues to every cursor; this is a deliberate poor-fit measurement for O(1) high fan-out.", false),
+		att("ephemeral-churn-membership", "Fanout56MaiCode (56-MaiCode)", "Membership uses immutable copy-on-write snapshots; churn performs O(N) copy work but never mutates a snapshot being traversed by Send.", true),
+		att("zero-subscriber-and-edge-lifecycle", "Fanout56MaiCode (56-MaiCode)", "Send with an empty snapshot returns zero; new subscriptions receive subsequent publications only.", true),
+		attX("cancellation-and-close-lifecycle", "Fanout56MaiCode (56-MaiCode)", "Per-subscription Close is idempotent and unblocks an in-flight send.", false, "There is no broadcaster-wide Close. Lifecycle facets cancel readers and close individual subscriptions; the adapter's hub Close is a no-op."),
 		att("zero-subscriber-and-edge-lifecycle", "RingCaster55Haiku (55-ClaudeHaiku)", "Publish remains nonblocking with no cursors; a late subscriber starts at the current tail and only sees future publications.", true),
 		att("bounded-ring-lossy-detectable", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "O(1)-with-fanout sequence ring retains bounded history; each Next reports exact overwritten publications while Publish only replaces one shared generation signal.", true),
 		att("large-fanout-scalability", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "Publication does not sweep subscriber state; a shared generation notification wakes independently paced cursors, with scheduling work paid by actual awakened readers.", true),
@@ -819,4 +825,54 @@ func (s *ringCaster55Sub) TryReceive() (int, bool) {
 func (s *ringCaster55Sub) Unsubscribe() {
 	s.closed = true
 	s.sub = nil
+}
+
+type fanout56Adapter struct{ x *Fanout56MaiCode[int] }
+
+func newFanout56Adapter() Broadcaster {
+	return &fanout56Adapter{x: NewFanout56MaiCode[int]()}
+}
+func (a *fanout56Adapter) Name() string       { return "Fanout56MaiCode (56-MaiCode)" }
+func (a *fanout56Adapter) Publish(v int) int  { return a.x.Send(v) }
+func (a *fanout56Adapter) Close()             {} // response 56 has per-subscription Close only
+func (a *fanout56Adapter) IsCoalescing() bool { return false }
+func (a *fanout56Adapter) Subscribe() BroadcastSubscriber {
+	return &fanout56AdapterSub{sub: a.x.Subscribe()}
+}
+
+type fanout56AdapterSub struct{ sub *Subscription56MaiCode[int] }
+
+func (s *fanout56AdapterSub) Receive(ctx context.Context) (int, bool) {
+	if s.sub == nil {
+		return 0, false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return 0, false
+	case <-s.sub.Done():
+		return 0, false
+	case value := <-s.sub.Chan():
+		return value, true
+	}
+}
+func (s *fanout56AdapterSub) TryReceive() (int, bool) {
+	if s.sub == nil {
+		return 0, false
+	}
+	select {
+	case value := <-s.sub.Chan():
+		return value, true
+	case <-s.sub.Done():
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+func (s *fanout56AdapterSub) Unsubscribe() {
+	if s.sub != nil {
+		s.sub.Close()
+	}
 }
