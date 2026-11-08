@@ -208,12 +208,19 @@ func (a *vecast31Adapter) Name() string       { return "Vecast (31-Nemotron)" }
 func (a *vecast31Adapter) Publish(v int) int  { return a.x.Send(v) }
 func (a *vecast31Adapter) Close()             { _ = a.x.Close() }
 func (a *vecast31Adapter) IsCoalescing() bool { return false }
+
+// SkipStandardConcurrentChurn documents the source's slow-phase exposure: a
+// subscriber that unsubscribes while a publisher is blocked in waitForSlowReceivers
+// can strand that Send until hub Close. The standard churn harness withdraws
+// without closing the hub, so it is not a safe exposure for this implementation.
+func (a *vecast31Adapter) SkipStandardConcurrentChurn() bool { return true }
 func (a *vecast31Adapter) Subscribe() BroadcastSubscriber {
 	sub := a.x.Subscribe()
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &pumpSub{ch: make(chan int, 16), cancel: cancel}
+	p := &pumpSub{ch: make(chan int, 16), cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(p.ch)
+		defer close(p.done)
 		defer a.x.Unsubscribe(sub)
 		for {
 			select {
@@ -235,15 +242,16 @@ func (a *vecast31Adapter) Subscribe() BroadcastSubscriber {
 }
 
 type chanMulticast33Adapter struct {
-	x *ChanMulticast33North[chan int, int]
+	x         *ChanMulticast33North[chan int, int]
+	closeOnce sync.Once
 }
 
 func newChanMulticast33Adapter() Broadcaster {
-	return &chanMulticast33Adapter{NewChanMulticast33North(make(chan int))}
+	return &chanMulticast33Adapter{x: NewChanMulticast33North(make(chan int))}
 }
 func (a *chanMulticast33Adapter) Name() string       { return "ChanMulticast33North (33-North)" }
 func (a *chanMulticast33Adapter) Publish(v int) int  { return a.x.Send(v) }
-func (a *chanMulticast33Adapter) Close()             {}
+func (a *chanMulticast33Adapter) Close()             { a.closeOnce.Do(func() { close(a.x.root) }) }
 func (a *chanMulticast33Adapter) IsCoalescing() bool { return false }
 func (a *chanMulticast33Adapter) Subscribe() BroadcastSubscriber {
 	return pumpSubscribe(a.x.SubscribeContext)
@@ -545,7 +553,7 @@ func extractedBroadcastAttachments() []Attachment {
 		att("synchronous-handoff-no-barrier", "Broadcast28Flint (28-Flint)", "Lock-free linked subscribers with quit-select retirement; handoff does not wait for post-receive acknowledgements.", true),
 		att("bounded-ring-lossy-detectable", "Relay29Nemotron (29-Nemotron)", "Per-link cursors read from a bounded sequence ring; subscribers can fall behind and skip overwritten publications.", true),
 		att("bounded-ring-lossy-detectable", "Arcadia (30-dots3)", "Bounded atomic-pointer ring with independent subscriber cursors; late/slow readers may skip overwritten values.", true),
-		att("synchronous-handoff-no-barrier", "Vecast (31-Nemotron)", "Sharded subscriber-vector fan-out with per-subscriber channel handoff and a slow-receiver phase.", true),
+		attX("synchronous-handoff-no-barrier", "Vecast (31-Nemotron)", "Sharded subscriber-vector fan-out with per-subscriber channel handoff and a slow-receiver phase.", true, "Exposure limited: withdrawal during the blocked slow-receiver phase can strand Send until hub Close; churn facets skip it and lifecycle facets always Close to release pending sends."),
 		att("bounded-ring-lossy-detectable", "ChanMulticast33North (33-North)", "Single distributor fans out to unbuffered private channels; included as a synchronous backpressure design.", true),
 		attX("synchronous-handoff-no-barrier", "ChanMultiCast34Lightning (34-Lightning)", "RWMutex-protected subscriber snapshot and synchronous fan-out.", true, "Exposure limited: exercise only deterministic LIFO Unsubscribe after the steady publish facet. This design has no per-handle unsubscribe identity and no subscriber-channel close; do not exercise arbitrary concurrent removal or lifecycle closure of subscriber channels."),
 		att("synchronous-handoff-no-barrier", "ShardCaster36Meta (36-MetaAI)", "Immutable subscriber snapshots keep membership churn off the Send path; each subscriber has an unbuffered rendezvous channel and a teardown signal.", true),

@@ -38,7 +38,11 @@ package bigbuff
 //     matching the scatter contract.
 //  4. Wait ignored its documented context parameter (it had none); it now takes
 //     a context so a waiter can leave without hanging.
-//  5. The unused generic channel parameter C was retained (it carries the
+//  5. A full ring was indistinguishable from an empty ring (writeIdx ==
+//     readIdx), silently losing the entire backlog. A mutex-guarded length
+//     now distinguishes full/empty; overwrite-oldest eviction is explicit
+//     and counted by Dropped. Wait uses that length rather than index equality.
+//  6. The unused generic channel parameter C was retained (it carries the
 //     caller's channel type through the API, as in the original).
 
 import (
@@ -64,6 +68,8 @@ type StableRing32Nano[C ~chan V, V any] struct {
 
 	writeIdx uint64 // next slot to publish into (guarded by mu)
 	readIdx  uint64 // next slot to consume (guarded by mu)
+	length   uint64 // queued values (guarded by mu); full != empty
+	dropped  atomic.Uint64
 
 	subCount int64 // active receivers (atomic)
 
@@ -79,9 +85,9 @@ func NewStableRing32Nano[C ~chan V, V any](c C, capacity uint64) *StableRing32Na
 	}
 	r := &StableRing32Nano[C, V]{
 		exemplar: c,
-		cap:  capacity,
-		mask: capacity - 1,
-		buf:  make([]V, capacity),
+		cap:      capacity,
+		mask:     capacity - 1,
+		buf:      make([]V, capacity),
 	}
 	r.cond = sync.NewCond(&r.mu)
 	return r
@@ -95,9 +101,21 @@ func (r *StableRing32Nano[C, V]) Send(value V) int {
 		return 0
 	}
 	r.mu.Lock()
+	if atomic.LoadInt64(&r.subCount) == 0 {
+		r.mu.Unlock()
+		return 0
+	}
+	if r.length == r.cap {
+		var zero V
+		r.buf[r.readIdx] = zero
+		r.readIdx = (r.readIdx + 1) & r.mask
+		r.length--
+		r.dropped.Add(1)
+	}
 	idx := r.writeIdx
-	r.writeIdx = (idx + 1) & r.mask
 	r.buf[idx] = value
+	r.writeIdx = (idx + 1) & r.mask
+	r.length++
 	r.cond.Signal() // one value, one waiter
 	r.mu.Unlock()
 	return 1
@@ -106,7 +124,7 @@ func (r *StableRing32Nano[C, V]) Send(value V) int {
 // Add adjusts the number of registered receivers and returns the new count.
 // Negative deltas are bounded so the count can never go below zero.
 func (r *StableRing32Nano[C, V]) Add(delta int) int {
-	if delta > math.MaxInt32 || -delta > math.MaxInt32 {
+	if delta > math.MaxInt32 || delta < -math.MaxInt32 {
 		panic(`bigbuff: StableRing32Nano: Add delta out of bounds`)
 	}
 	for {
@@ -134,20 +152,18 @@ func (r *StableRing32Nano[C, V]) Wait(ctx context.Context) (v V, ok bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// A separate goroutine closes done when ctx is cancelled, because
-	// sync.Cond has no context support; the goroutine is bounded by the wait.
-	done := make(chan struct{})
+	// Cond has no select support; AfterFunc broadcasts so a parked waiter
+	// rechecks ctx. stop is called before Wait returns.
 	stop := context.AfterFunc(ctx, func() {
 		r.mu.Lock()
 		r.cond.Broadcast()
 		r.mu.Unlock()
-		close(done)
 	})
 	defer stop()
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for r.readIdx == r.writeIdx {
+	for r.length == 0 {
 		if ctx.Err() != nil || atomic.LoadInt64(&r.subCount) == 0 {
 			return v, false
 		}
@@ -160,6 +176,7 @@ func (r *StableRing32Nano[C, V]) Wait(ctx context.Context) (v V, ok bool) {
 	var zero V
 	r.buf[r.readIdx] = zero // release the payload
 	r.readIdx = (r.readIdx + 1) & r.mask
+	r.length--
 	return v, true
 }
 
@@ -172,5 +189,24 @@ func (r *StableRing32Nano[C, V]) C() C {
 func (r *StableRing32Nano[C, V]) Len() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return int(r.writeIdx - r.readIdx)
+	return int(r.length)
+}
+
+// Dropped reports values evicted by overwrite-oldest admission at capacity.
+func (r *StableRing32Nano[C, V]) Dropped() uint64 { return r.dropped.Load() }
+
+// TryWait is the nonblocking form used by bounded dispatch tests and fuzzing.
+func (r *StableRing32Nano[C, V]) TryWait() (V, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.length == 0 {
+		var zero V
+		return zero, false
+	}
+	v := r.buf[r.readIdx]
+	var zero V
+	r.buf[r.readIdx] = zero
+	r.readIdx = (r.readIdx + 1) & r.mask
+	r.length--
+	return v, true
 }

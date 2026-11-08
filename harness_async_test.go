@@ -153,6 +153,20 @@ func asyncImpls() map[string]func() asyncAPI {
 			x := NewChanRelay[pv](WithRelayWindow(16))
 			return asyncAPI{lossless: true, send: func(v pv) { x.Send(v) }, subscribe: func(ctx context.Context) func(func(pv) bool) { return x.SubscribeContext(ctx) }}
 		},
+		"Broadcaster58Spark_c64": func() asyncAPI {
+			x := NewBroadcaster58Spark[pv](64)
+			return asyncAPI{send: func(v pv) { x.Send(v) }, subscribe: func(ctx context.Context) func(func(pv) bool) {
+				return x.SubscribeContext(ctx)
+			}}
+		},
+		"RingFanOut14Xing_c64": func() asyncAPI {
+			x := NewRingFanOut14Xing[chan pv, pv](64, 16, 16)
+			return asyncAPI{send: func(v pv) { _ = x.Send(v) }, subscribe: func(ctx context.Context) func(func(pv) bool) { return x.SubscribeContext(ctx) }}
+		},
+		"BaselineAsyncFanout_c64": func() asyncAPI {
+			x := NewBaselineAsyncFanout[pv](64, 16)
+			return asyncAPI{send: func(v pv) { x.Send(v) }, subscribe: func(ctx context.Context) func(func(pv) bool) { return x.SubscribeContext(ctx) }}
+		},
 		"ChanHub_c16": func() asyncAPI {
 			x := NewChanHub[pv]()
 			return asyncAPI{lossless: true, send: func(v pv) { x.Send(v) }, subscribe: func(ctx context.Context) func(func(pv) bool) {
@@ -183,6 +197,7 @@ func runAsyncStress(t *testing.T, mk func() asyncAPI, subs, sends int, churn boo
 	var first atomic.Value
 	lastSeen := make([]atomic.Int64, subs)
 	var wg sync.WaitGroup
+	ready := make(chan struct{}, subs)
 	for s := 0; s < subs; s++ {
 		wg.Add(1)
 		go func(id int) {
@@ -209,7 +224,11 @@ func runAsyncStress(t *testing.T, mk func() asyncAPI, subs, sends int, churn boo
 					}
 				}()
 				last := int64(-1)
-				for v := range x.subscribe(ctx) {
+				seq := x.subscribe(ctx)
+				if !churn {
+					ready <- struct{}{}
+				}
+				for v := range seq {
 					yielded.Add(1)
 					if v[0] != v[1] || v[1] != v[2] || v[2] != v[3] {
 						if torn.Add(1) == 1 {
@@ -238,7 +257,11 @@ func runAsyncStress(t *testing.T, mk func() asyncAPI, subs, sends int, churn boo
 			}
 		}(s)
 	}
-	time.Sleep(30 * time.Millisecond)
+	if !churn {
+		for s := 0; s < subs; s++ {
+			<-ready
+		}
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

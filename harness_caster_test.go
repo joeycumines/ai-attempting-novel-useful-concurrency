@@ -40,6 +40,10 @@ func casterImpls() map[string]func() casterAPI {
 			x := NewChanCaster09Gemini(make(chan int))
 			return casterAPI{x.Send, x.Add, x.C, nil, nil, false, true, false}
 		},
+		"ChanCaster11Meta": func() casterAPI {
+			x := NewChanCaster11Meta(make(chan int))
+			return casterAPI{x.Send, x.Add, x.C, nil, nil, false, true, false}
+		},
 		"ChanCaster14Xing": func() casterAPI {
 			x := NewChanCaster14Xing(make(chan int))
 			return casterAPI{x.Send, x.Add, x.C, nil, nil, false, true, false}
@@ -63,6 +67,10 @@ func casterImpls() map[string]func() casterAPI {
 		"ChanPubSub35ChatJimmy": func() casterAPI {
 			x := NewChanPubSub35ChatJimmy(make(chan int))
 			return casterAPI{x.Send, x.Add, x.C(), x.Close, x.Wait, true, false, true}
+		},
+		"ChanCaster58Spark": func() casterAPI {
+			x := NewChanCaster58Spark(make(chan int))
+			return casterAPI{x.Send, x.Add, x.C, nil, nil, false, true, false}
 		},
 		"ChanCaster47Gemini": func() casterAPI {
 			x := NewChanCaster47Gemini(make(chan int))

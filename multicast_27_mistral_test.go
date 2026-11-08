@@ -18,6 +18,7 @@ package bigbuff
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -146,7 +147,9 @@ func TestMulticastClose(t *testing.T) {
 	}
 	done := make(chan int, 1)
 	go func() { done <- m.Send(2) }() // blocks: mailboxes full
-	time.Sleep(50 * time.Millisecond)
+	for i := 0; i < 1000; i++ {
+		runtime.Gosched()
+	}
 	m.Close()
 	select {
 	case n := <-done:
@@ -343,7 +346,6 @@ func TestMulticastSubscribeContext(t *testing.T) {
 		ended <- n
 	}()
 	<-iterating
-	time.Sleep(50 * time.Millisecond)
 	cancel()
 	select {
 	case n := <-ended:
@@ -382,8 +384,12 @@ func TestMulticastMailboxCapacity(t *testing.T) {
 		}
 	}
 	done := make(chan int, 1)
-	go func() { done <- m.Send(3) }() // blocks: fourth value
-	time.Sleep(50 * time.Millisecond)
+	started := make(chan struct{})
+	go func() { close(started); done <- m.Send(3) }() // blocks: fourth value
+	<-started
+	for i := 0; i < 1000; i++ {
+		runtime.Gosched()
+	}
 	select {
 	case n := <-done:
 		t.Fatalf("Send returned %d with a full mailbox", n)

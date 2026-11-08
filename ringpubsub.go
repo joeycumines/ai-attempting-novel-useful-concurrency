@@ -16,6 +16,9 @@
 
 package bigbuff
 
+// Provenance: 18-chatgpt-2.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"context"
 	"errors"

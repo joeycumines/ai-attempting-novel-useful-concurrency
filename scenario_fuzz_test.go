@@ -26,6 +26,13 @@ func FuzzScenarioBroadcast(f *testing.F) {
 		seenImpl := map[string]bool{}
 		var uniq []Attachment
 		for _, a := range broadcastAttachments {
+			// This active-concurrency stream deliberately excludes attachments
+			// whose metadata forbids mid-send withdrawal/close or concurrent
+			// slot lifecycle. Those implementations receive dedicated, safe
+			// model fuzz targets instead of being silently exercised here.
+			if a.ExposureLimited {
+				continue
+			}
 			if !seenImpl[a.Impl] {
 				seenImpl[a.Impl] = true
 				uniq = append(uniq, a)
@@ -89,63 +96,70 @@ func FuzzScenarioCasterScatterGather(f *testing.F) {
 		if len(ops) == 0 || len(ops) > 24 {
 			return
 		}
-		// Scatter: single-threaded register/dispatch/withdraw. The test
-		// goroutine itself is the registered receiver, so no parked receiver
-		// goroutine can ever be leaked waiting on the unbuffered channel.
+		// Scatter: serial operations through each implementation's own wait
+		// abstraction, so queued rings and unbuffered channels are both legal.
+		// Values are unique and each accepted value must be consumed once.
 		for _, a := range scatterAttachments {
-			var ch chan int
-			var send func(int) int
-			var add func(int) int
-			switch a.Impl {
-			case "ChanScatter":
-				x := NewChanScatter(make(chan int))
-				ch, send, add = x.C, x.Send, x.Add
-			default:
-				x := NewBaselineScatterQueue[int]()
-				ch, send, add = x.C, x.Send, x.Add
-			}
+			x := scatterLikes()[a.Impl]()
 			registered := 0
+			next, expected := 1, 1
+			drain := func() {
+				for {
+					v, ok := x.try()
+					if !ok {
+						return
+					}
+					if v != expected {
+						t.Fatalf("scatter %s: got %d want %d", a.Impl, v, expected)
+					}
+					expected++
+				}
+			}
 			for _, op := range ops {
 				switch op % 3 {
 				case 0:
-					add(1)
-					registered++
+					if registered < 4 {
+						x.add(1)
+						registered++
+					}
 				case 1:
 					if registered == 0 {
-						if n := send(1); n != 0 {
-							t.Fatalf("scatter %s: Send with no receivers = %d, want 0", a.Impl, n)
+						if n := x.send(next); n != 0 {
+							t.Fatalf("scatter %s: no receivers but Send=%d", a.Impl, n)
 						}
 						continue
 					}
-					done := make(chan int, 1)
-					go func() { done <- send(1) }()
-					select {
-					case v := <-ch:
-						if v != 1 {
-							t.Fatalf("scatter %s: received %d, want 1", a.Impl, v)
-						}
-					case <-time.After(5 * time.Second):
-						t.Fatalf("scatter %s: receive blocked", a.Impl)
+					sendDone := make(chan int, 1)
+					go func(v int) { sendDone <- x.send(v) }(next)
+					ctx, cancel := context.WithTimeout(context.Background(), scenarioGuard)
+					v, ok := x.wait(ctx)
+					cancel()
+					if !ok || v != next {
+						t.Fatalf("scatter %s: wait=(%d,%v), want %d", a.Impl, v, ok, next)
 					}
 					select {
-					case n := <-done:
+					case n := <-sendDone:
 						if n != 1 {
-							t.Fatalf("scatter %s: Send = %d, want 1", a.Impl, n)
+							t.Fatalf("scatter %s: Send=%d want 1", a.Impl, n)
 						}
-					case <-time.After(5 * time.Second):
-						t.Fatalf("scatter %s: send blocked", a.Impl)
+					case <-time.After(scenarioGuard):
+						t.Fatalf("scatter %s: Send did not complete after receipt", a.Impl)
 					}
+					next++
+					drain()
 				case 2:
 					if registered > 0 {
-						add(-1)
+						x.add(-1)
 						registered--
 					}
+					drain()
 				}
 			}
 			for registered > 0 {
-				add(-1)
+				x.add(-1)
 				registered--
 			}
+			drain()
 		}
 		// Gather: ops only register/withdraw; signals happen exclusively
 		// inside a proper Wait round (a lone send on the unbuffered channel

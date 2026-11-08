@@ -16,6 +16,9 @@
 
 package bigbuff
 
+// Provenance: 09-gemini-argon-medium.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"math"
 	"sync"
@@ -262,4 +265,3 @@ func (x *ChanCaster09Gemini[C, V]) Add(delta int) int {
 
 	panic(`bigbuff: chancaster: add: state invariant violation`)
 }
-

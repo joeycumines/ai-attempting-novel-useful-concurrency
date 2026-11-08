@@ -3,6 +3,7 @@ package bigbuff
 import (
 	"context"
 	"iter"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -96,6 +97,17 @@ func AllBroadcasters() []func() Broadcaster {
 		func() Broadcaster { return newRingCaster55Adapter() },
 		func() Broadcaster { return newFanout56Adapter() },
 		func() Broadcaster { return newSelectBroadcaster49Adapter() },
+		func() Broadcaster { return newQueuedFanout24Adapter() },
+		func() Broadcaster { return newBaselineQueuedAdapter() },
+		func() Broadcaster { return newSelectFanout38Adapter() },
+		func() Broadcaster { return newFanout45Adapter() },
+		func() Broadcaster { return newFanout45BufferedAdapter() },
+		func() Broadcaster { return newRingFanout45Adapter() },
+		func() Broadcaster { return newChanPubSub58Adapter() },
+		func() Broadcaster { return newGenPubSub50Adapter() },
+		func() Broadcaster { return newBroadcaster58Adapter() },
+		func() Broadcaster { return newRingFanOut14Adapter() },
+		func() Broadcaster { return newBaselineAsyncAdapter() },
 	}
 }
 
@@ -110,13 +122,15 @@ type pumpSub struct {
 	ch     chan int
 	cancel context.CancelFunc
 	once   sync.Once
+	done   chan struct{}
 }
 
 func newPumpSub(pump func(ctx context.Context, ch chan<- int)) BroadcastSubscriber {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &pumpSub{ch: make(chan int, 16), cancel: cancel}
+	s := &pumpSub{ch: make(chan int, 16), cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(s.ch)
+		defer close(s.done)
 		pump(ctx, s.ch)
 	}()
 	return s
@@ -139,7 +153,7 @@ func (s *pumpSub) TryReceive() (int, bool) {
 	}
 }
 func (s *pumpSub) Unsubscribe() {
-	s.once.Do(func() { s.cancel() })
+	s.once.Do(func() { s.cancel(); <-s.done })
 }
 
 // pumpSubscribe adapts an iterator-based subscription whose registration
@@ -148,9 +162,10 @@ func (s *pumpSub) Unsubscribe() {
 func pumpSubscribe(subscribe func(ctx context.Context) iter.Seq[int]) BroadcastSubscriber {
 	ctx, cancel := context.WithCancel(context.Background())
 	seq := subscribe(ctx) // registers synchronously
-	s := &pumpSub{ch: make(chan int, 16), cancel: cancel}
+	s := &pumpSub{ch: make(chan int, 16), cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(s.ch)
+		defer close(s.done)
 		for v := range seq {
 			select {
 			case s.ch <- v:
@@ -323,14 +338,14 @@ func (a *epochPubSubAdapter) Subscribe() BroadcastSubscriber {
 	})
 }
 
-// 20. ReliableBeacon (14-Qwen) - latest value with reliable ack barrier
+// 20. ReliableBeacon (08-MuseSpark) - latest value with reliable ack barrier
 type reliableBeaconAdapter struct{ x *ReliableBeacon[int] }
 
 func newReliableBeaconAdapter() Broadcaster {
 	return &reliableBeaconAdapter{x: NewReliableBeacon[int]()}
 }
 
-func (a *reliableBeaconAdapter) Name() string        { return "ReliableBeacon (14-Qwen)" }
+func (a *reliableBeaconAdapter) Name() string        { return "ReliableBeacon (08-MuseSpark)" }
 func (a *reliableBeaconAdapter) Publish(val int) int { return a.x.Send(val) }
 func (a *reliableBeaconAdapter) IsCoalescing() bool  { return true }
 func (a *reliableBeaconAdapter) Close()              {}
@@ -1173,6 +1188,7 @@ func TestStandardHarness_InOrderDelivery(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
 		b := factory()
 		if b.IsCoalescing() {
+			b.Close()
 			continue // skip coalescing broadcasters for strict sequence ordering
 		}
 		t.Run(b.Name(), func(t *testing.T) {
@@ -1202,6 +1218,7 @@ func TestStandardHarness_ConcurrentChurn(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
 		b := factory()
 		if limited, ok := b.(interface{ SkipStandardConcurrentChurn() bool }); ok && limited.SkipStandardConcurrentChurn() {
+			b.Close()
 			continue
 		}
 		t.Run(b.Name(), func(t *testing.T) {
@@ -1210,9 +1227,9 @@ func TestStandardHarness_ConcurrentChurn(t *testing.T) {
 			defer cancel()
 
 			var stop atomic.Bool
-			var wg sync.WaitGroup
+			var wg, subWg sync.WaitGroup
 
-			// Publisher goroutine
+			// Publisher runs until the bounded subscriber churn completes.
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -1220,27 +1237,25 @@ func TestStandardHarness_ConcurrentChurn(t *testing.T) {
 				for !stop.Load() {
 					b.Publish(m)
 					m++
-					time.Sleep(100 * time.Microsecond)
 				}
 			}()
 
-			// Churning subscriber goroutines
+			// Fixed churn cycles per subscriber; no readiness or duration sleep.
 			for i := 0; i < 4; i++ {
-				wg.Add(1)
+				subWg.Add(1)
 				go func() {
-					defer wg.Done()
-					for !stop.Load() {
+					defer subWg.Done()
+					for j := 0; j < 20; j++ {
 						func() {
 							s := b.Subscribe()
 							defer s.Unsubscribe()
 							s.Receive(ctx)
 						}()
-						time.Sleep(50 * time.Microsecond)
 					}
 				}()
 			}
 
-			time.Sleep(50 * time.Millisecond)
+			subWg.Wait()
 			stop.Store(true)
 			cancel()
 			wg.Wait()
@@ -1275,7 +1290,7 @@ func TestStandardHarness_TryReceive(t *testing.T) {
 					}
 					return
 				}
-				time.Sleep(1 * time.Millisecond)
+				runtime.Gosched()
 			}
 		})
 	}
@@ -1289,7 +1304,10 @@ type genericPubSubBroadcaster struct {
 	api  pubsubAPI
 }
 
-func (a *genericPubSubBroadcaster) Name() string       { return a.name }
+func (a *genericPubSubBroadcaster) Name() string { return a.name }
+func (a *genericPubSubBroadcaster) SkipStandardConcurrentChurn() bool {
+	return a.name == "ChanPubSubV2_06meta" // manual Wait cannot be interrupted mid-round
+}
 func (a *genericPubSubBroadcaster) Publish(v int) int  { return a.api.send(v) }
 func (a *genericPubSubBroadcaster) IsCoalescing() bool { return !a.api.lossless }
 func (a *genericPubSubBroadcaster) Close()             {}

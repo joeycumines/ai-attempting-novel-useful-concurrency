@@ -101,42 +101,42 @@ func BenchmarkScenarioCaster(b *testing.B) {
 
 func BenchmarkScenarioScatterGather(b *testing.B) {
 	for _, a := range scatterAttachments {
+		if a.Scenario != "work-distribution-scatter" || !a.ExpectedGoodFit {
+			// Bounded lossy queues are measured by BenchmarkBoundedScatterAdmission
+			// with exact eviction accounting, not by a lossless dispatch loop that
+			// could silently overflow and report favourable invalid throughput.
+			continue
+		}
 		b.Run("scatter/"+a.Impl, func(b *testing.B) {
-			var ch chan int
-			var send func(int) int
-			var add func(int) int
-			switch a.Impl {
-			case "ChanScatter":
-				x := NewChanScatter(make(chan int))
-				ch, send, add = x.C, x.Send, x.Add
-			default:
-				x := NewBaselineScatterQueue[int]()
-				ch, send, add = x.C, x.Send, x.Add
-			}
+			x := scatterLikes()[a.Impl]()
 			const receivers = 8
-			stop := make(chan struct{})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			done := make(chan struct{}, receivers)
+			ready := make(chan struct{}, receivers)
 			for r := 0; r < receivers; r++ {
 				go func() {
 					defer func() { done <- struct{}{} }()
+					x.add(1)
+					ready <- struct{}{}
+					defer x.add(-1)
 					for {
-						add(1)
-						select {
-						case <-ch:
-						case <-stop:
-							add(-1)
+						if _, ok := x.wait(ctx); !ok {
 							return
 						}
 					}
 				}()
 			}
+			for r := 0; r < receivers; r++ {
+				<-ready
+			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for v := 1; v <= b.N; v++ {
-				send(v)
+				x.send(v)
 			}
 			b.StopTimer()
-			close(stop)
+			cancel()
 			for r := 0; r < receivers; r++ {
 				<-done
 			}

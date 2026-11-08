@@ -1,5 +1,8 @@
 package bigbuff
 
+// Provenance: 06-meta-chat-probably-muse-spark-1.3.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"runtime"
 	"sync"

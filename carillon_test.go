@@ -166,9 +166,11 @@ func TestCarillonBackpressureStallsAtSlackUntilUnsubscribe(t *testing.T) {
 	}()
 
 	carillonEventually(t, "sender to reach slack", func() bool { return sent.Load() == slack })
-	time.Sleep(20 * time.Millisecond)
-	if got := sent.Load(); got != slack {
-		t.Fatalf("sender ran past slack: sent %d, want %d", got, slack)
+	for i := 0; i < 1000; i++ {
+		runtime.Gosched()
+		if got := sent.Load(); got != slack {
+			t.Fatalf("sender ran past slack: sent %d, want %d", got, slack)
+		}
 	}
 
 	slow.Unsubscribe()
@@ -196,7 +198,7 @@ func TestCarillonLagIsBoundedBySlack(t *testing.T) {
 	var maxLag uint64
 	for i := range total {
 		if i%251 == 0 {
-			time.Sleep(50 * time.Microsecond) // let the sender reach the bound
+			runtime.Gosched()
 		}
 		if lag := s.Lag(); lag > maxLag {
 			maxLag = lag

@@ -1,8 +1,11 @@
 /*
- Copyright 2026 Joseph Cumines
- Licensed under Apache-2.0
+Copyright 2026 Joseph Cumines
+Licensed under Apache-2.0
 */
 package bigbuff
+
+// Provenance: 08-muse-spark-open-arena.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
 
 import (
 	"context"
@@ -18,6 +21,7 @@ var closedChan chan struct{} = func() chan struct{} {
 }()
 
 type noCopy struct{}
+
 func (*noCopy) Lock()   {}
 func (*noCopy) Unlock() {}
 
@@ -38,10 +42,10 @@ type slot[T any] struct {
 type Beacon[T any] struct {
 	_ noCopy
 	// hot atomics on own line
-	seq atomic.Uint64
-	val atomic.Pointer[slot[T]]
-	sig atomic.Pointer[chan struct{}]
-	_ [56]byte // pad sig from sendMu
+	seq    atomic.Uint64
+	val    atomic.Pointer[slot[T]]
+	sig    atomic.Pointer[chan struct{}]
+	_      [56]byte // pad sig from sendMu
 	sendMu sync.Mutex
 	pool   sync.Pool // *slot[T] reuse
 }
@@ -80,8 +84,8 @@ func (b *Beacon[T]) Load() (T, uint64) {
 	}
 	return s.val, s.seq
 }
-func (b *Beacon[T]) Seq() uint64               { return b.seq.Load() }
-func (b *Beacon[T]) Signal() <-chan struct{}   { return *b.sig.Load() }
+func (b *Beacon[T]) Seq() uint64             { return b.seq.Load() }
+func (b *Beacon[T]) Signal() <-chan struct{} { return *b.sig.Load() }
 
 // ReadyFor returns a chan that is ready if seq >= next.
 // Use in select to avoid lost wakeup between Load and Signal:
@@ -136,5 +140,3 @@ func (b *Beacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 		}
 	}
 }
-
-

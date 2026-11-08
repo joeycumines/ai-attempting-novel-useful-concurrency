@@ -17,6 +17,9 @@
 
 package bigbuff
 
+// Provenance: 17-gemini-argon-medium.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"math"
 	"sync"
@@ -201,8 +204,6 @@ func (x *ChanCaster17FastPath[C, V]) Add(delta int) int {
    limitations under the License.
 */
 
-
-
 // ChanCaster17Pumped supports broadcasting messages to multiple receivers, via a
 // single channel, without callbacks.
 //
@@ -251,8 +252,6 @@ type ChanCaster17Pumped[C ~chan V, V any] struct {
 	// send is in progress.
 	state atomic.Uint64
 }
-
-
 
 // NewChanCaster17Pumped constructs a [ChanCaster17Pumped] for the provided channel. It exists
 // primarily for type inference convenience, but also enforces the
