@@ -43,7 +43,7 @@ provenance comments in extracted source files for the repair policy.
 | 48 | `WatchCaster48Grok` | `watchcaster_48_grok.go` | latest-watch adapter + latest/churn/edge attachments; coherent-snapshot, nil-payload, multi-observer wake tests; benchmark + shared fuzz. Replaced the non-broadcast cap-1 signal and split value/generation atomics with a rotating close-notify channel and locked snapshot; measured 1 alloc/send, so zero-allocation claim is not verified. |
 | 49 | `SelectBroadcaster49Qwen` | `selectbroadcaster_49_qwen.go` | latest/churn/edge attachments plus explicit bad-fit attachment to detectable-loss scenario (no loss counter); immutable epochs, sequence-stamped slots, eager subscription point; overrun/multi-observer/state tests + terminal-checked benchmark + shared fuzz. One-shot benchmark observed 3 allocs/send; no zero-allocation claim accepted. |
 | 50 | `GenPubSub` | — | assessed: response is design prose plus disconnected snippets, not a complete implementation; its claimed no-`Done` unsubscribe accounting and two-generation WaitGroup reuse do not establish correct participant pairing/reuse. Revisit against response 57; no runnable source claimed. |
-| 51 | `ChanReplay` | — | not integrated |
+| 51 | `ChanReplay51DeepSeek` | `chanreplay_51_deepseek.go` | lockstep/live adapter + new bounded-catch-up scenario with `BaselineBoundedReplay`; synchronized replay/live-boundary test, churn/edge/lifecycle coverage, snapshot + live-send benchmarks, shared fuzz. Bounded retention is evaluated separately from the unbounded-history scenario; one-shot probes observed nonzero allocations, so the source’s zero-allocation claim is not verified. |
 | 52 | `ChanCascade` | — | not integrated |
 | 53 | `ReplayCast` | — | not integrated |
 | 54 | `EpochBroadcast` | — | not integrated |
@@ -87,7 +87,7 @@ The tools available, especially the presence of a sandbox, search engine, and (i
 
 In cases where there were individual files attached, they are encoded as a txtar down the bottom of the markdown, in a code block or similar.
 
-**Integration progress:** responses 46–49 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with response 51 and later outputs.
+**Integration progress:** responses 46–49 and 51 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with responses 52–58 and the remaining tracker follow-ups.
 
 - [03-chatgpt-1.md](03-chatgpt-1.md)
 - [04-deepseek-v4.1-flash-chat.md](04-deepseek-v4.1-flash-chat.md)
