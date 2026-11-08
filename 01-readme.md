@@ -49,7 +49,7 @@ provenance comments in extracted source files for the repair policy.
 | 54 | `EpochBroadcast54Terra` | `epochbroadcast_54_terra.go` | Selectable epoch notification + receipt barrier integrated into lockstep, churn, zero-subscriber, lifecycle (per-subscription only; no hub Close), and large-fanout (explicit poor-fit measurement). Added membership-boundary/mid-send withdrawal tests and direct benchmark; focused race passed, warmed 8-subscriber probe observed 2 allocs/op. |
 | 55 | `RingCaster55Haiku` | `ringcaster_55_haiku.go` | Immutable slab cells + caller-owned cursors wired to bounded-ring, large-fanout, churn, zero-subscriber, lifecycle; direct no-sleep Arm/recheck/Close test, concurrent publication, exact resume/lap accounting, allocation assertions, and ring-model fuzz/bench. Repaired resume-gap accounting, lapping that skipped still-retained cells, zero-value errors, late Arm-after-Close, and uint64 sequence wrap. Full tests/vet, focused race and fuzz passed; direct probes: slab allocation 1/256 values, TryRecv 0 allocs. |
 | 56 | `Fanout56MaiCode` | `fanout_56_maicode.go` | Namespaced COW subscriber-slice fan-out attached to buffered backpressure, churn, zero-subscriber, lifecycle (sub-close only), and explicitly poor-fit lockstep/large-fanout reports. Added per-sub send/close exclusion and serialized Send order to honor no-post-Close delivery and consistent subscriber ordering; full tests/vet and focused race passed. Warmed 8-subscriber send measured 0 allocs/op. |
-| 57 | `ChanPubSub57DeepSeek` | — | not integrated |
+| 57 | `ChanPubSub57DeepSeek` | `chanpubsub_57_deepseek.go` | Namespaced phase-gated shared-channel pub/sub with an atomic acknowledgement plane and one-slot final-ack notification; retains ChanCaster withdrawal protocol. Adapter/harness/scenario attachments, direct tests, model-free shared fuzz, and eight-subscriber benchmark added. `go vet ./...`, `go test ./...`, shared FuzzScenarioBroadcast, focused race tests (direct x10 and churn/TryReceive x3) pass. Direct Send benchmark: 0 allocs/op. No hub-wide Close exists; lifecycle is explicitly cancellation/unsubscribe only. |
 | 58 | `Broadcaster58Spark` | — | not integrated |
 
 ## Introduction
@@ -87,7 +87,7 @@ The tools available, especially the presence of a sandbox, search engine, and (i
 
 In cases where there were individual files attached, they are encoded as a txtar down the bottom of the markdown, in a code block or similar.
 
-**Integration progress:** responses 46–49 and 51–56 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with responses 57–58 and the remaining tracker follow-ups.
+**Integration progress:** responses 46–49 and 51–57 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with response 58 and the remaining tracker follow-ups.
 
 - [03-chatgpt-1.md](03-chatgpt-1.md)
 - [04-deepseek-v4.1-flash-chat.md](04-deepseek-v4.1-flash-chat.md)

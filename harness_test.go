@@ -31,6 +31,7 @@ type BroadcastSubscriber interface {
 func AllBroadcasters() []func() Broadcaster {
 	return []func() Broadcaster{
 		func() Broadcaster { return newChanPubSubAdapter() },
+		func() Broadcaster { return newChanPubSub57Adapter() },
 		func() Broadcaster { return newRingPubSubAdapter() },
 		func() Broadcaster { return newPhasePubSubAdapter() },
 		func() Broadcaster { return newRelayPubSubAdapter() },

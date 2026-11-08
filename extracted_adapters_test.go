@@ -607,6 +607,11 @@ func extractedBroadcastAttachments() []Attachment {
 		att("bounded-ring-lossy-detectable", "SelectBroadcaster49Qwen (49-Qwen)", "Bounded ring provides ordered catch-up until overrun and silently snaps past overwritten values.", false),
 		attX("cancellation-and-close-lifecycle", "SelectBroadcaster49Qwen (49-Qwen)", "Context cancellation stops iterator consumption.", false, "This response has no broadcaster Close API; lifecycle facets cancel subscriptions and never rely on a global close operation."),
 		att("zero-subscriber-and-edge-lifecycle", "ChanRing47Gemini (47-Gemini)", "Publish with no active readers does not consume a slot; readers start at the current tail.", true),
+		att("lockstep-barrier-lossless", "ChanPubSub57DeepSeek (57-DeepSeek)", "The phase gate lets receivers acknowledge after the complete rendezvous phase; the atomic ack counter and one-slot signal coordinate the sender.", true),
+		att("ephemeral-churn-membership", "ChanPubSub57DeepSeek (57-DeepSeek)", "Atomic subscriber accounting plus the existing ChanCaster ping protocol withdraws a subscriber during an active send without stranding its publisher.", true),
+		attX("cancellation-and-close-lifecycle", "ChanPubSub57DeepSeek (57-DeepSeek)", "Context iterators withdraw their subscriber count on cancellation.", false, "The primitive has no hub-wide Close API; lifecycle coverage uses context cancellation and Unsubscribe only, never adapter Close as a global shutdown."),
+		att("zero-subscriber-and-edge-lifecycle", "ChanPubSub57DeepSeek (57-DeepSeek)", "Send returns immediately at zero subscribers; subscriptions added later participate in subsequent rendezvous rounds.", true),
+		att("large-fanout-scalability", "ChanPubSub57DeepSeek (57-DeepSeek)", "Each publication rendezvous and phase-acknowledges all receivers; attached to measure its intentionally costly O(N) synchronization at high fan-out.", false),
 	}
 }
 
