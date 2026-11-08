@@ -569,6 +569,7 @@ func extractedBroadcastAttachments() []Attachment {
 		att("ephemeral-churn-membership", "WatchCaster48Grok (48-Grok)", "Observers are per-cursor generation snapshots with no registration in the publisher; churn does not mutate fan-out state.", true),
 		att("zero-subscriber-and-edge-lifecycle", "WatchCaster48Grok (48-Grok)", "Send is independent of observer count; each observer begins at the current generation and observes later updates only.", true),
 		att("lockstep-barrier-lossless", "ChanReplay51DeepSeek (51-DeepSeek)", "The response-51 extension preserves synchronous receive acknowledgements for live subscribers while retaining a bounded history for late joins.", true),
+		att("synchronous-handoff-no-barrier", "ChanCascade52Opus (52-ClaudeOpus)", "Two phase-alternating unbuffered transports carry cooperative relays; Send waits for all receipt/relay handoffs, but not for application processing after Received.", true),
 		att("bounded-catchup-replay", "ChanReplay51DeepSeek (51-DeepSeek)", "Atomic replay-snapshot plus live registration yields the retained suffix without a gap or duplicate; capacity is fixed and older history is intentionally unavailable.", true),
 		att("bounded-catchup-replay", "BaselineBoundedReplay (baseline)", "Textbook mutex-protected bounded history plus per-subscriber buffered channels; snapshot and registration share one lock, with send backpressure on slow readers.", true),
 		att("buffered-lossless-backpressured", "BaselineBoundedReplay (baseline)", "Mutex-protected per-subscriber bounded queues provide ordinary lossless backpressure; replay history is an additional bounded retention cost.", true),
@@ -584,5 +585,67 @@ func extractedBroadcastAttachments() []Attachment {
 		att("bounded-ring-lossy-detectable", "SelectBroadcaster49Qwen (49-Qwen)", "Bounded ring provides ordered catch-up until overrun and silently snaps past overwritten values.", false),
 		attX("cancellation-and-close-lifecycle", "SelectBroadcaster49Qwen (49-Qwen)", "Context cancellation stops iterator consumption.", false, "This response has no broadcaster Close API; lifecycle facets cancel subscriptions and never rely on a global close operation."),
 		att("zero-subscriber-and-edge-lifecycle", "ChanRing47Gemini (47-Gemini)", "Publish with no active readers does not consume a slot; readers start at the current tail.", true),
+	}
+}
+
+type chanCascade52Adapter struct {
+	x *ChanCascade52Opus[chan int, int]
+}
+
+func newChanCascade52Adapter() Broadcaster {
+	return &chanCascade52Adapter{x: MakeChanCascade52Opus[int]()}
+}
+func (a *chanCascade52Adapter) Name() string       { return "ChanCascade52Opus (52-ClaudeOpus)" }
+func (a *chanCascade52Adapter) Publish(v int) int  { return a.x.Send(v) }
+func (a *chanCascade52Adapter) Close()             {}
+func (a *chanCascade52Adapter) IsCoalescing() bool { return false }
+func (a *chanCascade52Adapter) Subscribe() BroadcastSubscriber {
+	return &chanCascade52Sub{r: a.x.Subscribe()}
+}
+
+type chanCascade52Sub struct {
+	r      ChanCascadeReceiver52Opus[chan int, int]
+	closed bool
+}
+
+func (s *chanCascade52Sub) Receive(ctx context.Context) (int, bool) {
+	if s.closed {
+		return 0, false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return 0, false
+	case v, ok := <-s.r.C():
+		if !ok {
+			s.Unsubscribe()
+			return 0, false
+		}
+		s.r.Received(v)
+		return v, true
+	}
+}
+func (s *chanCascade52Sub) TryReceive() (int, bool) {
+	if s.closed {
+		return 0, false
+	}
+	select {
+	case v, ok := <-s.r.C():
+		if !ok {
+			s.Unsubscribe()
+			return 0, false
+		}
+		s.r.Received(v)
+		return v, true
+	default:
+		return 0, false
+	}
+}
+func (s *chanCascade52Sub) Unsubscribe() {
+	if !s.closed {
+		s.closed = true
+		s.r.Unsubscribe()
 	}
 }
