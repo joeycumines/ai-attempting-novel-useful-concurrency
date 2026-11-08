@@ -457,6 +457,81 @@ func (a *selectBroadcaster49Adapter) Subscribe() BroadcastSubscriber {
 	return pumpSubscribe(a.x.SubscribeContext)
 }
 
+type chanReplay51Adapter struct {
+	x *ChanReplay51DeepSeek[chan int, int]
+}
+
+func newChanReplay51Adapter() Broadcaster {
+	return &chanReplay51Adapter{x: NewChanReplay51DeepSeek[chan int, int](make(chan int), 64)}
+}
+func (a *chanReplay51Adapter) Name() string       { return "ChanReplay51DeepSeek (51-DeepSeek)" }
+func (a *chanReplay51Adapter) Publish(v int) int  { return a.x.Send(v) }
+func (a *chanReplay51Adapter) Close()             {} // No hub Close operation is provided.
+func (a *chanReplay51Adapter) IsCoalescing() bool { return false }
+func (a *chanReplay51Adapter) Subscribe() BroadcastSubscriber {
+	a.x.Subscribe()
+	return &chanReplay51Sub{x: a.x, ch: a.x.C()}
+}
+
+type chanReplay51Sub struct {
+	x    *ChanReplay51DeepSeek[chan int, int]
+	ch   chan int
+	once sync.Once
+}
+
+func (s *chanReplay51Sub) Receive(ctx context.Context) (int, bool) {
+	select {
+	case <-ctx.Done():
+		return 0, false
+	case value, ok := <-s.ch:
+		if !ok {
+			return 0, false
+		}
+		s.x.Wait()
+		return value, true
+	}
+}
+func (s *chanReplay51Sub) TryReceive() (int, bool) {
+	select {
+	case value, ok := <-s.ch:
+		if !ok {
+			return 0, false
+		}
+		s.x.Wait()
+		return value, true
+	default:
+		return 0, false
+	}
+}
+func (s *chanReplay51Sub) Unsubscribe() { s.once.Do(s.x.Unsubscribe) }
+
+type baselineBoundedReplayAdapter struct{ x *BaselineBoundedReplay[int] }
+
+func newBaselineBoundedReplayAdapter() Broadcaster {
+	return &baselineBoundedReplayAdapter{x: NewBaselineBoundedReplay[int](64)}
+}
+func (a *baselineBoundedReplayAdapter) Name() string {
+	return "BaselineBoundedReplay (baseline)"
+}
+func (a *baselineBoundedReplayAdapter) Publish(v int) int  { return a.x.Send(v) }
+func (a *baselineBoundedReplayAdapter) Close()             { a.x.Close() }
+func (a *baselineBoundedReplayAdapter) IsCoalescing() bool { return false }
+func (a *baselineBoundedReplayAdapter) Subscribe() BroadcastSubscriber {
+	return &baselineBoundedReplaySubAdapter{sub: a.x.Subscribe()}
+}
+
+type baselineBoundedReplaySubAdapter struct {
+	sub *baselineBoundedReplaySub[int]
+}
+
+func (s *baselineBoundedReplaySubAdapter) Receive(ctx context.Context) (int, bool) {
+	return s.sub.Receive(ctx)
+}
+func (s *baselineBoundedReplaySubAdapter) TryReceive() (int, bool) {
+	return s.sub.TryReceive()
+}
+func (s *baselineBoundedReplaySubAdapter) Unsubscribe() { s.sub.Close() }
+
 func extractedBroadcastAttachments() []Attachment {
 	return []Attachment{
 		att("lockstep-barrier-lossless", "Carillon (21-ClaudeHaiku)", "Per-subscriber ring cursors; Send waits until each registered subscriber has advanced, providing synchronous lossless fan-out.", true),
@@ -493,6 +568,16 @@ func extractedBroadcastAttachments() []Attachment {
 		att("latest-value-conflating-watch", "WatchCaster48Grok (48-Grok)", "Generation-tracked latest value coalesces intermediates; a closed generation channel wakes all current observers and Load returns a coherent snapshot.", true),
 		att("ephemeral-churn-membership", "WatchCaster48Grok (48-Grok)", "Observers are per-cursor generation snapshots with no registration in the publisher; churn does not mutate fan-out state.", true),
 		att("zero-subscriber-and-edge-lifecycle", "WatchCaster48Grok (48-Grok)", "Send is independent of observer count; each observer begins at the current generation and observes later updates only.", true),
+		att("lockstep-barrier-lossless", "ChanReplay51DeepSeek (51-DeepSeek)", "The response-51 extension preserves synchronous receive acknowledgements for live subscribers while retaining a bounded history for late joins.", true),
+		att("bounded-catchup-replay", "ChanReplay51DeepSeek (51-DeepSeek)", "Atomic replay-snapshot plus live registration yields the retained suffix without a gap or duplicate; capacity is fixed and older history is intentionally unavailable.", true),
+		att("bounded-catchup-replay", "BaselineBoundedReplay (baseline)", "Textbook mutex-protected bounded history plus per-subscriber buffered channels; snapshot and registration share one lock, with send backpressure on slow readers.", true),
+		att("buffered-lossless-backpressured", "BaselineBoundedReplay (baseline)", "Mutex-protected per-subscriber bounded queues provide ordinary lossless backpressure; replay history is an additional bounded retention cost.", true),
+		att("ephemeral-churn-membership", "ChanReplay51DeepSeek (51-DeepSeek)", "Subscriber registration and removal participate in the replay/send lock protocol; live readers withdraw by compensating the active one-shot send count.", true),
+		att("zero-subscriber-and-edge-lifecycle", "ChanReplay51DeepSeek (51-DeepSeek)", "Send retains history while no live subscribers exist; the harness adapter intentionally uses live-only Subscribe, then tests future delivery.", true),
+		attX("cancellation-and-close-lifecycle", "ChanReplay51DeepSeek (51-DeepSeek)", "A cancelled live iterator withdraws its receiver intent.", false, "The implementation has no hub Close API; lifecycle facets cancel and unsubscribe first and do not require adapter Close to stop it."),
+		att("ephemeral-churn-membership", "BaselineBoundedReplay (baseline)", "The baseline removes per-subscriber channels under a mutex; a done signal releases sends already targeting a removed subscriber.", true),
+		att("zero-subscriber-and-edge-lifecycle", "BaselineBoundedReplay (baseline)", "Zero-listener sends append only to bounded history; live-only new subscriptions receive subsequent publications.", true),
+		att("cancellation-and-close-lifecycle", "BaselineBoundedReplay (baseline)", "Close and per-subscription cancellation signal blocked receivers and unblock pending sends.", true),
 		att("latest-value-conflating-watch", "SelectBroadcaster49Qwen (49-Qwen)", "Closed notification epochs wake all waiters; a sequence-stamped bounded ring lets observers catch up and eventually see the latest value without blocking publishers.", true),
 		att("ephemeral-churn-membership", "SelectBroadcaster49Qwen (49-Qwen)", "No central subscriber registry; each iterator keeps an independent sequence cursor and can be cancelled independently.", true),
 		att("zero-subscriber-and-edge-lifecycle", "SelectBroadcaster49Qwen (49-Qwen)", "Publication does not require registered observers; new iterators begin at the generation captured when SubscribeContext is called.", true),

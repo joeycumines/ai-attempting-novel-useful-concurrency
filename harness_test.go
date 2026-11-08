@@ -87,6 +87,8 @@ func AllBroadcasters() []func() Broadcaster {
 		func() Broadcaster { return newChanPubSub47Adapter() },
 		func() Broadcaster { return newChanRing47Adapter() },
 		func() Broadcaster { return newWatchCaster48Adapter() },
+		func() Broadcaster { return newChanReplay51Adapter() },
+		func() Broadcaster { return newBaselineBoundedReplayAdapter() },
 		func() Broadcaster { return newSelectBroadcaster49Adapter() },
 	}
 }
