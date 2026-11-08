@@ -208,12 +208,18 @@ func FuzzScenarioCasterScatterGather(f *testing.F) {
 		// Casters are covered op-by-op by TestScenarioCaster churn facets;
 		// here a single bounded round per caster per input keeps fuzz fast.
 		for _, a := range casterAttachments {
+			if a.ExposureLimited {
+				continue
+			}
 			x := casterLikes()[a.Impl]()
 			x.add(1)
 			done := make(chan int, 1)
 			go func() { done <- x.send(1) }()
 			select {
 			case v := <-x.c:
+				if x.ack != nil {
+					x.ack()
+				}
 				if v != 1 {
 					t.Fatalf("caster %s: got %d want 1", a.Impl, v)
 				}

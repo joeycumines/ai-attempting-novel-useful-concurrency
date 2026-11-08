@@ -193,6 +193,28 @@ var Cases = []Case{
 	{"lifecycle/fuzz/op-stream", "cancellation-and-close-lifecycle", CaseFuzz, "Randomised op stream including unsubscribe/close edges", "FuzzScenarioBroadcast"},
 	{"edge/test/zero-subscriber", "zero-subscriber-and-edge-lifecycle", CaseTest, "Publish with zero subscribers never blocks; late subscriber gets later values", "TestScenarioZeroSubscriber"},
 	{"edge/bench/no-subscribers", "zero-subscriber-and-edge-lifecycle", CaseBenchmark, "Publish cost with zero subscribers", "BenchmarkScenarioBroadcast"},
+	{"ring-lossy/test/seqcaster-loss-accounting", "bounded-ring-lossy-detectable", CaseTest, "SeqCaster23Meta reports exact overwrite loss and shuts down its workers", "TestSeqCaster23MetaLossAndClose"},
+	{"ring-lossy/bench/seqcaster-empty-send", "bounded-ring-lossy-detectable", CaseBenchmark, "SeqCaster23Meta publication cost with no subscriptions", "BenchmarkSeqCaster23MetaSendNoSubscribers"},
+	{"cast/test/adaptive-redirect", "rendezvous-cast-no-ack", CaseTest, "AdaptiveCaster23Meta toggles its redirect state at the configured threshold and delivers on its sequence path", "TestAdaptiveCaster23MetaRedirect"},
+	{"cast/test/chatjimmy-single-ack", "rendezvous-cast-no-ack", CaseTest, "ChatJimmy's shared-channel ack barrier under a single receiver, the explicitly exposed-safe case", "TestChanPubSub35ChatJimmySingleReceiver"},
+	{"hub46/test/cursor-backpressure-close", "buffered-lossless-backpressured", CaseTest, "Independent cursor ordering, capacity backpressure, and close drain", "TestChanHub46GrokBackpressureAndClose"},
+	{"cast47/test/concurrent-churn", "rendezvous-cast-no-ack", CaseTest, "Atomic-state caster send and concurrent receiver withdrawal", "TestChanCaster_ConcurrentChurnAndSelect"},
+	{"lockstep47/test/scale-cancel", "lockstep-barrier-lossless", CaseTest, "128-subscriber acknowledged broadcasts with context cancellation", "TestChanPubSub_ScalableBroadcastAndContextCancel"},
+	{"lockstep47/bench/broadcast-128", "lockstep-barrier-lossless", CaseBenchmark, "Acknowledged broadcasts at 128 subscribers", "BenchmarkChanPubSub_Broadcast128"},
+	{"ring47/test/select-backpressure", "buffered-lossless-backpressured", CaseTest, "Native-select ring delivery with lossless backpressure", "TestChanRing_PipelinedSelectAndBackpressure"},
+	{"ring47/test/wide-payload", "buffered-lossless-backpressured", CaseTest, "Concurrent multiword payload integrity and unread-slot release", "TestChanRing47GeminiWidePayloadIntegrity"},
+	{"ring47/test/unsubscribe-release", "buffered-lossless-backpressured", CaseTest, "Closing a slow reader releases its retained ring slots", "TestChanRing47GeminiFullSlotReleasedByUnsubscribe"},
+	{"ring47/test/context-cancel", "buffered-lossless-backpressured", CaseTest, "Context-bound sequence cancellation detaches without racing its cursor", "TestChanRing47GeminiSubscribeContextCancellation"},
+	{"watch48/test/latest-generation-wake", "latest-value-conflating-watch", CaseTest, "Coherent latest snapshot and broadcast notification wake all observers", "TestWatchCaster48GrokBroadcastWakeAndCoalescing"},
+	{"watch48/test/nil-payload", "latest-value-conflating-watch", CaseTest, "Zero and nil payloads remain representable across generations", "TestWatchCaster48GrokNilPayloadAndGeneration"},
+	{"watch48/test/coherent-snapshot", "latest-value-conflating-watch", CaseTest, "Concurrent readers observe value and generation from one publication", "TestWatchCaster48GrokCoherentSnapshot"},
+	{"watch48/test/concurrent-senders", "latest-value-conflating-watch", CaseTest, "Concurrent publishers retain unique monotonic generations", "TestWatchCaster48GrokConcurrentSenders"},
+	{"watch48/bench/send", "latest-value-conflating-watch", CaseBenchmark, "Latest-state publication cost with no active readers", "BenchmarkWatchCaster48GrokSend"},
+	{"select49/test/broadcast-epoch", "latest-value-conflating-watch", CaseTest, "Eager subscription snapshots and close-notification wake all observers", "TestSelectBroadcaster49QwenBroadcastEpochAndEagerSubscribe"},
+	{"select49/test/overrun-integrity", "latest-value-conflating-watch", CaseTest, "Bounded overrun skips stale values without torn or out-of-order payloads", "TestSelectBroadcaster49QwenOverrunKeepsSnapshotsOrdered"},
+	{"select49/test/state-boundaries", "latest-value-conflating-watch", CaseTest, "Manual state load rejects stale and future sequences", "TestSelectBroadcaster49QwenStateRejectsStaleOrFuture"},
+	{"select49/bench/send", "latest-value-conflating-watch", CaseBenchmark, "Ring-backed select broadcast with deterministic terminal-value observation", "BenchmarkSelectBroadcaster49QwenSend"},
+	{"ring47/bench/broadcast-128", "buffered-lossless-backpressured", CaseBenchmark, "Select-native pipelined ring publish at 128 subscribers", "BenchmarkChanRing_Broadcast128"},
 }
 
 var caseByID map[CaseID]Case
@@ -412,6 +434,9 @@ var casterAttachments = []Attachment{
 	att("rendezvous-cast-no-ack", "ChanCaster17FastPath", "Caster variant with fast-path send.", true),
 	att("rendezvous-cast-no-ack", "ChanCaster17Pumped", "Caster variant with pumped send.", true),
 	att("rendezvous-cast-no-ack", "BaselineRendezvousCaster", "Vacuum baseline: mutex-guarded count + one unbuffered channel + compensating dummy sends on withdrawal.", true),
+	att("rendezvous-cast-no-ack", "AdaptiveCaster23Meta", "Adaptive hybrid retains ChanCaster's synchronous rendezvous path and provides a separate SeqCaster path for registered ring subscribers; this attachment measures its shared-channel caster mode.", true),
+	attX("rendezvous-cast-no-ack", "ChanPubSub35ChatJimmy", "Shared ChanCaster channel with a condition-variable pong barrier; the registered receive count is acknowledged before Send returns.", false, "Exposure limited: no concurrent receiver withdrawal or cancellation during a Send/Wait round; the response counts acknowledgements globally and cannot reclaim a missing acknowledgement, so no churn/abandonment facet may run."),
+	att("rendezvous-cast-no-ack", "ChanCaster47Gemini", "Atomic packed-state one-shot receiver accounting; Add and Send coordinate through CAS and a parked positive-add barrier.", true),
 }
 
 var scatterAttachments = []Attachment{
@@ -455,6 +480,9 @@ func allAttachments() []Attachment {
 }
 
 func init() {
+	// Keep response-derived implementations declarative while ensuring the
+	// same strict init-time reference and metadata validation applies to them.
+	broadcastAttachments = append(broadcastAttachments, extractedBroadcastAttachments()...)
 	scenarioByID = make(map[ScenarioID]Scenario, len(Scenarios))
 	for _, s := range Scenarios {
 		if s.ID == "" || s.Title == "" || s.UseCase == "" || s.Baseline == "" || len(s.Invariants) == 0 {
@@ -887,9 +915,14 @@ func TestScenarioZeroSubscriber(t *testing.T) {
 // --- Caster / scatter / gather facets ---
 
 type casterLike struct {
-	send func(int) int
-	add  func(int) int
-	c    chan int
+	send       func(int) int
+	add        func(int) int
+	c          chan int
+	close      func()
+	ack        func()
+	skipChurn  bool
+	rearmEach  bool
+	singleOnly bool
 }
 
 func casterLikes() map[string]func() casterLike {
@@ -897,27 +930,47 @@ func casterLikes() map[string]func() casterLike {
 	for name, mk := range casterImpls() {
 		mk := mk
 		name := name
-		m[name] = func() casterLike { a := mk(); return casterLike{a.send, a.add, a.c} }
+		m[name] = func() casterLike {
+			a := mk()
+			return casterLike{a.send, a.add, a.c, a.close, a.ack, a.skipChurn, a.rearmEach, a.singleOnly}
+		}
 	}
 	m["BaselineRendezvousCaster"] = func() casterLike {
 		x := NewBaselineRendezvousCaster[int]()
-		return casterLike{x.Send, x.Add, x.C}
+		return casterLike{x.Send, x.Add, x.C, nil, nil, false, true, false}
 	}
 	return m
 }
 
 func TestScenarioCaster(t *testing.T) {
 	for _, a := range casterAttachments {
+		if a.ExposureLimited {
+			t.Run(a.Impl+"/exposure-limited", func(t *testing.T) {
+				mk := casterLikes()[a.Impl]
+				l := mk()
+				if l.close != nil {
+					defer l.close()
+				}
+				runSingleAckCasterFacet(t, casterAPI{l.send, l.add, l.c, l.close, l.ack, l.skipChurn, l.rearmEach, l.singleOnly})
+			})
+			continue
+		}
 		t.Run(a.Impl+"/steady", func(t *testing.T) {
 			mk, ok := casterLikes()[a.Impl]
 			if !ok {
 				t.Fatalf("no caster factory %q", a.Impl)
 			}
-			runCasterStress(t, func() casterAPI { l := mk(); return casterAPI{l.send, l.add, l.c} }, 16, 1000, false)
+			runCasterStress(t, func() casterAPI {
+				l := mk()
+				return casterAPI{l.send, l.add, l.c, l.close, l.ack, l.skipChurn, l.rearmEach, l.singleOnly}
+			}, 16, 1000, false)
 		})
 		t.Run(a.Impl+"/churn", func(t *testing.T) {
 			mk := casterLikes()[a.Impl]
-			runCasterStress(t, func() casterAPI { l := mk(); return casterAPI{l.send, l.add, l.c} }, 16, 1000, true)
+			runCasterStress(t, func() casterAPI {
+				l := mk()
+				return casterAPI{l.send, l.add, l.c, l.close, l.ack, l.skipChurn, l.rearmEach, l.singleOnly}
+			}, 16, 1000, true)
 		})
 	}
 }

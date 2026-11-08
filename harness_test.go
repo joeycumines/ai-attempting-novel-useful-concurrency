@@ -63,6 +63,31 @@ func AllBroadcasters() []func() Broadcaster {
 		func() Broadcaster { return newChanRelayTrySendAdapter() },
 		func() Broadcaster { return newChanHubTrySendAdapter() },
 		func() Broadcaster { return newRingPubSubTrySendAdapter() },
+		func() Broadcaster { return newCarillon21Adapter() },
+		func() Broadcaster { return newChanPubSubPacked22Adapter() },
+		func() Broadcaster { return newSeqCaster23Adapter() },
+		func() Broadcaster { return newSenseCaster25Adapter() },
+		func() Broadcaster { return newChanRing26Adapter() },
+		func() Broadcaster { return newMulticast27Adapter() },
+		func() Broadcaster { return newBroadcast28Adapter() },
+		func() Broadcaster { return newRelay29Adapter() },
+		func() Broadcaster { return newArcadia30Adapter() },
+		func() Broadcaster { return newVecast31Adapter() },
+		func() Broadcaster { return newChanMulticast33Adapter() },
+		func() Broadcaster { return newChanMultiCast34Adapter() },
+		func() Broadcaster { return newShardCaster36Adapter() },
+		func() Broadcaster { return newSelectCaster37Adapter() },
+		func() Broadcaster { return newShardCast39Adapter() },
+		func() Broadcaster { return newSlabCaster40Adapter() },
+		func() Broadcaster { return newEpochCast41Adapter() },
+		func() Broadcaster { return newBroadcast42Adapter() },
+		func() Broadcaster { return newSlotPubSub43Adapter() },
+		func() Broadcaster { return newPhantomCast44Adapter() },
+		func() Broadcaster { return newChanHub46Adapter() },
+		func() Broadcaster { return newChanPubSub47Adapter() },
+		func() Broadcaster { return newChanRing47Adapter() },
+		func() Broadcaster { return newWatchCaster48Adapter() },
+		func() Broadcaster { return newSelectBroadcaster49Adapter() },
 	}
 }
 
@@ -1034,6 +1059,7 @@ func TestStandardHarness_SingleSubscriber(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
 		b := factory()
 		t.Run(b.Name(), func(t *testing.T) {
+			defer b.Close()
 			sub := b.Subscribe()
 			defer sub.Unsubscribe()
 
@@ -1059,6 +1085,7 @@ func TestStandardHarness_NoSubscribers(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
 		b := factory()
 		t.Run(b.Name(), func(t *testing.T) {
+			defer b.Close()
 			// Publishing with zero subscribers must never block.
 			done := make(chan struct{})
 			go func() {
@@ -1080,6 +1107,7 @@ func TestStandardHarness_MultiSubscriberFanout(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
 		b := factory()
 		t.Run(b.Name(), func(t *testing.T) {
+			defer b.Close()
 			const numSubs = 8
 			const numMsgs = 10
 
@@ -1140,6 +1168,7 @@ func TestStandardHarness_InOrderDelivery(t *testing.T) {
 			continue // skip coalescing broadcasters for strict sequence ordering
 		}
 		t.Run(b.Name(), func(t *testing.T) {
+			defer b.Close()
 			sub := b.Subscribe()
 			defer sub.Unsubscribe()
 
@@ -1164,7 +1193,11 @@ func TestStandardHarness_InOrderDelivery(t *testing.T) {
 func TestStandardHarness_ConcurrentChurn(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
 		b := factory()
+		if limited, ok := b.(interface{ SkipStandardConcurrentChurn() bool }); ok && limited.SkipStandardConcurrentChurn() {
+			continue
+		}
 		t.Run(b.Name(), func(t *testing.T) {
+			defer b.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
@@ -1211,6 +1244,7 @@ func TestStandardHarness_TryReceive(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
 		b := factory()
 		t.Run(b.Name(), func(t *testing.T) {
+			defer b.Close()
 			sub := b.Subscribe()
 			defer sub.Unsubscribe()
 
@@ -1276,7 +1310,11 @@ type casterBroadcaster struct {
 func (a *casterBroadcaster) Name() string       { return a.name }
 func (a *casterBroadcaster) Publish(v int) int  { return a.api.send(v) }
 func (a *casterBroadcaster) IsCoalescing() bool { return false }
-func (a *casterBroadcaster) Close()             {}
+func (a *casterBroadcaster) Close() {
+	if a.api.close != nil {
+		a.api.close()
+	}
+}
 func (a *casterBroadcaster) Subscribe() BroadcastSubscriber {
 	a.api.add(1)
 	return &casterSub{api: a.api}
@@ -1298,7 +1336,12 @@ func (s *casterSub) Receive(ctx context.Context) (int, bool) {
 		if !ok {
 			return 0, false
 		}
-		s.api.add(1) // register for the next round
+		if s.api.ack != nil {
+			s.api.ack()
+		}
+		if s.api.rearmEach {
+			s.api.add(1)
+		} // ChanCaster intent is one-shot
 		return v, true
 	}
 }
@@ -1308,7 +1351,12 @@ func (s *casterSub) TryReceive() (int, bool) {
 		if !ok {
 			return 0, false
 		}
-		s.api.add(1)
+		if s.api.ack != nil {
+			s.api.ack()
+		}
+		if s.api.rearmEach {
+			s.api.add(1)
+		}
 		return v, true
 	default:
 		return 0, false

@@ -2,6 +2,56 @@
 
 N.B. If you're reading this as a gist it is also an actual [repository](https://github.com/joeycumines/ai-attempting-novel-useful-concurrency).
 
+## Extraction status (integration tracker)
+
+Responses 21-58 are **not fully integrated yet**. This tracker distinguishes
+source extraction from the required project integration: implementations must
+also be registered in the relevant harnesses, represented by scenarios/cases/
+attachments, and covered by meaningful tests and benchmarks where applicable.
+`source present` is not a claim of complete integration. See `AGENTS.md` and
+provenance comments in extracted source files for the repair policy.
+
+| Response | Implementation | Source file(s) | Current state |
+|---|---|---|---|
+| 21 | `Carillon` | `carillon.go` | adapter + broadcast scenario attachments; focused tests/benchmarks |
+| 22 | `ChanPubSubPacked` | `chanpubsub_packed.go` | adapter + lockstep attachment; focused tests |
+| 23 | `SeqCaster23Meta`, `AdaptiveCaster23Meta` | `seqcaster_23_meta.go`, `chancaster_23_meta.go` | `SeqCaster` adapter + loss scenario, loss/close/redirect tests and send benchmark; adaptive focused test |
+| 24 | `CoalescingBroadcaster24Meta` | — | not integrated |
+| 25 | `SenseCaster` | `sensecaster.go` | adapter + lockstep attachment; focused tests/benchmarks |
+| 26 | `ChanRing26Kimi` | `chanring_26_kimi.go` | adapter + lossy-ring attachment; focused tests |
+| 27 | `Multicast27Mistral` | `multicast_27_mistral.go` | eager-subscription adapter + synchronous-handoff attachment; focused tests |
+| 28 | `Broadcast28Flint` | `broadcast_28_flint.go` | adapter + synchronous-handoff attachment; source-level validation only |
+| 29 | `Relay29Nemotron` | `relay_29_nemotron.go` | adapter + lossy-ring attachment; source-level validation only |
+| 30 | `Arcadia` | `arcadia_30_dots3.go` | adapter + lossy-ring attachment; probe test passed, repository-specific test still outstanding |
+| 31 | `Vecast` | `vecast_31_nemotron.go` | adapter + synchronous-handoff attachment; probe test passed, repository-specific test still outstanding |
+| 32 | `StableRing` | `stablering_32_nano.go` | source only; tests and wiring outstanding |
+| 33 | `ChanMulticast33North` | `chanmulticast_33_north.go` | adapter + handoff attachment; probe test passed, repository-specific test still outstanding |
+| 34 | `ChanMultiCast34Lightning` | `chanmulticast_34_lightning.go` | exposure-limited adapter + focused test; churn excluded because removal can deadlock behind Send |
+| 35 | `ChanPubSub35ChatJimmy` | `chanpubsub_35_chatjimmy.go` | caster-family registration + single-receiver acknowledged facet; explicit no-churn/identity exposure limit |
+| 36 | `ShardCaster36Meta` | `shardcaster_36_meta.go` | adapter + synchronous-handoff attachment; direct unsubscribe/send tests; node pooling removed to prevent stale snapshot reuse |
+| 37 | `SelectCaster37Gemini` | `selectcaster_37_gemini.go` | adapter + latest attachment; policy and concurrent Subscribe/Close tests; membership mutex added while Send remains lock-free |
+| 38 | `SelectFanout` | `selectfanout.go` | existing source + focused tests; unified adapter/attachment still outstanding |
+| 39 | `ShardCast39Mistral` | `shardcast_39_mistral.go` | latest-policy adapter + latest attachment; drop/latest/close tests |
+| 40 | `SlabCaster40Gemini` | `slabcaster_40_gemini.go` | DropOldest-only exposure-limited adapter + latest attachment; policy tests; concurrent slot lifecycle excluded |
+| 41 | `EpochCast41Sonnet` | `epochcast_41_sonnet.go` | lossy adapter + bounded-ring attachment; lossless/lossy/cancel/close tests |
+| 42 | `Broadcast42Spark` | `broadcast_42_spark.go` | adapter + bounded-ring attachment; batch/replay/overrun/close tests |
+| 43 | `SlotPubSub43Grok` | `slotpubsub_43_grok.go` | exposure-limited lockstep adapter + acknowledgement attachment; deterministic fan-out test |
+| 44 | `PhantomCast44Qwen` | `phantomcast_44_qwen.go` | repaired atomic-version ring + adapter + bounded-ring attachment; cursor/loss/wide-payload/close tests |
+| 45 | `Fanout`, `RingFanout` | `fanout.go`, `ringfanout.go` | existing source + focused tests; unified adapter/attachment still outstanding |
+| 46 | `ChanHub46Grok` | `chanhub_46_grok.go` | cursor-ring adapter + buffered/churn/lifecycle/zero-subscriber attachments; atomic payload/closure/cursor repair; focused backpressure/close tests; shared broadcast fuzz + benchmark |
+| 47 | `ChanCaster47Gemini`, `ChanPubSub47Gemini`, `ChanRing47Gemini` | `chancaster_47_gemini.go`, `chanpubsub_47_gemini.go`, `chanring_47_gemini.go` | caster + broadcaster adapters; lockstep, buffered, churn, cancellation, and edge attachments; direct tests/benchmarks + shared fuzz; repaired pong/cancellation accounting, serialized iterator cleanup, and removed racy slot clearing (payload retention bounded by capacity). Local probes observed nonzero allocations for both pub/sub and ring sends, so the response's zero-allocation claims are not treated as verified. |
+| 48 | `WatchCaster48Grok` | `watchcaster_48_grok.go` | latest-watch adapter + latest/churn/edge attachments; coherent-snapshot, nil-payload, multi-observer wake tests; benchmark + shared fuzz. Replaced the non-broadcast cap-1 signal and split value/generation atomics with a rotating close-notify channel and locked snapshot; measured 1 alloc/send, so zero-allocation claim is not verified. |
+| 49 | `SelectBroadcaster49Qwen` | `selectbroadcaster_49_qwen.go` | latest/churn/edge attachments plus explicit bad-fit attachment to detectable-loss scenario (no loss counter); immutable epochs, sequence-stamped slots, eager subscription point; overrun/multi-observer/state tests + terminal-checked benchmark + shared fuzz. One-shot benchmark observed 3 allocs/send; no zero-allocation claim accepted. |
+| 50 | `GenPubSub` | — | assessed: response is design prose plus disconnected snippets, not a complete implementation; its claimed no-`Done` unsubscribe accounting and two-generation WaitGroup reuse do not establish correct participant pairing/reuse. Revisit against response 57; no runnable source claimed. |
+| 51 | `ChanReplay` | — | not integrated |
+| 52 | `ChanCascade` | — | not integrated |
+| 53 | `ReplayCast` | — | not integrated |
+| 54 | `EpochBroadcast` | — | not integrated |
+| 55 | `RingCaster` | — | not integrated |
+| 56 | `Fanout56MaiCode` | — | not integrated |
+| 57 | `ChanPubSub57DeepSeek` | — | not integrated |
+| 58 | `Broadcaster58Spark` | — | not integrated |
+
 ## Introduction
 
 This gist contains a single ad-hoc benchmark and results for a prompt I found particularly interesting.
@@ -36,6 +86,8 @@ Lacking in scientific rigor perhaps, but it's worth noting that models are often
 The tools available, especially the presence of a sandbox, search engine, and (in this case) pre-installed or installable Go toolchain, are also often opaque, and can have a significant impact on the results produced.
 
 In cases where there were individual files attached, they are encoded as a txtar down the bottom of the markdown, in a code block or similar.
+
+**Integration progress:** responses 46–49 are wired and tested; response 50 is assessed as incomplete pseudocode; continuing with response 51 and later outputs.
 
 - [03-chatgpt-1.md](03-chatgpt-1.md)
 - [04-deepseek-v4.1-flash-chat.md](04-deepseek-v4.1-flash-chat.md)
