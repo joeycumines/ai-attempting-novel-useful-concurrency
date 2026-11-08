@@ -2,7 +2,6 @@ package bigbuff
 
 import (
 	"fmt"
-	"math/rand"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -99,10 +98,8 @@ func runCasterStress(t *testing.T, mk func() casterAPI, receivers, sends int, ch
 		wg.Add(1)
 		go func(seed int64) {
 			defer wg.Done()
-			rng := rand.New(rand.NewSource(seed))
-			last := 0
+			last, rounds := 0, 0
 			registered := false
-			timer := time.NewTimer(time.Hour)
 			for {
 				select {
 				case <-stop:
@@ -113,10 +110,30 @@ func runCasterStress(t *testing.T, mk func() casterAPI, receivers, sends int, ch
 					x.add(1)
 					registered = true
 				}
-				var tc <-chan time.Time
-				if churn && rng.Intn(4) == 0 {
-					timer.Reset(time.Duration(rng.Intn(50)) * time.Microsecond)
-					tc = timer.C
+				// A deterministic withdrawal schedule needs no timer. A
+				// nonblocking pre-check varies whether Send has armed without
+				// making correctness depend on a scheduler delay.
+				withdraw := false
+				if churn && (rounds+int(seed))%4 == 0 {
+					select {
+					case v := <-x.c:
+						if v <= last {
+							violations.Add(1)
+							firstViolation.Store(fmt.Sprintf("receiver got %d after %d", v, last))
+						}
+						last = v
+						recvCount[v].Add(1)
+						rounds++
+						continue
+					default:
+						withdraw = true
+					}
+				}
+				if withdraw {
+					x.add(-1)
+					registered = false
+					rounds++
+					continue
 				}
 				select {
 				case v := <-x.c:
@@ -130,19 +147,11 @@ func runCasterStress(t *testing.T, mk func() casterAPI, receivers, sends int, ch
 					}
 					last = v
 					recvCount[v].Add(1)
-				case <-tc:
-					x.add(-1)
-					registered = false
 				case <-stop:
 					x.add(-1)
 					return
 				}
-				if tc != nil && !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
+				rounds++
 			}
 		}(int64(r))
 	}

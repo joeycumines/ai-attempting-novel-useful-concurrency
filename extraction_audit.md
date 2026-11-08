@@ -23,7 +23,7 @@ comment/whitespace normalization, not necessarily byte-identical.
 | 05 qwen | `changatherer.go` (gatherer + fused PubSub), tests | Both fenced implementations retained in the combined file; source tests preserved. |
 | 06 meta | `chancaster_06_meta.go`, `chanpubsub_06_meta.go`, `gencaster.go`, tests | The delivered V2 caster/pubsub sketches used unavailable runtime internals and incomplete sharding. Completed them as namespaced portable variants; positive-Add lock-free fast path retained where sound. PubSub unavailable semaphore path completed with Cond and documented exposure. GenCaster renamed internal types to avoid package collisions. |
 | 07 qwen | `chanbeacon.go`, tests | Repaired extraction: per-slot sequence/RWMutex publication, cursor/lag accounting and iterator ownership corrected relative to the sketch; tests exercise catch-up and overrun. |
-| 08 muse-spark | `beacon.go`, `ring_beacon.go`, `chancaster2.go`, `reliable_beacon.go`, tests | Beacon equal. RingBeacon/caster retain atomic payload/arming repairs. ReliableBeacon repaired around atomic pending acks, armed sequence identity, unsubscribe compensation and tracked Wait. Corrected stale registry provenance from “14-Qwen” to response 08. |
+| 08 muse-spark | `beacon.go`, `ring_beacon.go`, `chancaster2.go`, `reliable_beacon.go`, `beacon_subscription_test.go`, tests | Beacon/RingBeacon/ReliableBeacon now capture their subscription point synchronously in SubscribeContext; RingBeacon also re-checks after Ready capture to close a lost-wakeup window. Caster retains atomic arming repairs. ReliableBeacon repaired around atomic pending acks, armed sequence identity, unsubscribe compensation and tracked Wait. Corrected stale registry provenance from “14-Qwen” to response 08. |
 | 09 gemini | namespaced caster/pubsub/epochcaster, tests | All three variants retained. Constructor validation, broken-state checks and namespacing reviewed; shared lock-step/payload coverage retained. |
 | 10 gemini | `chanpubsub_10_gemini.go`, `epochtape.go`, tests | Distinct 09/10 PubSub variants both retained. EpochTape source/test equal after formatting; zero-epoch edge repaired. |
 | 11 meta | `chancaster_11_meta.go`, `epochpubsub_11_meta.go`, tests | Evolution A lock-free dual-counter CAS caster was previously Markdown-only; now extracted (ellipses completed), registered and covered by CAS/withdrawal tests. EpochPubSub retained. |
@@ -63,15 +63,16 @@ semantics into a scenario.
 Toolchain: Go 1.27.3 (`GOTOOLCHAIN=local`).
 
 - `go vet ./...`: pass.
-- `go test ./... -count=1`: pass (~14s).
-- `go test -race ./... -count=1`: pass (~40s).
-- Focused 5s fuzz campaigns passed: `FuzzBoundedScatterModel` (~171k execs),
-  `FuzzRingFanOut14TwoStageModel` (~185k), `FuzzQueuedFanout24FIFO` (~175k),
-  `FuzzBroadcaster58RingModel` (~175k), `FuzzStableRing32QueueModel` (~186k).
+- `go test ./... -count=1`: pass (~19s).
+- `go test -race ./... -count=1`: pass (~61s).
+- Final focused 3s fuzz campaigns passed: `FuzzBoundedScatterModel` (~65k execs),
+  `FuzzRingFanOut14TwoStageModel` (~68k), `FuzzQueuedFanout24FIFO` (~70k),
+  `FuzzBroadcaster58RingModel` (~71k), `FuzzStableRing32QueueModel` (~74k).
+  Earlier 5s campaigns also passed (~171k–186k execs each).
 - Allocation benchmarks (`-benchtime=200ms`, one sample): `ChanPubSub58Send`
   1 alloc/op, `GenPubSub50Send` 1 alloc/op, `Broadcaster58Send` 1 alloc/op;
-  queued mailbox and RingFanOut14 admission paths 0 alloc/op; StableRing
-  competing-consumer admission 0 alloc/op.
+  queued mailbox/overflow and RingFanOut14 admission paths 0 alloc/op;
+  StableRing and bounded-scatter baseline admission 0 alloc/op.
 
 The readiness-sleep cleanup exposed and repaired two baseline/harness issues:
 `BaselineBufferedBroadcast` no longer holds the membership lock while blocking
@@ -79,3 +80,13 @@ on a full subscriber (unsubscribe/close cannot deadlock behind Send), and pump
 adapter unsubscribe now waits for iterator cleanup so fixed subscriber pools do
 not exhaust under tight churn. Manual lock-step adapters that cannot interrupt
 Wait mid-round are explicitly skipped by the standard churn facet.
+
+Final deterministic-harness review replaced the shared receipt-queue stress with
+an exact ack/ready round handoff: the ack releases lock-step Send, and readiness
+confirms the next-round park or churn replacement registration. This removed a
+publisher/reader deadlock under `-race` without sleeps or wall-clock churn. The
+review also exposed and repaired the 08-MuseSpark subscription-point and
+RingBeacon lost-wakeup issues above, with focused regression cases registered in
+the case registry. The ChanCaster58 helper test no longer assumes RecvContext
+registration wins against Send's zero-receiver fast path; it checks the exact
+Send/receive outcome pair instead.

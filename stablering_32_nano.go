@@ -22,7 +22,8 @@ package bigbuff
 // single shared read cursor advancing through a ring: each published value is
 // consumed by exactly ONE waiter. That is a competing-consumer queue, so it is
 // integrated as one (attached to the work-distribution/scatter scenario) rather
-// than being contorted into a broadcast it cannot be.
+// than being contorted into a broadcast it cannot be. Its good-fit scenario
+// is bounded-competing-consumer-overflow; the scatter attachment is poor-fit.
 //
 // Repairs, all in spirit (the mechanism is untouched: a power-of-two ring, a
 // mutex/cond pair, an Add-based receiver count, one shared read cursor):
@@ -71,7 +72,7 @@ type StableRing32Nano[C ~chan V, V any] struct {
 	length   uint64 // queued values (guarded by mu); full != empty
 	dropped  atomic.Uint64
 
-	subCount int64 // active receivers (atomic)
+	subCount atomic.Int64 // active receivers; membership transitions use mu
 
 	mu   sync.Mutex
 	cond *sync.Cond
@@ -97,11 +98,11 @@ func NewStableRing32Nano[C ~chan V, V any](c C, capacity uint64) *StableRing32Na
 // receiver was registered (so the value was handed to the queue) and 0
 // otherwise. It never blocks on a receiver: the ring absorbs the value.
 func (r *StableRing32Nano[C, V]) Send(value V) int {
-	if atomic.LoadInt64(&r.subCount) == 0 {
+	if r.subCount.Load() == 0 {
 		return 0
 	}
 	r.mu.Lock()
-	if atomic.LoadInt64(&r.subCount) == 0 {
+	if r.subCount.Load() == 0 {
 		r.mu.Unlock()
 		return 0
 	}
@@ -127,27 +128,23 @@ func (r *StableRing32Nano[C, V]) Add(delta int) int {
 	if delta > math.MaxInt32 || delta < -math.MaxInt32 {
 		panic(`bigbuff: StableRing32Nano: Add delta out of bounds`)
 	}
-	for {
-		cur := atomic.LoadInt64(&r.subCount)
-		next := cur + int64(delta)
-		if next < 0 {
-			panic(`bigbuff: StableRing32Nano: receiver count underflow`)
-		}
-		if atomic.CompareAndSwapInt64(&r.subCount, cur, next) {
-			if next > cur {
-				// Wake waiters that are already parked: a receiver that
-				// registers while a value is pending must still see it.
-				r.mu.Lock()
-				r.cond.Broadcast()
-				r.mu.Unlock()
-			}
-			return int(next)
-		}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next := r.subCount.Load() + int64(delta)
+	if next < 0 {
+		panic(`bigbuff: StableRing32Nano: receiver count underflow`)
 	}
+	r.subCount.Store(next)
+	if next > 0 {
+		r.cond.Broadcast()
+	}
+	return int(next)
 }
 
-// Wait blocks until a value is available for this receiver, ctx is done, or no
-// receiver remains registered. ok reports whether a value was returned.
+// Wait returns an available queued value first; otherwise it waits for a value,
+// cancellation, or withdrawal of the final registered receiver. This data-first
+// policy matches the ordinary channel/select baseline: cancellation does not
+// discard a value already available to the queue.
 func (r *StableRing32Nano[C, V]) Wait(ctx context.Context) (v V, ok bool) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -164,7 +161,7 @@ func (r *StableRing32Nano[C, V]) Wait(ctx context.Context) (v V, ok bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for r.length == 0 {
-		if ctx.Err() != nil || atomic.LoadInt64(&r.subCount) == 0 {
+		if ctx.Err() != nil || r.subCount.Load() == 0 {
 			return v, false
 		}
 		r.cond.Wait()

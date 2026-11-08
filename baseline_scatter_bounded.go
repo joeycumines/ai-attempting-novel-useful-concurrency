@@ -4,8 +4,9 @@ package bigbuff
 // consumer queue with explicit overload eviction: a buffered channel plus a
 // mutex around the drop-oldest admission sequence. No ring math, atomics on
 // payload slots, or novel wakeup protocol. The mutex makes the "make room then
-// enqueue" pair atomic with respect to other publishers; consumers still use
-// ordinary channel receive/select semantics.
+// enqueue" pair atomic with respect to other publishers AND consumers. This
+// prevents a concurrent receiver from taking the eviction instead of the oldest
+// queued item. The cost is an ordinary short critical section on every receive.
 
 import (
 	"context"
@@ -48,27 +49,27 @@ func (x *BaselineBoundedScatterQueue[V]) Send(v V) int {
 	if n == 0 {
 		return 0
 	}
+	x.mu.Lock()
+	defer x.mu.Unlock()
 	select {
 	case x.C <- v:
 	default:
-		select {
-		case <-x.C:
-			x.dropped.Add(1)
-		default:
-		}
-		// Publishers are serialized; consumers can only create more space.
+		// All admission/removal is serialized, so this is the oldest item.
+		<-x.C
+		x.dropped.Add(1)
 		x.C <- v
 	}
 	return 1
 }
 
+// Wait is data-first: an available item is returned even if ctx is already
+// cancelled. Otherwise cancellation competes with receipt in an ordinary select.
 func (x *BaselineBoundedScatterQueue[V]) Wait(ctx context.Context) (V, bool) {
+	if v, ok := x.TryWait(); ok {
+		return v, true
+	}
 	if ctx == nil {
 		ctx = context.Background()
-	}
-	if ctx.Err() != nil {
-		var zero V
-		return zero, false
 	}
 	select {
 	case <-ctx.Done():
@@ -80,6 +81,8 @@ func (x *BaselineBoundedScatterQueue[V]) Wait(ctx context.Context) (V, bool) {
 }
 
 func (x *BaselineBoundedScatterQueue[V]) TryWait() (V, bool) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
 	select {
 	case v := <-x.C:
 		return v, true
@@ -87,6 +90,12 @@ func (x *BaselineBoundedScatterQueue[V]) TryWait() (V, bool) {
 		var zero V
 		return zero, false
 	}
+}
+
+func (x *BaselineBoundedScatterQueue[V]) Len() int {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return len(x.C)
 }
 
 func (x *BaselineBoundedScatterQueue[V]) Dropped() uint64 { return x.dropped.Load() }

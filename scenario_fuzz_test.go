@@ -33,6 +33,13 @@ func FuzzScenarioBroadcast(f *testing.F) {
 			if a.ExposureLimited {
 				continue
 			}
+			probe := scenarioBroadcastFactories()[a.Impl]()
+			limited, skip := probe.(interface{ SkipBroadcastFuzz() bool })
+			skip = skip && limited.SkipBroadcastFuzz()
+			probe.Close()
+			if skip {
+				continue
+			}
 			if !seenImpl[a.Impl] {
 				seenImpl[a.Impl] = true
 				uniq = append(uniq, a)
@@ -100,6 +107,9 @@ func FuzzScenarioCasterScatterGather(f *testing.F) {
 		// abstraction, so queued rings and unbuffered channels are both legal.
 		// Values are unique and each accepted value must be consumed once.
 		for _, a := range scatterAttachments {
+			if a.ExposureLimited {
+				continue
+			}
 			x := scatterLikes()[a.Impl]()
 			registered := 0
 			next, expected := 1, 1

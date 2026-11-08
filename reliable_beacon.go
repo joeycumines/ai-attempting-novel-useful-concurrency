@@ -182,6 +182,11 @@ func (x *ReliableBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 	}
 	lastWaited := &atomic.Uint64{}
 	stop := context.AfterFunc(ctx, func() { x.unsubscribe(lastWaited) })
+	// Capture the starting sequence synchronously with registration, before
+	// the iterator is invoked. Otherwise a Send can complete between Add(1)
+	// and the first iterator call, leaving the new subscription counted in the
+	// ack barrier but positioned after the value it is supposed to acknowledge.
+	next := x.beacon.seq.Load() + 1
 	return func(yield func(T) bool) {
 		if yield == nil {
 			if stop() {
@@ -193,7 +198,6 @@ func (x *ReliableBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 			return
 		}
 		defer x.unsubscribe(lastWaited)
-		next := x.beacon.seq.Load() + 1
 		for {
 			select {
 			case <-ctx.Done():
