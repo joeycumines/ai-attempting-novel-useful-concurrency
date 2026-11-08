@@ -576,6 +576,11 @@ func extractedBroadcastAttachments() []Attachment {
 		att("ephemeral-churn-membership", "EpochBroadcast54Terra (54-GPT-6.1-Terra)", "Membership is a locked count rather than a subscriber registry; independent subscription cursors can join or close around publication snapshots.", true),
 		att("zero-subscriber-and-edge-lifecycle", "EpochBroadcast54Terra (54-GPT-6.1-Terra)", "Send with no registered subscriptions returns zero without allocating an epoch; later subscriptions participate only in later sends.", true),
 		attX("cancellation-and-close-lifecycle", "EpochBroadcast54Terra (54-GPT-6.1-Terra)", "Per-subscription Close and context cancellation release an outstanding receive obligation.", false, "The primitive has no broadcaster-wide Close; lifecycle facets exercise per-subscription cancellation only, and the adapter's Close is intentionally a no-op."),
+		att("bounded-ring-lossy-detectable", "RingCaster55Haiku (55-ClaudeHaiku)", "Slab-allocated immutable cells plus per-subscriber cursors retain a bounded window; TryRecv reports every overwritten sequence and SubscribeFrom reports an initial retention gap.", true),
+		att("large-fanout-scalability", "RingCaster55Haiku (55-ClaudeHaiku)", "Publish writes one immutable cell and signals a shared armed generation rather than traversing subscribers; parked readers share the wake.", true),
+		att("ephemeral-churn-membership", "RingCaster55Haiku (55-ClaudeHaiku)", "Subscriber cursors are caller-owned values and never enter publisher state; attach/detach churn is local to each session.", true),
+		att("cancellation-and-close-lifecycle", "RingCaster55Haiku (55-ClaudeHaiku)", "Context-aware Recv and idempotent caster Close wake parked readers, allow retained values to drain, then return ErrRingClosed.", true),
+		att("zero-subscriber-and-edge-lifecycle", "RingCaster55Haiku (55-ClaudeHaiku)", "Publish remains nonblocking with no cursors; a late subscriber starts at the current tail and only sees future publications.", true),
 		att("bounded-ring-lossy-detectable", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "O(1)-with-fanout sequence ring retains bounded history; each Next reports exact overwritten publications while Publish only replaces one shared generation signal.", true),
 		att("large-fanout-scalability", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "Publication does not sweep subscriber state; a shared generation notification wakes independently paced cursors, with scheduling work paid by actual awakened readers.", true),
 		att("ephemeral-churn-membership", "ReplayCast53Gpt6Sol (53-GPT-6-Sol)", "Subscriptions own independent cursors and Done channels; attach/detach does not mutate publication fan-out work.", true),
@@ -777,4 +782,41 @@ func (s *epochBroadcast54Sub) Unsubscribe() {
 		s.closed = true
 		s.sub.Close()
 	}
+}
+
+type ringCaster55Adapter struct{ x *RingCaster55Haiku[int] }
+
+func newRingCaster55Adapter() Broadcaster {
+	return &ringCaster55Adapter{x: NewRingCaster55Haiku[int](64)}
+}
+func (a *ringCaster55Adapter) Name() string       { return "RingCaster55Haiku (55-ClaudeHaiku)" }
+func (a *ringCaster55Adapter) Publish(v int) int  { a.x.Publish(v); return 1 }
+func (a *ringCaster55Adapter) Close()             { a.x.Close() }
+func (a *ringCaster55Adapter) IsCoalescing() bool { return false }
+func (a *ringCaster55Adapter) Subscribe() BroadcastSubscriber {
+	sub := a.x.Subscribe(new(RingSub55Haiku[int]))
+	return &ringCaster55Sub{sub: sub}
+}
+
+type ringCaster55Sub struct {
+	sub    *RingSub55Haiku[int]
+	closed bool
+}
+
+func (s *ringCaster55Sub) Receive(ctx context.Context) (int, bool) {
+	if s.closed || s.sub == nil {
+		return 0, false
+	}
+	v, err := s.sub.Recv(ctx)
+	return v, err == nil
+}
+func (s *ringCaster55Sub) TryReceive() (int, bool) {
+	if s.closed || s.sub == nil {
+		return 0, false
+	}
+	return s.sub.TryRecv()
+}
+func (s *ringCaster55Sub) Unsubscribe() {
+	s.closed = true
+	s.sub = nil
 }
