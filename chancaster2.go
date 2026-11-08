@@ -1,5 +1,8 @@
 package bigbuff
 
+// Provenance: 08-muse-spark-open-arena.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"math"
 	"sync"
@@ -12,14 +15,14 @@ import (
 //   - single Add(MaxInt32) not CAS loop (increments excluded by RLock),
 //   - steal via non-blocking select for fail-fast violation detection.
 type ChanCaster2[C ~chan V, V any] struct {
-	_ noCopy
-	_ [64]byte
-	C C
-	_ [64]byte
+	_     noCopy
+	_     [64]byte
+	C     C
+	_     [64]byte
 	state atomic.Uint64 // hi=receivers lo=receivers or receivers+Max
-	_ [56]byte
+	_     [56]byte
 	mutex sync.RWMutex
-	_ [56]byte
+	_     [56]byte
 }
 
 func NewChanCaster2[C ~chan V, V any](c C) *ChanCaster2[C, V] {
@@ -105,5 +108,3 @@ func (x *ChanCaster2[C, V]) Add(delta int) int {
 	}
 	panic(`bigbuff: chancaster2: invariant add`)
 }
-
-

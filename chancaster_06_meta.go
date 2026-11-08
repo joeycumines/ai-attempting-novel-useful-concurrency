@@ -1,5 +1,8 @@
 package bigbuff
 
+// Provenance: 06-meta-chat-probably-muse-spark-1.3.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"math"
 	"sync"
@@ -9,8 +12,8 @@ import (
 // ChanCasterV2 from 06-meta: wait-free positive Add path.
 type ChanCasterV2[C ~chan V, V any] struct {
 	C       C
-	sendMu  sync.Mutex   // only Send vs Send
-	stateMu sync.RWMutex // RLock = Add(+), Lock = Send snapshot
+	sendMu  sync.Mutex    // only Send vs Send
+	stateMu sync.RWMutex  // RLock = Add(+), Lock = Send snapshot
 	state   atomic.Uint64 // hi=receivers lo=receivers OR receivers+MaxInt32
 }
 

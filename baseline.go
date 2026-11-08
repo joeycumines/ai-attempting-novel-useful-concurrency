@@ -444,63 +444,90 @@ func (x *BaselineLatestBroadcast[V]) Close() {
 }
 
 // BaselineBufferedBroadcast is the vacuum buffered lossless broadcaster: a
-// mutex-guarded set of per-subscriber buffered channels; Send blocks on any
-// subscriber whose buffer is full (textbook backpressure).
+// buffered channel per subscriber, with deliberate textbook backpressure.
+// Membership is snapshotted under RLock and released before blocking sends;
+// unsubscribe/close signal per-subscriber done channels instead of closing the
+// data channel underneath an in-flight sender.
+type baselineBufferedSub[V any] struct {
+	ch   chan V
+	done chan struct{}
+	once sync.Once
+}
+
+func (s *baselineBufferedSub[V]) close() { s.once.Do(func() { close(s.done) }) }
+
 type BaselineBufferedBroadcast[V any] struct {
-	mu   sync.RWMutex
-	subs map[uint64]chan V
-	next uint64
-	cap  int
-	done bool
+	mu        sync.RWMutex
+	subs      map[uint64]*baselineBufferedSub[V]
+	next      uint64
+	cap       int
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 func NewBaselineBufferedBroadcast[V any](capacity int) *BaselineBufferedBroadcast[V] {
 	if capacity < 1 {
 		capacity = 1
 	}
-	return &BaselineBufferedBroadcast[V]{subs: make(map[uint64]chan V), cap: capacity}
+	return &BaselineBufferedBroadcast[V]{subs: make(map[uint64]*baselineBufferedSub[V]), cap: capacity, done: make(chan struct{})}
 }
 
 func (x *BaselineBufferedBroadcast[V]) Send(v V) int {
 	x.mu.RLock()
-	defer x.mu.RUnlock()
-	if x.done {
+	select {
+	case <-x.done:
+		x.mu.RUnlock()
 		return 0
+	default:
 	}
+	subs := make([]*baselineBufferedSub[V], 0, len(x.subs))
+	for _, sub := range x.subs {
+		subs = append(subs, sub)
+	}
+	x.mu.RUnlock()
 	n := 0
-	for _, ch := range x.subs {
-		ch <- v // blocks while full: deliberate textbook backpressure
-		n++
+	for _, sub := range subs {
+		select {
+		case <-x.done:
+			return n
+		case <-sub.done:
+		case sub.ch <- v:
+			n++
+		}
 	}
 	return n
 }
 
 func (x *BaselineBufferedBroadcast[V]) SubscribeContext(ctx context.Context) iter.Seq[V] {
-	ch := make(chan V, x.cap)
+	sub := &baselineBufferedSub[V]{ch: make(chan V, x.cap), done: make(chan struct{})}
 	x.mu.Lock()
-	if x.done {
+	select {
+	case <-x.done:
 		x.mu.Unlock()
 		return func(func(V) bool) {}
+	default:
 	}
 	x.next++
 	id := x.next
-	x.subs[id] = ch
+	x.subs[id] = sub
 	x.mu.Unlock()
 	return func(yield func(V) bool) {
 		defer func() {
 			x.mu.Lock()
-			if c, ok := x.subs[id]; ok {
-				delete(x.subs, id)
-				close(c)
-			}
+			delete(x.subs, id)
 			x.mu.Unlock()
+			sub.close()
 		}()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case v, ok := <-ch:
-				if !ok || !yield(v) {
+			case <-x.done:
+				return
+			case <-sub.done:
+				return
+			case v := <-sub.ch:
+				if !yield(v) {
 					return
 				}
 			}
@@ -509,15 +536,12 @@ func (x *BaselineBufferedBroadcast[V]) SubscribeContext(ctx context.Context) ite
 }
 
 func (x *BaselineBufferedBroadcast[V]) Close() {
+	x.closeOnce.Do(func() { close(x.done) })
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if x.done {
-		return
-	}
-	x.done = true
-	for id, ch := range x.subs {
+	for id, sub := range x.subs {
+		sub.close()
 		delete(x.subs, id)
-		close(ch)
 	}
 }
 
@@ -612,4 +636,11 @@ func (x *BaselineGatherBarrier[V]) Wait() int {
 	}
 	x.mu.Unlock()
 	return n
+}
+
+// Subscribers reports the current number of registered subscriptions.
+func (b *BaselineFanout[V]) Subscribers() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.subs)
 }

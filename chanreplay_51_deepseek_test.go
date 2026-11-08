@@ -20,6 +20,50 @@ func boundedReplayDrivers() map[string]func() boundedReplayDriver {
 			x := NewChanReplay51DeepSeek[chan int, int](make(chan int), 3)
 			return boundedReplayDriver{x.Send, x.SubscribeContextWithReplay, x.Replay, func() {}}
 		},
+		"RingFanout (45-ChatGPT)": func() boundedReplayDriver {
+			x, err := NewRingFanout[int](3)
+			if err != nil {
+				panic(err)
+			}
+			send := func(v int) int {
+				if _, err := x.Publish(v); err != nil {
+					return 0
+				}
+				return x.SubscriberCount()
+			}
+			replay := func() []int {
+				s, err := x.SubscribeReplay()
+				if err != nil {
+					return nil
+				}
+				defer s.Close()
+				var out []int
+				for {
+					v, _, ok := s.TryNext()
+					if !ok {
+						break
+					}
+					out = append(out, v)
+				}
+				return out
+			}
+			subscribe := func(ctx context.Context) iter.Seq[int] {
+				s, err := x.SubscribeReplay()
+				if err != nil {
+					return func(func(int) bool) {}
+				}
+				return func(yield func(int) bool) {
+					defer s.Close()
+					for {
+						v, _, ok, err := s.Next(ctx)
+						if err != nil || !ok || !yield(v) {
+							return
+						}
+					}
+				}
+			}
+			return boundedReplayDriver{send, subscribe, replay, x.Close}
+		},
 		"BaselineBoundedReplay (baseline)": func() boundedReplayDriver {
 			x := NewBaselineBoundedReplay[int](3)
 			return boundedReplayDriver{x.Send, x.SubscribeContextWithReplay, x.Replay, x.Close}

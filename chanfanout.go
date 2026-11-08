@@ -16,6 +16,9 @@
 
 package bigbuff
 
+// Provenance: 12-openrouter-crouton-alpha-chat.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"context"
 	"iter"
@@ -506,5 +509,3 @@ func (s *FanoutSub[V]) Close() {
 func (s *FanoutSub[V]) Unsubscribe() {
 	s.Close()
 }
-
-

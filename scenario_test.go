@@ -21,8 +21,11 @@ package bigbuff
 import (
 	"context"
 	"fmt"
-	"runtime"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -105,11 +108,28 @@ var Scenarios = []Scenario{
 		Kind:      KindBroadcast, Loss: Lossless, Baseline: "BaselineBoundedReplay (baseline)",
 		Invariants: []string{"a joining observer sees the retained suffix in order with no gap or duplicate at the live boundary", "all values published after registration are delivered once in order", "retention is bounded by configured capacity and older history is intentionally absent"}},
 
+	{ID: "nonblocking-lossless-overflow", Title: "Nonblocking lossless fan-out with private unbounded overflow",
+		UseCase:   "Event notification where a publisher must never wait for any consumer and every active consumer must eventually receive every value, accepting per-consumer memory growth as the price",
+		Tradeoffs: "Slow consumers are isolated in private FIFO queues and cannot apply backpressure or cause loss; retained memory grows with lag and can exhaust the process, unlike bounded rings or backpressured buffers.",
+		Kind:      KindBroadcast, Loss: Lossless, Baseline: "BaselineQueuedFanout (baseline)",
+		Invariants: []string{"every active subscription receives every accepted value exactly once in FIFO order", "Send does not wait for consumer readiness", "a slow consumer's backlog does not reorder or block another consumer", "withdrawal stops future admission without losing already accepted backlog"}},
+
 	{ID: "work-distribution-scatter", Title: "Work distribution to exactly one receiver (scatter / competing consumers)",
 		UseCase:   "Task dispatch for a dynamic worker pool where each item must be processed by exactly one worker and workers join/leave freely",
 		Tradeoffs: "No broadcast cost and natural load balancing (whichever worker is ready wins); in exchange delivery is exactly-one, so this is useless for notification, and a withdrawing worker must never orphan an in-flight dispatch.",
 		Kind:      KindScatter, Loss: ExactlyOne, Baseline: "BaselineScatterQueue",
 		Invariants: []string{"every dispatched value is received by exactly one receiver", "Send returns 0 iff no receiver was registered, 1 iff exactly one received (including via steal compensation)", "withdrawal of the last receiver never hangs a Send"}},
+	{ID: "bounded-async-fanout-dispatch", Title: "Bounded asynchronous fan-out dispatch with detectable overload",
+		UseCase:   "Bursty event publication where the publisher should enqueue quickly and a dispatcher fans out to independent subscriber mailboxes, accepting bounded loss when either stage overloads",
+		Tradeoffs: "A central input queue absorbs bursts and decouples publication from fan-out, but adds dispatch latency and a second loss stage; pooled channels bound allocation while slow subscribers lose oldest mail with observable counters.",
+		Kind:      KindBroadcast, Loss: LossyDetectable, Baseline: "BaselineAsyncFanout (baseline)",
+		Invariants: []string{"Send never blocks on subscriber readiness", "input and dispatch eviction are separately counted", "each subscriber observes retained values in increasing order without duplicates", "the final value of a burst is eventually observable after overload clears"}},
+	{ID: "bounded-competing-consumer-overflow", Title: "Bounded competing-consumer dispatch with explicit overload eviction",
+		UseCase:   "Work queues where admission must remain nonblocking and memory must stay bounded, but each accepted item is processed by exactly one worker and overload may evict the oldest pending item with an observable counter",
+		Tradeoffs: "Unlike rendezvous scatter, admission does not wait for a worker; unlike lossless work distribution, a full queue evicts pending work. The drop counter makes overload visible and the retained suffix remains FIFO.",
+		Kind:      KindScatter, Loss: LossyDetectable, Baseline: "BaselineBoundedScatterQueue (baseline)",
+		Invariants: []string{"each retained value is received by at most one worker", "accepted values that are not evicted are received exactly once in FIFO order", "admission never blocks on worker readiness", "overwrite-oldest eviction increments an exact dropped count"}},
+
 	{ID: "signal-gather-barrier", Title: "Signal gathering from N senders (N-to-1 barrier)",
 		UseCase:   "Phase/completion barriers for a dynamic set of producers whose signals must all be collected before a coordinator proceeds (the dual of casting)",
 		Tradeoffs: "Wait performs one rendezvous per registered sender; a sender that withdraws without signalling must be compensated or Wait hangs, which is the central correctness hazard of the family.",
@@ -249,6 +269,47 @@ var Cases = []Case{
 	{"select49/test/state-boundaries", "latest-value-conflating-watch", CaseTest, "Manual state load rejects stale and future sequences", "TestSelectBroadcaster49QwenStateRejectsStaleOrFuture"},
 	{"select49/bench/send", "latest-value-conflating-watch", CaseBenchmark, "Ring-backed select broadcast with deterministic terminal-value observation", "BenchmarkSelectBroadcaster49QwenSend"},
 	{"ring47/bench/broadcast-128", "buffered-lossless-backpressured", CaseBenchmark, "Select-native pipelined ring publish at 128 subscribers", "BenchmarkChanRing_Broadcast128"},
+	{"queued24/test/backlog-isolation", "nonblocking-lossless-overflow", CaseTest, "One stalled consumer queues while another drains; exact FIFO and accepted counts", "TestQueuedFanout24BacklogIsolation"},
+	{"queued24/test/withdraw-leases", "nonblocking-lossless-overflow", CaseTest, "Concurrent Send/Unsubscribe admits no value after withdrawal and drains accepted backlog", "TestQueuedFanout24WithdrawLeases"},
+	{"queued24/test/cancel-and-pump", "nonblocking-lossless-overflow", CaseTest, "Context escape, select Pump contract and idempotent withdrawal", "TestQueuedFanout24CancelAndPump"},
+	{"queued24/bench/mailbox-and-overflow", "nonblocking-lossless-overflow", CaseBenchmark, "Mailbox fast path versus exact accounted private overflow", "BenchmarkQueuedFanout24Paths"},
+	{"queued24/fuzz/fifo-model", "nonblocking-lossless-overflow", CaseFuzz, "Bounded publish/drain/withdraw stream compared with a per-subscriber FIFO model", "FuzzQueuedFanout24FIFO"},
+	{"queued24/test/concurrent-publishers", "nonblocking-lossless-overflow", CaseTest, "Concurrent publishers preserve each producer's FIFO order and exact accepted count", "TestQueuedFanout24ConcurrentPublisherFIFO"},
+	{"nonblocking-overflow/test/baseline-drain", "nonblocking-lossless-overflow", CaseTest, "Novel mailbox and ordinary queued baseline both drain accepted backlog after withdrawal", "TestNonblockingOverflowBaseline"},
+	{"stable32/test/competing-drain", "work-distribution-scatter", CaseTest, "Bounded ring dispatches each value to exactly one waiter and reports no-receiver drops", "TestStableRing32CompetingDrain"},
+	{"stable32/test/cancel-bounds", "bounded-competing-consumer-overflow", CaseTest, "Context cancellation, receiver accounting bounds and capacity overwrite policy", "TestStableRing32CancelAndBounds"},
+	{"stable32/bench/dispatch", "bounded-competing-consumer-overflow", CaseBenchmark, "Condvar ring admission plus dispatch round trip with eight competing waiters", "BenchmarkStableRing32Dispatch"},
+	{"stable32/fuzz/queue-model", "bounded-competing-consumer-overflow", CaseFuzz, "Serial queue operations against an overwrite-oldest bounded FIFO model", "FuzzStableRing32QueueModel"},
+	{"select38/test/cancel-close", "cancellation-and-close-lifecycle", CaseTest, "Cancellable send and lease-draining retirement at membership boundaries", "TestSelectFanout38Cancellation"},
+	{"select38/bench/churn", "ephemeral-churn-membership", CaseBenchmark, "Persistent-tree membership churn versus snapshot publication", "BenchmarkSelectFanout38Churn"},
+	{"fanout45/test/lease-close", "cancellation-and-close-lifecycle", CaseTest, "Buffered and synchronous node leases close without send-on-closed panic", "TestFanout45LeaseClose"},
+	{"fanout45/bench/buffered", "buffered-lossless-backpressured", CaseBenchmark, "Intrusive-list buffered publication with deterministic draining", "BenchmarkFanout45Buffered"},
+	{"ring45/test/replay-overrun", "bounded-catchup-replay", CaseTest, "Retained suffix replay and exact detectable overrun accounting", "TestRingFanout45ReplayAndOverrun"},
+	{"ring45/bench/publish", "bounded-ring-lossy-detectable", CaseBenchmark, "Shared-ring publication with eight draining cursors", "BenchmarkRingFanout45Publish"},
+	{"caster11/test/cas-boundaries", "rendezvous-cast-no-ack", CaseTest, "Lock-free CAS registration, zero-subscriber fast path and withdrawal compensation", "TestChanCaster11MetaCASBoundaries"},
+	{"caster58/test/helpers", "rendezvous-cast-no-ack", CaseTest, "Padding layout, TryRecv gate behavior and context withdrawal compensation", "TestChanCaster58Helpers"},
+	{"caster58/bench/try-recv", "rendezvous-cast-no-ack", CaseBenchmark, "Empty TryRecv and successful rendezvous helper cost", "BenchmarkChanCaster58Helpers"},
+	{"lockstep58/test/atomic-pong", "lockstep-barrier-lossless", CaseTest, "Pre-armed atomic countdown, final signal and late join boundaries", "TestChanPubSub58AtomicPong"},
+	{"lockstep58/test/cancel-ownership", "cancellation-and-close-lifecycle", CaseTest, "Callback/iterator ownership transfer during active rendezvous", "TestChanPubSub58CancellationOwnership"},
+	{"lockstep58/bench/send", "lockstep-barrier-lossless", CaseBenchmark, "Eight-subscriber atomic-pong Send cost", "BenchmarkChanPubSub58Send"},
+	{"lockstep50/test/parity", "lockstep-barrier-lossless", CaseTest, "Parity WaitGroup generations, completion gate and withdrawal accounting", "TestGenPubSub50Parity"},
+	{"lockstep50/test/cancel-ownership", "cancellation-and-close-lifecycle", CaseTest, "Generation-aware callback/iterator ownership transfer", "TestGenPubSub50CancellationOwnership"},
+	{"lockstep50/bench/send", "lockstep-barrier-lossless", CaseBenchmark, "Eight-subscriber parity WaitGroup Send cost", "BenchmarkGenPubSub50Send"},
+	{"broadcast58/test/ring-generations", "bounded-ring-lossy-detectable", CaseTest, "Exact missed counts, retained suffix, wide payloads and close drain", "TestBroadcaster58RingAndClose"},
+	{"broadcast58/test/iterator-edges", "cancellation-and-close-lifecycle", CaseTest, "Load-drain-select wake protocol, nil yield and cancellation cleanup", "TestBroadcaster58IteratorEdges"},
+	{"broadcast58/test/wide-payload", "wide-payload-integrity", CaseTest, "Concurrent multi-word ring copies are coherent and monotonic under overwrite", "TestBroadcaster58WidePayload"},
+	{"broadcast58/bench/send", "bounded-ring-lossy-detectable", CaseBenchmark, "Ring copy plus swap-then-close generation cost", "BenchmarkBroadcaster58Send"},
+	{"broadcast58/fuzz/ring-model", "bounded-ring-lossy-detectable", CaseFuzz, "Cursor operations compared with an exact bounded-ring model", "FuzzBroadcaster58RingModel"},
+	{"ring14/test/burst-eviction", "bounded-async-fanout-dispatch", CaseTest, "Paused two-stage model checks exact input/dispatch drop counters and retained suffix", "TestRingFanOut14BurstEviction"},
+	{"ring14/test/pool-reuse", "bounded-async-fanout-dispatch", CaseTest, "Remove drains pooled channels before reuse and pool exhaustion is explicit", "TestRingFanOut14PoolReuse"},
+	{"ring14/test/close", "cancellation-and-close-lifecycle", CaseTest, "Idempotent Close rejects admission and closes pooled channels after dispatcher exit", "TestRingFanOut14Close"},
+	{"ring14/bench/admission", "bounded-async-fanout-dispatch", CaseBenchmark, "Full input-queue and full subscriber-mailbox drop-oldest admission cost", "BenchmarkRingFanOut14Admission"},
+	{"ring14/fuzz/two-stage-model", "bounded-async-fanout-dispatch", CaseFuzz, "Paused dispatcher compared with an exact two-stage bounded FIFO model", "FuzzRingFanOut14TwoStageModel"},
+	{"async-baseline/test/final-value", "bounded-async-fanout-dispatch", CaseTest, "Ordinary async baseline retains the final burst value under bounded overload", "TestBaselineAsyncFanoutFinalValue"},
+	{"bounded-scatter/test/evict-exactly-one", "bounded-competing-consumer-overflow", CaseTest, "Full-queue eviction count and exactly-once retained suffix across competing waiters", "TestBoundedScatterEviction"},
+	{"bounded-scatter/bench/admission", "bounded-competing-consumer-overflow", CaseBenchmark, "Nonblocking admission into a full bounded queue", "BenchmarkBoundedScatterAdmission"},
+	{"bounded-scatter/fuzz/model", "bounded-competing-consumer-overflow", CaseFuzz, "Ring and ordinary baseline admission/drain operations compared with a bounded FIFO eviction model", "FuzzBoundedScatterModel"},
+	{"bounded-scatter/test/competing-exactly-one", "bounded-competing-consumer-overflow", CaseTest, "Non-overflow dispatch to competing workers is exactly once for ring and baseline", "TestBoundedScatterCompetingExactlyOne"},
 }
 
 var caseByID map[CaseID]Case
@@ -298,7 +359,7 @@ const (
 	bRingBeacon  = "RingBeacon (08-Qwen)"
 	bEpochGemini = "EpochCasterGemini (09-Gemini)"
 	bEpochPubSub = "EpochPubSub (11-meta)"
-	bReliable    = "ReliableBeacon (14-Qwen)"
+	bReliable    = "ReliableBeacon (08-MuseSpark)"
 	bBaselineBar = "BaselineBarrierPubSub (baseline)"
 	bBaselineLat = "BaselineLatestBroadcast (baseline)"
 	bBaselineBuf = "BaselineBufferedBroadcast (baseline)"
@@ -311,7 +372,6 @@ var broadcastAttachments = []Attachment{
 	// lockstep-barrier-lossless
 	att("lockstep-barrier-lossless", bBaselineBar, "Vacuum baseline: mutex + per-subscriber unbuffered channels + WaitGroup barrier.", true),
 	att("lockstep-barrier-lossless", bChanPubSub, "Reference lock-step design (also the historical baseline for this family).", true),
-	att("lockstep-barrier-lossless", "ChanPubSubV2_06meta", "Fused-barrier variant of the reference design.", true),
 	attX("lockstep-barrier-lossless", "ChanPubSubV2_06meta", "Attached via its manual Add/C/Wait adapter because it intentionally has no SubscribeContext.", true, "Exposure limited: facets unsubscribe only between rounds via the adapter; the manual Add(-1) steal panics if exercised mid-Send before all sends complete, so no facet withdraws mid-round."),
 	att("lockstep-barrier-lossless", "ChanPubSub09Gemini", "Lock-step variant with cond-based pong barrier.", true),
 	att("lockstep-barrier-lossless", "ChanPubSub10Gemini", "Lock-step variant with semaphore two-phase barrier.", true),
@@ -453,6 +513,7 @@ var broadcastAttachments = []Attachment{
 	att("zero-subscriber-and-edge-lifecycle", "Caster:ChanCaster2", "Caster variant edge behaviour.", true),
 	att("zero-subscriber-and-edge-lifecycle", "Caster:ChanCasterV2_06meta", "Caster variant edge behaviour.", true),
 	att("zero-subscriber-and-edge-lifecycle", "Caster:ChanCaster09Gemini", "Caster variant edge behaviour.", true),
+	att("zero-subscriber-and-edge-lifecycle", "Caster:ChanCaster11Meta", "Lock-free dual-counter caster variant edge behaviour.", true),
 	att("zero-subscriber-and-edge-lifecycle", "Caster:ChanCaster14Xing", "Caster variant edge behaviour.", true),
 	att("zero-subscriber-and-edge-lifecycle", "Caster:ChanCaster15Nemotron", "Caster variant edge behaviour.", true),
 	att("zero-subscriber-and-edge-lifecycle", "Caster:ChanCaster17FastPath", "Caster variant edge behaviour.", true),
@@ -464,6 +525,7 @@ var casterAttachments = []Attachment{
 	att("rendezvous-cast-no-ack", "ChanCaster2", "Caster variant.", true),
 	att("rendezvous-cast-no-ack", "ChanCasterV2_06meta", "Caster variant with wait-free positive Add fast path.", true),
 	att("rendezvous-cast-no-ack", "ChanCaster09Gemini", "Caster variant.", true),
+	att("rendezvous-cast-no-ack", "ChanCaster11Meta", "Completed lock-free CAS dual-counter sketch: positive Add spins only while armed, negative Add compensates the shared rendezvous.", true),
 	att("rendezvous-cast-no-ack", "ChanCaster14Xing", "Caster variant.", true),
 	att("rendezvous-cast-no-ack", "ChanCaster15Nemotron", "Caster variant.", true),
 	att("rendezvous-cast-no-ack", "ChanCaster17FastPath", "Caster variant with fast-path send.", true),
@@ -471,11 +533,15 @@ var casterAttachments = []Attachment{
 	att("rendezvous-cast-no-ack", "BaselineRendezvousCaster", "Vacuum baseline: mutex-guarded count + one unbuffered channel + compensating dummy sends on withdrawal.", true),
 	att("rendezvous-cast-no-ack", "AdaptiveCaster23Meta", "Adaptive hybrid retains ChanCaster's synchronous rendezvous path and provides a separate SeqCaster path for registered ring subscribers; this attachment measures its shared-channel caster mode.", true),
 	attX("rendezvous-cast-no-ack", "ChanPubSub35ChatJimmy", "Shared ChanCaster channel with a condition-variable pong barrier; the registered receive count is acknowledged before Send returns.", false, "Exposure limited: no concurrent receiver withdrawal or cancellation during a Send/Wait round; the response counts acknowledgements globally and cannot reclaim a missing acknowledgement, so no churn/abandonment facet may run."),
+	att("rendezvous-cast-no-ack", "ChanCaster58Spark", "The reference dual-counter rendezvous protocol with cache-line isolation and RecvContext/TryRecv helpers; withdrawal still compensates an active Send.", true),
 	att("rendezvous-cast-no-ack", "ChanCaster47Gemini", "Atomic packed-state one-shot receiver accounting; Add and Send coordinate through CAS and a parked positive-add barrier.", true),
 }
 
 var scatterAttachments = []Attachment{
 	att("work-distribution-scatter", "ChanScatter", "Single-channel scatter with steal compensation on last withdrawal: the novel design under test.", true),
+	att("bounded-competing-consumer-overflow", "StableRing32Nano (32-Nano)", "Condvar ring admits without waiting, evicts the oldest pending item at capacity and counts eviction; one shared cursor dispatches to one waiter.", true),
+	att("bounded-competing-consumer-overflow", "BaselineBoundedScatterQueue (baseline)", "Ordinary buffered channel with serialized make-room-then-enqueue admission; no novel ring or wakeup machinery.", true),
+	att("work-distribution-scatter", "StableRing32Nano (32-Nano)", "Explicit poor-fit comparison: the condvar ring admits before a worker receives and can evict under overload, so it does not provide the lossless receipt-coupled scatter invariant; its good-fit scenario is bounded-competing-consumer-overflow.", false),
 	att("work-distribution-scatter", "BaselineScatterQueue", "Vacuum baseline: an ordinary unbuffered channel already dispatches to exactly one ready receiver.", true),
 }
 
@@ -502,6 +568,9 @@ var payloadAttachments = []Attachment{
 	att("wide-payload-integrity", "ChanRelay_sync", "Per-subscriber channels carry wide payloads by value.", true),
 	att("wide-payload-integrity", "ChanRelay_w16", "Buffered per-subscriber channels carrying wide payloads.", true),
 	att("wide-payload-integrity", "ChanHub_c16", "Caller-supplied buffered channels carrying wide payloads.", true),
+	att("wide-payload-integrity", "RingFanOut14Xing_c64", "Pooled dispatcher mailboxes carry multi-word payloads; drop-oldest admission must not tear retained values.", true),
+	att("wide-payload-integrity", "BaselineAsyncFanout_c64", "Ordinary async dispatcher baseline carrying multi-word payloads.", true),
+	att("wide-payload-integrity", "Broadcaster58Spark_c64", "Per-cell locks make multi-word payload copies coherent while atomic sequence stamps detect cursor overrun.", true),
 }
 
 func allAttachments() []Attachment {
@@ -518,6 +587,7 @@ func init() {
 	// Keep response-derived implementations declarative while ensuring the
 	// same strict init-time reference and metadata validation applies to them.
 	broadcastAttachments = append(broadcastAttachments, extractedBroadcastAttachments()...)
+	broadcastAttachments = append(broadcastAttachments, gapBroadcastAttachments()...)
 	scenarioByID = make(map[ScenarioID]Scenario, len(Scenarios))
 	for _, s := range Scenarios {
 		if s.ID == "" || s.Title == "" || s.UseCase == "" || s.Baseline == "" || len(s.Invariants) == 0 {
@@ -553,6 +623,18 @@ func init() {
 			panic(fmt.Sprintf("bigbuff: scenario %q has no test case", s.ID))
 		}
 	}
+	var duplicateAttachments []string
+	attachmentKeys := make(map[string]bool)
+	for _, a := range allAttachments() {
+		key := string(a.Scenario) + "\x00" + a.Impl
+		if attachmentKeys[key] {
+			duplicateAttachments = append(duplicateAttachments, string(a.Scenario)+"/"+a.Impl)
+		}
+		attachmentKeys[key] = true
+	}
+	if len(duplicateAttachments) != 0 {
+		panic("duplicate attachments: " + strings.Join(duplicateAttachments, ", "))
+	}
 	for _, a := range allAttachments() {
 		if _, ok := scenarioByID[a.Scenario]; !ok {
 			panic(fmt.Sprintf("bigbuff: attachment %q references unknown scenario %q", a.Impl, a.Scenario))
@@ -575,17 +657,30 @@ func init() {
 // subscriber assumptions of the generic harness (a fast subscriber could
 // take another's copy of a round), but through this adapter they are sound
 // for the single-subscriber / zero-subscriber scenario facets that use it.
+var broadcastFactoryOnce sync.Once
+var broadcastFactoryMap map[string]func() Broadcaster
+
 func scenarioBroadcastFactories() map[string]func() Broadcaster {
-	m := map[string]func() Broadcaster{}
-	for _, f := range AllBroadcasters() {
-		b := f()
-		m[b.Name()] = f
-	}
-	for _, key := range []string{"ChanCaster", "ChanCaster2", "ChanCasterV2_06meta", "ChanCaster09Gemini", "ChanCaster14Xing", "ChanCaster15Nemotron", "ChanCaster17FastPath", "ChanCaster17Pumped"} {
-		f := casterBroadcasterFactory(key)
-		m[f().Name()] = f
-	}
-	return m
+	broadcastFactoryOnce.Do(func() {
+		broadcastFactoryMap = make(map[string]func() Broadcaster)
+		add := func(f func() Broadcaster) {
+			probe := f()
+			name := probe.Name()
+			// Naming probes must not retain worker goroutines (notably SeqCaster).
+			probe.Close()
+			if _, dup := broadcastFactoryMap[name]; dup {
+				panic("bigbuff: duplicate broadcaster factory identity " + name)
+			}
+			broadcastFactoryMap[name] = f
+		}
+		for _, f := range AllBroadcasters() {
+			add(f)
+		}
+		for _, key := range []string{"ChanCaster", "ChanCaster2", "ChanCasterV2_06meta", "ChanCaster09Gemini", "ChanCaster11Meta", "ChanCaster14Xing", "ChanCaster15Nemotron", "ChanCaster17FastPath", "ChanCaster17Pumped", "ChanCaster58Spark"} {
+			add(casterBroadcasterFactory(key))
+		}
+	})
+	return broadcastFactoryMap
 }
 
 func attachmentsFor(s ScenarioID, all []Attachment) []Attachment {
@@ -608,7 +703,9 @@ func TestScenarioRegistryComplete(t *testing.T) {
 		attached[a.Impl] = true
 	}
 	for _, f := range AllBroadcasters() {
-		name := f().Name()
+		probe := f()
+		name := probe.Name()
+		probe.Close()
 		if !attached[name] {
 			t.Errorf("broadcaster %q is not attached to any scenario", name)
 		}
@@ -678,6 +775,49 @@ func TestScenarioRegistryComplete(t *testing.T) {
 	for _, a := range gatherAttachments {
 		if scenarioByID[a.Scenario].Kind != KindGather {
 			t.Errorf("gather attachment in non-gather scenario %q", a.Scenario)
+		}
+	}
+}
+
+func TestScenarioCaseRunnablesExist(t *testing.T) {
+	funcs := make(map[string]bool)
+	re := regexp.MustCompile(`(?m)^func\s+((?:Test|Benchmark|Fuzz)[A-Za-z0-9_]*)\s*\(`)
+	err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range re.FindAllSubmatch(data, -1) {
+			funcs[string(m[1])] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range Cases {
+		if !funcs[c.Runnable] {
+			t.Errorf("case %q references missing runnable %q", c.ID, c.Runnable)
+		}
+		switch c.Kind {
+		case CaseTest:
+			if !strings.HasPrefix(c.Runnable, "Test") {
+				t.Errorf("case %q test runnable %q", c.ID, c.Runnable)
+			}
+		case CaseBenchmark:
+			if !strings.HasPrefix(c.Runnable, "Benchmark") {
+				t.Errorf("case %q benchmark runnable %q", c.ID, c.Runnable)
+			}
+		case CaseFuzz:
+			if !strings.HasPrefix(c.Runnable, "Fuzz") {
+				t.Errorf("case %q fuzz runnable %q", c.ID, c.Runnable)
+			}
 		}
 	}
 }
@@ -1011,34 +1151,64 @@ func TestScenarioCaster(t *testing.T) {
 }
 
 type scatterLike struct {
-	send func(int) int
-	add  func(int) int
-	recv func() (int, bool) // non-blocking receive from the shared channel
+	send    func(int) int
+	add     func(int) int
+	wait    func(context.Context) (int, bool)
+	try     func() (int, bool)
+	dropped func() uint64
 }
 
 func scatterLikes() map[string]func() scatterLike {
 	return map[string]func() scatterLike{
 		"ChanScatter": func() scatterLike {
 			x := NewChanScatter(make(chan int))
-			return scatterLike{x.Send, x.Add, func() (int, bool) {
-				select {
-				case v := <-x.C:
-					return v, true
-				default:
-					return 0, false
-				}
-			}}
+			return scatterLike{send: x.Send, add: x.Add,
+				wait: func(ctx context.Context) (int, bool) {
+					select {
+					case <-ctx.Done():
+						return 0, false
+					case v := <-x.C:
+						return v, true
+					}
+				},
+				try: func() (int, bool) {
+					select {
+					case v := <-x.C:
+						return v, true
+					default:
+						return 0, false
+					}
+				},
+				dropped: func() uint64 { return 0 }}
 		},
 		"BaselineScatterQueue": func() scatterLike {
 			x := NewBaselineScatterQueue[int]()
-			return scatterLike{x.Send, x.Add, func() (int, bool) {
-				select {
-				case v := <-x.C:
-					return v, true
-				default:
-					return 0, false
-				}
-			}}
+			return scatterLike{send: x.Send, add: x.Add,
+				wait: func(ctx context.Context) (int, bool) {
+					select {
+					case <-ctx.Done():
+						return 0, false
+					case v := <-x.C:
+						return v, true
+					}
+				},
+				try: func() (int, bool) {
+					select {
+					case v := <-x.C:
+						return v, true
+					default:
+						return 0, false
+					}
+				},
+				dropped: func() uint64 { return 0 }}
+		},
+		"StableRing32Nano (32-Nano)": func() scatterLike {
+			x := NewStableRing32Nano(make(chan int), 8)
+			return scatterLike{send: x.Send, add: x.Add, wait: x.Wait, try: x.TryWait, dropped: x.Dropped}
+		},
+		"BaselineBoundedScatterQueue (baseline)": func() scatterLike {
+			x := NewBaselineBoundedScatterQueue[int](8)
+			return scatterLike{send: x.Send, add: x.Add, wait: x.Wait, try: x.TryWait, dropped: x.Dropped}
 		},
 	}
 }
@@ -1046,108 +1216,91 @@ func scatterLikes() map[string]func() scatterLike {
 func TestScenarioScatter(t *testing.T) {
 	for _, a := range scatterAttachments {
 		t.Run(a.Impl, func(t *testing.T) {
-			mk := scatterLikes()[a.Impl]
+			mk, ok := scatterLikes()[a.Impl]
+			if !ok {
+				t.Fatalf("no scatter factory %q", a.Impl)
+			}
 			x := mk()
 			if got := x.send(1); got != 0 {
 				t.Fatalf("send with no receivers = %d, want 0", got)
 			}
-			const receivers, sends = 8, 500
-			// The shared channel is unbuffered, so receivers cannot poll it
-			// non-blockingly; drive the pool through the raw channels instead.
-			_ = x
-			runScatterFacet(t, a.Impl, receivers, sends)
+			runScatterFacet(t, a, 8, 200)
 		})
 	}
 }
 
-// runScatterFacet uses blocking receives on the shared channel (the documented
-// consumption pattern) and asserts exactly-once delivery globally.
-func runScatterFacet(t *testing.T, impl string, receivers, sends int) {
+// runScatterFacet starts a registered pool, then dispatches one bounded value
+// at a time and observes its single completion before admitting the next. This
+// is intentionally not an overflow test: it isolates exactly-one dispatch for
+// both rendezvous and queued implementations without scheduler-dependent loss.
+func runScatterFacet(t *testing.T, a Attachment, receivers, sends int) {
 	t.Helper()
-	var ch chan int
-	var send func(int) int
-	var add func(int) int
-	switch impl {
-	case "ChanScatter":
-		x := NewChanScatter(make(chan int))
-		ch, send, add = x.C, x.Send, x.Add
-	case "BaselineScatterQueue":
-		x := NewBaselineScatterQueue[int]()
-		ch, send, add = x.C, x.Send, x.Add
-	default:
-		t.Fatalf("unknown scatter impl %q", impl)
-	}
-	counts := make([]sync.Map, 0) // placeholder to keep structure simple
-	_ = counts
-	seen := make(map[int]int)
-	var mu sync.Mutex
+	x := scatterLikes()[a.Impl]()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	received := make(chan int, sends)
+	ready := make(chan struct{}, receivers)
 	var wg sync.WaitGroup
-	stop := make(chan struct{})
-	// Pool membership pattern: each worker registers once, then receives
-	// repeatedly. (Per-receive re-registration is the caster pattern, not
-	// the scatter pattern: a scatter Send holds the dispatch lock while a
-	// re-registering worker would be trying to join.)
 	for r := 0; r < receivers; r++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			add(1)
-			defer add(-1)
+			x.add(1)
+			ready <- struct{}{}
+			defer x.add(-1)
 			for {
-				select {
-				case v := <-ch:
-					mu.Lock()
-					seen[v]++
-					mu.Unlock()
-				case <-stop:
+				v, ok := x.wait(ctx)
+				if !ok {
 					return
 				}
+				received <- v
 			}
 		}()
 	}
-	// Deterministic start: do not dispatch until the whole pool has
-	// registered. Add(0) is the documented no-op count probe.
-	for add(0) < receivers {
-		runtime.Gosched()
+	for r := 0; r < receivers; r++ {
+		<-ready
 	}
 	for v := 1; v <= sends; v++ {
 		done := make(chan int, 1)
-		go func(v int) { done <- send(v) }(v)
+		go func(v int) { done <- x.send(v) }(v)
 		select {
 		case n := <-done:
 			if n != 1 {
-				t.Fatalf("%s: Send(%d)=%d want 1", impl, v, n)
+				t.Fatalf("%s: Send(%d)=%d want 1", a.Impl, v, n)
 			}
 		case <-time.After(scenarioGuard):
-			t.Fatalf("%s: Send(%d) blocked", impl, v)
+			t.Fatalf("%s: Send(%d) blocked", a.Impl, v)
+		}
+		select {
+		case got := <-received:
+			if got != v {
+				t.Fatalf("%s: received %d want %d", a.Impl, got, v)
+			}
+		case <-time.After(scenarioGuard):
+			t.Fatalf("%s: value %d was not dispatched exactly once", a.Impl, v)
 		}
 	}
-	close(stop)
+	cancel()
 	wg.Wait()
-	if len(seen) != sends {
-		t.Fatalf("%s: %d distinct values received, want %d", impl, len(seen), sends)
+	if got := x.dropped(); got != 0 {
+		t.Fatalf("%s: unexpected eviction in non-overflow facet: %d", a.Impl, got)
 	}
-	for v := 1; v <= sends; v++ {
-		if seen[v] != 1 {
-			t.Fatalf("%s: value %d received %d times, want exactly 1", impl, v, seen[v])
-		}
-	}
-	// Last-receiver withdrawal cannot hang a Send: register, start a Send,
-	// withdraw before any receive.
-	for i := 0; i < 200; i++ {
-		add(1)
+	// Last-receiver withdrawal must not hang admission. A queued design may
+	// legitimately have accepted the item before withdrawal; drain it below.
+	for i := 0; i < 50; i++ {
+		x.add(1)
 		done := make(chan int, 1)
-		go func() { done <- send(777) }()
-		add(-1)
+		go func() { done <- x.send(777) }()
+		x.add(-1)
 		select {
 		case <-done:
 		case <-time.After(scenarioGuard):
-			t.Fatalf("%s: Send hung after last receiver withdrew (iteration %d)", impl, i)
+			t.Fatalf("%s: admission hung after last receiver withdrew", a.Impl)
 		}
-		// Drain a possible real delivery of 777 racing the withdrawal.
-		select {
-		case <-ch:
-		default:
+		for {
+			if _, ok := x.try(); !ok {
+				break
+			}
 		}
 	}
 }

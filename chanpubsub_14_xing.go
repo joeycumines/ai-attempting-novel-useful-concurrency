@@ -1,5 +1,8 @@
 package bigbuff
 
+// Provenance: 14-xing4.0-29b-a4b.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"context"
 	"iter"
@@ -8,16 +11,15 @@ import (
 	"sync/atomic"
 )
 
-
 // ChanPubSub14Xing ... (comments retained for clarity, the structure is unchanged).
 type ChanPubSub14Xing[C ~chan V, V any] struct {
-	ping   *ChanCaster14Xing[C, V]          // renamed to avoid embedded field name clash
-	pongC  *sync.Cond
-	pongN  int                         // remaining pongs to consume
-	sendMu sync.Mutex                  // preserves strict ordering of Send entries
-	sendingMu sync.RWMutex             // protects send/no‑send transitions
+	ping        *ChanCaster14Xing[C, V] // renamed to avoid embedded field name clash
+	pongC       *sync.Cond
+	pongN       int          // remaining pongs to consume
+	sendMu      sync.Mutex   // preserves strict ordering of Send entries
+	sendingMu   sync.RWMutex // protects send/no‑send transitions
 	subscribers atomic.Int32
-	broken   chan struct{}
+	broken      chan struct{}
 }
 
 func NewChanPubSub14Xing[C ~chan V, V any](c C) *ChanPubSub14Xing[C, V] {
@@ -194,9 +196,8 @@ func (x *ChanPubSub14Xing[C, V]) Wait() {
 	}
 }
 
-func (x *ChanPubSub14Xing[C, V]) Subscribe()    { x.Add(1) }
-func (x *ChanPubSub14Xing[C, V]) Unsubscribe()   { x.Add(-1) }
-
+func (x *ChanPubSub14Xing[C, V]) Subscribe()   { x.Add(1) }
+func (x *ChanPubSub14Xing[C, V]) Unsubscribe() { x.Add(-1) }
 
 func (x *ChanPubSub14Xing[C, V]) checkBroken() {
 	select {

@@ -74,6 +74,14 @@ func pubsubImpls() map[string]func() pubsubAPI {
 			x := NewChanPubSub17Gemini(make(chan int))
 			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
 		},
+		"GenPubSub50Meta": func() pubsubAPI {
+			x := NewGenPubSub50Meta(make(chan int))
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
+		},
+		"ChanPubSub58Spark": func() pubsubAPI {
+			x := NewChanPubSub58Spark(make(chan int))
+			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
+		},
 		"ChanGathererPubSub": func() pubsubAPI {
 			x := NewChanGathererPubSub(make(chan int), make(chan struct{}))
 			return pubsubAPI{x.Send, func(ctx context.Context) func(func(int) bool) { return x.SubscribeContext(ctx) }, true}
@@ -141,6 +149,7 @@ func runPubSubStress(t *testing.T, mk func() pubsubAPI, subs, sends int, churn b
 	var gaps, dups, yielded atomic.Int64
 	var first atomic.Value
 	var wg sync.WaitGroup
+	ready := make(chan struct{}, subs)
 	for s := 0; s < subs; s++ {
 		wg.Add(1)
 		go func(seed int64) {
@@ -167,7 +176,11 @@ func runPubSubStress(t *testing.T, mk func() pubsubAPI, subs, sends int, churn b
 					}
 				}()
 				last := -1
-				for v := range x.subscribe(ctx) {
+				seq := x.subscribe(ctx)
+				if !churn {
+					ready <- struct{}{}
+				}
+				for v := range seq {
 					yielded.Add(1)
 					if last != -1 {
 						if v <= last {
@@ -186,7 +199,11 @@ func runPubSubStress(t *testing.T, mk func() pubsubAPI, subs, sends int, churn b
 			}
 		}(int64(s))
 	}
-	time.Sleep(30 * time.Millisecond) // let subscribers register
+	if !churn {
+		for s := 0; s < subs; s++ {
+			<-ready
+		}
+	}
 	var total int64
 	done := make(chan struct{})
 	go func() {

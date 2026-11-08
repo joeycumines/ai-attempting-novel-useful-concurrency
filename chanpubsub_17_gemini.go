@@ -17,6 +17,9 @@
 
 package bigbuff
 
+// Provenance: 17-gemini-argon-medium.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"context"
 	"iter"
@@ -24,7 +27,6 @@ import (
 	"sync"
 	"sync/atomic"
 )
-
 
 // ChanPubSub17Gemini is a pub/sub implementation that uses a channel as the underlying
 // transport. This implementation's core benefits are scalability, particularly

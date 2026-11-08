@@ -2,6 +2,9 @@
 
 package bigbuff
 
+// Provenance: 15-nemotron-super-vl.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"math"
 	"runtime"
@@ -12,10 +15,10 @@ import (
 //
 // It preserves the original contract:
 //
-//	* C MUST be unbuffered (cap == 0). A nil channel is permitted.
-//	* [Send] performs exactly one synchronous send per registered receiver.
-//	* [Add] with a negative delta must consume its share of in-flight sends
-//	  so the sender never blocks on a receive that will never arrive.
+//   - C MUST be unbuffered (cap == 0). A nil channel is permitted.
+//   - [Send] performs exactly one synchronous send per registered receiver.
+//   - [Add] with a negative delta must consume its share of in-flight sends
+//     so the sender never blocks on a receive that will never arrive.
 //
 // The state is a single atomic.Uint64:
 //
@@ -175,7 +178,7 @@ func (x *ChanCaster15Nemotron[C, V]) Add(delta int) int {
 
 		// Optimistically remove d receivers.
 		var (
-			st       uint64
+			st        uint64
 			receivers int32
 		)
 		for {

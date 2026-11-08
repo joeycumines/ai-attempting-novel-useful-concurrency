@@ -1,5 +1,8 @@
 package bigbuff
 
+// Provenance: 15-nemotron-super-vl.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"sync"
 	"sync/atomic"

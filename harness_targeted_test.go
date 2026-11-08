@@ -76,12 +76,15 @@ func TestFanoutSubscribeContextCancel(t *testing.T) {
 	x := NewChanFanout[int](8)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	started := make(chan struct{}, 1)
 	go func() {
-		for range x.SubscribeContext(ctx) {
+		seq := x.SubscribeContext(ctx)
+		started <- struct{}{}
+		for range seq {
 		}
 		close(done)
 	}()
-	time.Sleep(20 * time.Millisecond)
+	<-started
 	cancel()
 	select {
 	case <-done:
@@ -188,6 +191,8 @@ func TestCroutonStalledSubscriberSpin(t *testing.T) {
 			sent.Add(1)
 		}
 	}()
-	time.Sleep(200 * time.Millisecond)
+	for i := 0; i < 1000; i++ {
+		runtime.Gosched()
+	}
 	t.Logf("sends completed before blocking: %d (expected ring size 16); publisher burns CPU via Gosched loop while blocked, no ctx", sent.Load())
 }

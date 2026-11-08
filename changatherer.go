@@ -16,6 +16,9 @@
 
 package bigbuff
 
+// Provenance: 05-qwen-3.8-max-chat.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"context"
 	"iter"
@@ -86,7 +89,7 @@ func (x *ChanGatherer[C, V]) Wait() int {
 	// load our state, guard no senders (early exit), and set tracker to the
 	// value of `maxInt32 + senders`, using CAS to sync with negative adds
 	var (
-		state              uint64
+		state            uint64
 		senders, tracker uint32
 	)
 	for {
@@ -96,7 +99,7 @@ func (x *ChanGatherer[C, V]) Wait() int {
 		}
 
 		senders = uint32(state >> 32) // initialize from hi
-		tracker = uint32(state)         // initialize from lo
+		tracker = uint32(state)       // initialize from lo
 		if tracker != senders || senders > math.MaxInt32 {
 			panic(`bigbuff: changatherer: wait: state invariant violation`)
 		}
@@ -111,14 +114,14 @@ func (x *ChanGatherer[C, V]) Wait() int {
 
 	// gather involves receiving from all senders - with the total actually
 	// received being in range [0, senders], due to potential decrements
-		for range senders {
+	for range senders {
 		<-x.C // may end up sent by negative Add calls
 	}
 
 	// now, we can retrieve, validate, then reset the state
 	state = x.state.Load()
 	tracker = uint32(state >> 32) // actually the final senders (used as scratch)
-	if tracker > senders ||     // senders should be unchanged or decreased
+	if tracker > senders ||       // senders should be unchanged or decreased
 		uint32(state) != tracker+math.MaxInt32 || // lo still exactly math.MaxInt32 more than hi
 		!x.state.CompareAndSwap(state, 0) { // failing this indicates one or more unregistered senders
 		panic(`bigbuff: changatherer: wait: state invariant violation`)
@@ -185,7 +188,7 @@ func (x *ChanGatherer[C, V]) Add(delta int) int {
 			case maxSenders + senders:
 				// waiting - perform the requisite number of sends
 				// note: senders = tracker-maxSenders (per the above)
-								var zero V
+				var zero V
 				for range delta {
 					x.C <- zero
 				}
@@ -213,8 +216,6 @@ func (x *ChanGatherer[C, V]) Add(delta int) int {
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
-
 
 const pubSubStateInvariantViolation = `bigbuff: pubsub: state invariant violation`
 
@@ -452,4 +453,7 @@ func (x *ChanGathererPubSub[C, V, P]) markBroken() {
 
 // Alias for original PubSub name in 05-qwen
 type PubSub[C ~chan V, V any, P ~chan struct{}] = ChanGathererPubSub[C, V, P]
-func NewPubSub[C ~chan V, V any, P ~chan struct{}](ping C, pong P) *ChanGathererPubSub[C, V, P] { return NewChanGathererPubSub(ping, pong) }
+
+func NewPubSub[C ~chan V, V any, P ~chan struct{}](ping C, pong P) *ChanGathererPubSub[C, V, P] {
+	return NewChanGathererPubSub(ping, pong)
+}

@@ -75,19 +75,19 @@ import (
 //
 // # Hot-Path Allocations
 //
-//   Send:        0 allocations
-//   Receive:     0 allocations
-//   TryReceive:  0 allocations
+//	Send:        0 allocations
+//	Receive:     0 allocations
+//	TryReceive:  0 allocations
 //
 // # Memory Model
 //
-//   The write cursor increment acts as a release fence. The value write
-//   happens-before the cursor increment, so subscribers observing the
-//   new cursor value are guaranteed to see the published value.
+//	The write cursor increment acts as a release fence. The value write
+//	happens-before the cursor increment, so subscribers observing the
+//	new cursor value are guaranteed to see the published value.
 //
-//   The generation counter uses release/acquire semantics for the
-//   notification path: Send does a.gen.Add (release), subscribers do
-//   a.gen.Load (acquire).
+//	The generation counter uses release/acquire semantics for the
+//	notification path: Send does a.gen.Add (release), subscribers do
+//	a.gen.Load (acquire).
 //
 // # Invariants
 //
@@ -98,8 +98,8 @@ import (
 //   - waiter count is balanced (Add(1) before park, Add(-1) after unpark)
 type Arcadia[V any] struct {
 	buffer []atomic.Pointer[V] // pre-allocated ring buffer (power of 2)
-	mask   uint64        // buffer size - 1
-	write  atomic.Uint64 // global write cursor (monotonically increasing)
+	mask   uint64              // buffer size - 1
+	write  atomic.Uint64       // global write cursor (monotonically increasing)
 
 	// Subscriber management.
 	// The subscriber list is an immutable slice. Subscribe/Unsubscribe
@@ -260,9 +260,13 @@ func (a *Arcadia[V]) Subscribe() *ArcadiaSub[V] {
 
 	for {
 		old := a.subs.Load()
-		newSubs := &arcadiaSubList[V]{
-			subs: append(old.subs, sub),
-		}
+		// Repair: append(old.subs, sub) can write into spare capacity of a
+		// snapshot that another Subscribe is also appending to. The list is
+		// immutable only if every mutation copies the backing array.
+		next := make([]*arcadiaSub[V], len(old.subs)+1)
+		copy(next, old.subs)
+		next[len(old.subs)] = sub
+		newSubs := &arcadiaSubList[V]{subs: next}
 		if a.subs.CompareAndSwap(old, newSubs) {
 			break
 		}

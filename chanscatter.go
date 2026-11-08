@@ -16,6 +16,9 @@
 
 package bigbuff
 
+// Provenance: 16-deepseek-v4.1-flash-chat.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"math"
 	"runtime"

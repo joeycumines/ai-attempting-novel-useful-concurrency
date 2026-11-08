@@ -22,6 +22,11 @@ func (b *chanPubSub57Adapter) Publish(v int) int { return b.x.Send(v) }
 // supported lifecycle operation and is exercised by its dedicated facets.
 func (b *chanPubSub57Adapter) Close()             {}
 func (b *chanPubSub57Adapter) IsCoalescing() bool { return false }
+
+// SkipStandardConcurrentChurn documents the manual lock-step exposure: Receive
+// cannot abandon Wait mid-round, so cancelling a churn subscriber while Send is
+// armed can strand the round. Dedicated facets unsubscribe only between rounds.
+func (b *chanPubSub57Adapter) SkipStandardConcurrentChurn() bool { return true }
 func (b *chanPubSub57Adapter) Subscribe() BroadcastSubscriber {
 	b.subsMu.Lock()
 	b.x.Subscribe()

@@ -260,7 +260,7 @@ func TestSenseCasterCloseWakesParkedRecv(t *testing.T) {
 		_, err := s.Recv(context.Background())
 		errc <- err
 	}()
-	time.Sleep(20 * time.Millisecond) // let the receiver park; correctness does not depend on it
+	runtime.Gosched()
 	s.Close()
 	select {
 	case err := <-errc:

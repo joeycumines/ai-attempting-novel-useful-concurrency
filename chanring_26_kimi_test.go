@@ -113,7 +113,7 @@ func TestChanRingBoundedLoss(t *testing.T) {
 func TestChanRingChurn(t *testing.T) {
 	x := NewChanRing26Kimi[int](64, 128)
 	stop := make(chan struct{})
-	var wg sync.WaitGroup
+	var wg, subWg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -127,9 +127,9 @@ func TestChanRingChurn(t *testing.T) {
 		}
 	}()
 	for i := 0; i < 32; i++ {
-		wg.Add(1)
+		subWg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer subWg.Done()
 			for j := 0; j < 20; j++ {
 				c, ccancel := context.WithCancel(context.Background())
 				func() {
@@ -144,7 +144,7 @@ func TestChanRingChurn(t *testing.T) {
 			}
 		}()
 	}
-	time.Sleep(200 * time.Millisecond)
+	subWg.Wait()
 	close(stop)
 	wg.Wait()
 	waitForChanRing(t, "subscriber pool to drain", func() bool { return x.Len() == 0 })

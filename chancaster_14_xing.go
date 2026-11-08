@@ -1,5 +1,8 @@
 package bigbuff
 
+// Provenance: 14-xing4.0-29b-a4b.md. Cross-checked against the delivered Markdown source;
+// see extraction_audit.md for the comparison method and repair/exposure notes.
+
 import (
 	"math"
 	"sync"
@@ -10,7 +13,7 @@ const maxReceivers = math.MaxInt32
 
 // ChanCaster14Xing ... (unchanged) comments, see original spec.
 type ChanCaster14Xing[C ~chan V, V any] struct {
-	C C
+	C     C
 	mutex sync.RWMutex
 	state atomic.Uint64
 }
