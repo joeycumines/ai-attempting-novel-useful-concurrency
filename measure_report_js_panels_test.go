@@ -171,7 +171,7 @@ $('pathoB').addEventListener('change', function(){ pathoB = this.value; pathoPro
   var totalTorn = torn.reduce(function(s,r){ return s+r.violations; }, 0);
   var totalChecked = torn.reduce(function(s,r){ return s+r.checked; }, 0);
   var tHTML = '<div style="display:flex;align-items:baseline;gap:14px;margin-bottom:8px"><span class="pill '+(totalTorn===0?'pill-pass':'pill-bad')+'">'+(totalTorn===0?'PASS':'FAIL')+'</span><span class="small">'+fmtNum(totalChecked)+' checked loads · '+totalTorn+' torn</span></div>';
-  tHTML += '<div style="max-height:260px;overflow:auto">';
+  tHTML += '<div class="torn-scroll" style="max-height:260px;overflow:auto">';
   torn.forEach(function(r){
     var ok = r.violations === 0;
     tHTML += '<div style="display:grid;grid-template-columns:1fr auto;gap:8px;font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line)"><span class="mono" style="color:'+(ok?'var(--ink2)':'var(--red)')+'">'+esc(r.impl)+'</span><span class="mono" style="color:'+(ok?'var(--green)':'var(--red)')+'">'+(ok ? '✓ 0 / '+fmtNum(r.checked) : r.violations+' TORN / '+fmtNum(r.checked))+'</span></div>';
