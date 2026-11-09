@@ -132,9 +132,19 @@ func (x *RingFanOut14Xing[C, V]) dispatch(value V) {
 		select {
 		case ch <- value:
 		default:
-			<-ch
-			x.dispatchDropped++
-			ch <- value
+			// Drop oldest, then retry the offer; both operations are
+			// non-blocking. A subscriber draining ch between the offer
+			// and the eviction can never park the dispatcher (and with
+			// it every other subscriber and the input admission).
+			select {
+			case <-ch:
+				x.dispatchDropped++
+			default:
+			}
+			select {
+			case ch <- value:
+			default:
+			}
 		}
 	}
 }
