@@ -47,7 +47,7 @@ const reportHTMLBody = `<body>
 <!-- ══════════════ OVERVIEW ══════════════ -->
 <header id="hero">
   <div class="kicker">Empirical concurrency study</div>
-  <h1>Measured, not vibes:<br><em>116 concurrent primitives under one harness.</em></h1>
+  <h1>Measured, not vibes:<br><em><span id="heroCount"></span> concurrent primitives under one harness.</em></h1>
   <p>Every implementation in this repository — hand-rolled broadcasters, caster-likes, scatter dispatchers, gather barriers and async payload lanes — exercised by the same batteries, the same timers, the same GC settings, and the same pass/fail gates. The sections below unpack throughput, latency, allocation, scalability, stall resilience, churn, withdrawal compensation and payload integrity.</p>
   <div class="chips" id="metaChips"></div>
   <div class="kpis" id="kpiRow"></div>

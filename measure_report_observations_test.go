@@ -183,7 +183,7 @@ func computeObservations(data *reportData, dd derivedData) []map[string]any {
 		}
 	}
 	add("correctness",
-		fmt.Sprintf("%0.0f exactly-once violations across scatter dispatch runs", scatterViolations),
+		fmt.Sprintf("%s exactly-once violations across scatter dispatch runs", thousandsSep(scatterViolations)),
 		"Every dispatched value must be received by exactly one worker; the count covers all receivers across all repetitions (warmup included).",
 		"#data")
 
@@ -221,6 +221,23 @@ func humanNs(ns float64) string {
 	default:
 		return fmt.Sprintf("%.0f ns", ns)
 	}
+}
+
+// thousandsSep formats a whole number with comma group separators, so large
+// counts read at a glance (12,162,558).
+func thousandsSep(v float64) string {
+	digits := fmt.Sprintf("%.0f", math.Abs(v))
+	var b strings.Builder
+	if v < 0 {
+		b.WriteByte('-')
+	}
+	for i, c := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
 
 func humanBytes(b float64) string {

@@ -108,19 +108,24 @@ function sortedImpls(f, by){
   var implSet = {};
   metrics.forEach(function(m){ if (m.impl) implSet[m.impl] = true; });
   var implCount = Object.keys(implSet).length;
+  // Registered implementations are those measured plus any that appear only as skip records.
+  var skippedOnly = 0, skippedSeen = {};
+  skipped.forEach(function(s){ if (s.impl && !implSet[s.impl] && !skippedSeen[s.impl]) { skippedSeen[s.impl] = true; skippedOnly++; } });
+  $('heroCount').textContent = implCount + skippedOnly;
+  var commaInt = function(n){ return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
   var scenarioSet = {};
   (REG.attachments||[]).forEach(function(a){ if (a.scenario) scenarioSet[a.scenario] = true; });
   var torn = 0, tornChecked = 0, violations = 0;
   metrics.forEach(function(m){ if (m.metric==='torn_reads'){ torn += m.violations||0; tornChecked += m.checked||0; } if (typeof m.exactly_once_violations==='number') violations += m.exactly_once_violations; });
 
   var kpis = [
-    { v: implCount, l: 'implementations measured', s: 'across '+familiesPresent.length+' families' },
-    { v: summary.records || metrics.length, l: 'records collected', s: (summary.skipped||0)+' explicitly skipped · '+(summary.failures||0)+' failures' },
+    { v: implCount, l: 'implementations measured', s: skippedOnly + ' appear only as skip records · ' + familiesPresent.length + ' families' },
+    { v: summary.records || metrics.length, l: 'records collected', s: (summary.skipped||0)+' skipped · '+(summary.failures||0)+' failures' },
     { v: Object.keys(scenarioSet).length, l: 'scenarios attached', s: (REG.attachments||[]).length+' good/bad-fit attachments' },
-    { v: torn === 0 ? '0 torn reads' : torn+' torn reads', l: 'payload integrity', s: fmtNum(tornChecked)+' multi-word loads checked' },
-    { v: violations === 0 ? '0 violations' : violations+' violations', l: 'scatter exactly-once', s: 'all dispatch runs, warmup included' }
+    { v: torn, l: 'torn payload reads', s: commaInt(tornChecked)+' multi-word loads checked' },
+    { v: violations, l: 'exactly-once violations', s: 'scatter dispatch, warmup included' }
   ];
-  $('kpiRow').innerHTML = kpis.map(function(k){ return '<div class="kpi"><div class="v">'+esc(k.v)+'</div><div class="l">'+esc(k.l)+'</div><div class="s">'+esc(k.s)+'</div></div>'; }).join('');
+  $('kpiRow').innerHTML = kpis.map(function(k){ return '<div class="kpi"><div class="v">'+esc(commaInt(k.v))+'</div><div class="l">'+esc(k.l)+'</div><div class="s">'+esc(k.s)+'</div></div>'; }).join('');
 
   // Family scoreboard cards + verdict distribution
   var html = '<div class="kicker" style="margin-top:6px">Family scorecards</div><div class="findings-grid" style="margin-top:10px">';
