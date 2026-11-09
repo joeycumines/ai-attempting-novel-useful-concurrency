@@ -251,36 +251,23 @@ func (a *reliableBeaconAdapter) Publish(val int) int { return a.x.Send(val) }
 func (a *reliableBeaconAdapter) IsCoalescing() bool  { return true }
 func (a *reliableBeaconAdapter) Close()              {}
 func (a *reliableBeaconAdapter) Subscribe() BroadcastSubscriber {
-	a.x.Subscribe() // registered synchronously
-	_, seq := a.x.Load()
-	next := seq + 1
-	return newPumpSub(func(ctx context.Context, ch chan<- int) {
-		defer a.x.Unsubscribe()
-		for {
-			if v, s := a.x.Load(); s >= next {
-				next = s + 1
-				// Only Wait when a round is actually armed; otherwise the
-				// round already completed (e.g. this subscriber was
-				// compensated) and Wait would park forever.
-				if a.x.pendingLoad() > 0 {
-					a.x.Wait()
-				}
-				select {
-				case ch <- v:
-				case <-ctx.Done():
-					return
-				}
-				continue
-			}
-			sig := a.x.C()
-			if _, s := a.x.Load(); s >= next {
-				continue
-			}
+	// SubscribeContext registers before it returns, so a Publish issued after
+	// Subscribe returns is part of this subscription. The pump only ranges the
+	// iterator. Unsubscribe cancels the context, and the iterator withdraws
+	// through its tracked path, which compensates exactly.
+	ctx, cancel := context.WithCancel(context.Background())
+	values := a.x.SubscribeContext(ctx)
+	s := &pumpSub{ch: make(chan int, 16), cancel: cancel, done: make(chan struct{})}
+	go func() {
+		defer close(s.ch)
+		defer close(s.done)
+		for v := range values {
 			select {
+			case s.ch <- v:
 			case <-ctx.Done():
 				return
-			case <-sig:
 			}
 		}
-	})
+	}()
+	return s
 }

@@ -65,8 +65,39 @@ func (x *ReliableBeacon[T]) Add(delta int) int {
 	}
 	return n
 }
+
+// Subscribe and Unsubscribe are the legacy lifecycle. They do not record which
+// round a subscriber has acknowledged, so an Unsubscribe that follows the
+// subscriber's acknowledgement of an in-flight round compensates that round a
+// second time, and a Wait issued once the round is compensated parks with no
+// cancellation escape. No scenario exercises them. Use SubscribeContext, which
+// tracks acknowledgements and honours its context.
 func (x *ReliableBeacon[T]) Subscribe()   { x.Add(1) }
 func (x *ReliableBeacon[T]) Unsubscribe() { x.unsubscribe(nil) }
+
+// subscribeSeq registers one subscription and returns the beacon sequence it
+// starts after. Registration and the sequence read both sit under sendingMu's
+// read side, and a round holds its write side from arming to completion. A
+// registration is therefore wholly before a round (the round's value is not
+// owed to it) or wholly after it (its value is observed). Reading the sequence
+// after the read lock was released let a round slip between the two steps: the
+// subscription was counted in that round's ack barrier, its start point lay past
+// the value, and the publisher waited forever for an acknowledgement it could
+// never give.
+func (x *ReliableBeacon[T]) subscribeSeq() uint64 {
+	if x.broken == nil {
+		panic(`bigbuff: reliable: use factory`)
+	}
+	select {
+	case <-x.broken:
+		panic(`bigbuff: chanpubsub: state invariant violation`)
+	default:
+	}
+	x.sendingMu.RLock()
+	defer x.sendingMu.RUnlock()
+	x.subs.Add(1)
+	return x.beacon.seq.Load()
+}
 
 // unsubscribe withdraws a subscription. If a send is in flight and the
 // subscriber has not already acked the armed round, it was counted in
@@ -135,13 +166,17 @@ func (x *ReliableBeacon[T]) Send(v T) int {
 }
 
 func (x *ReliableBeacon[T]) Wait() {
-	x.waitTracked(0, nil, false)
+	x.waitTracked(context.Background(), 0, nil, false) // legacy: no context to cancel
 }
 
 // waitTracked is Wait plus optional round tracking. When track is true the
 // ack only counts against the armed round (seq), and the last-acked round is
 // recorded under ackMu so the unsubscribe compensation guard is race-free.
-func (x *ReliableBeacon[T]) waitTracked(seq uint64, lastWaited *atomic.Uint64, track bool) {
+// When no round is armed for the value, it parks until one is armed or ctx is
+// done. A cancelled wait returns false without acknowledging anything: the
+// subscriber withdraws, and unsubscribe compensates whatever the round still
+// owes it.
+func (x *ReliableBeacon[T]) waitTracked(ctx context.Context, seq uint64, lastWaited *atomic.Uint64, track bool) bool {
 	x.ackMu.Lock()
 	defer x.ackMu.Unlock()
 	select {
@@ -149,13 +184,25 @@ func (x *ReliableBeacon[T]) waitTracked(seq uint64, lastWaited *atomic.Uint64, t
 		panic(`bigbuff: chanpubsub: state invariant violation`)
 	default:
 	}
-	// wait until a Send is pending
-	for x.pending.Load() == 0 {
-		x.ackCond.Wait()
-		select {
-		case <-x.broken:
-			panic(`bigbuff: chanpubsub: state invariant violation`)
-		default:
+	if x.pending.Load() == 0 {
+		// The broadcast is what lets a cancelled waiter out of ackCond.Wait. It
+		// takes ackMu, so it cannot fire between the ctx check and the park.
+		stop := context.AfterFunc(ctx, func() {
+			x.ackMu.Lock()
+			x.ackCond.Broadcast()
+			x.ackMu.Unlock()
+		})
+		defer stop()
+		for x.pending.Load() == 0 {
+			if ctx.Err() != nil {
+				return false
+			}
+			x.ackCond.Wait()
+			select {
+			case <-x.broken:
+				panic(`bigbuff: chanpubsub: state invariant violation`)
+			default:
+			}
 		}
 	}
 	if x.pending.Load() > 0 && (!track || seq == x.armedSeq.Load()) {
@@ -166,6 +213,7 @@ func (x *ReliableBeacon[T]) waitTracked(seq uint64, lastWaited *atomic.Uint64, t
 	if track && lastWaited != nil {
 		lastWaited.Store(seq)
 	}
+	return true
 }
 
 func (x *ReliableBeacon[T]) pendingLoad() int32 {
@@ -176,17 +224,14 @@ func (x *ReliableBeacon[T]) C() <-chan struct{} { return x.beacon.Signal() }
 func (x *ReliableBeacon[T]) Load() (T, uint64)  { return x.beacon.Load() }
 
 func (x *ReliableBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
-	x.Subscribe()
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// The starting sequence is captured synchronously with registration, before
+	// the iterator is invoked and atomically with it (see subscribeSeq).
+	next := x.subscribeSeq() + 1
 	lastWaited := &atomic.Uint64{}
 	stop := context.AfterFunc(ctx, func() { x.unsubscribe(lastWaited) })
-	// Capture the starting sequence synchronously with registration, before
-	// the iterator is invoked. Otherwise a Send can complete between Add(1)
-	// and the first iterator call, leaving the new subscription counted in the
-	// ack barrier but positioned after the value it is supposed to acknowledge.
-	next := x.beacon.seq.Load() + 1
 	return func(yield func(T) bool) {
 		if yield == nil {
 			if stop() {
@@ -207,7 +252,9 @@ func (x *ReliableBeacon[T]) SubscribeContext(ctx context.Context) iter.Seq[T] {
 			s := x.beacon.val.Load()
 			if s != nil && s.seq >= next {
 				next = s.seq + 1
-				x.waitTracked(s.seq, lastWaited, true)
+				if !x.waitTracked(ctx, s.seq, lastWaited, true) {
+					return
+				}
 				if !yield(s.val) {
 					return
 				}
