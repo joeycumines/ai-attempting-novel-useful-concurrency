@@ -6474,7 +6474,7 @@ new file mode 100644
 +	a, b := p.Subscribe(), p.Subscribe()
 +	defer a.Close()
 +	defer b.Close()
-+	values := []*payload{{1}, {2}, {3}}
++	values := []*payload{% raw %}{{1}, {2}, {3}}{% endraw %}
 +	for _, v := range values {
 +		if _, err := p.TrySend(v); err != nil {
 +			t.Fatal(err)
@@ -9727,7 +9727,7 @@ func TestRingPubSubReleasesPayloadReferences(t *testing.T) {
 	a, b := p.Subscribe(), p.Subscribe()
 	defer a.Close()
 	defer b.Close()
-	values := []*payload{{1}, {2}, {3}}
+	values := []*payload{% raw %}{{1}, {2}, {3}}{% endraw %}
 	for _, v := range values {
 		if _, err := p.TrySend(v); err != nil {
 			t.Fatal(err)
