@@ -28,6 +28,9 @@ package bigbuff
 //     mailbox admission and overflow append one FIFO step. It is never held
 //     while waiting for a consumer, so Send remains nonblocking; the source's
 //     lock-free fast-path claim is not retained.
+//   - pump's unlocked emptiness test could miss an overflow value that a Send
+//     was placing, so a receiver that had just drained the mailbox slept with a
+//     value queued and no pump to move it. The test now runs under enqueueMu.
 //
 // Structural trade-off retained deliberately: overflow is UNBOUNDED. This is
 // not a bounded/backpressured or latest-value broadcaster; it is attached to
@@ -150,9 +153,9 @@ func (b *QueuedFanout24Meta[V]) Send(v V) int {
 }
 
 func (s *queuedFanout24Sub[V]) pump() bool {
-	if s.queued.Load() == 0 {
-		return false
-	}
+	// The emptiness check runs under enqueueMu. An unlocked check could return
+	// while a concurrent Send holds a value between its full-mailbox test and its
+	// overflow append, leaving the receiver asleep with that value queued.
 	s.enqueueMu.Lock()
 	defer s.enqueueMu.Unlock()
 	s.mu.Lock()

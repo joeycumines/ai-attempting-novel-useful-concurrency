@@ -323,6 +323,44 @@ func (s queuedBaselineTestSub) Receive(ctx context.Context) (int, bool) { return
 func (s queuedBaselineTestSub) TryReceive() (int, bool)                 { return s.s.TryRecv() }
 func (s queuedBaselineTestSub) Unsubscribe()                            { s.s.Unsubscribe() }
 
+// A value that Send parks in the overflow queue behind a full mailbox must reach a
+// receiver that has just taken the mailbox value. The receiver's pump used to test
+// the queue without the enqueue lock, so it could conclude there was nothing to
+// move while Send sat between its mailbox test and its append, and the receiver
+// then slept with the value queued. The invariant holds on every interleaving of
+// the fixed code, so the test cannot flake in the passing direction; a failure is
+// a regression.
+func TestQueuedFanout24MetaOverflowHandoffNoLostWakeup(t *testing.T) {
+	const iters = 20000
+	for i := 0; i < iters; i++ {
+		b := NewQueuedFanout24Meta[int]()
+		sub := b.Subscribe()
+		b.Send(1) // fills the capacity-one mailbox
+		ctx, cancel := context.WithCancel(context.Background())
+		first := make(chan int, 1)
+		second := make(chan int, 1)
+		go func() {
+			v1, _ := sub.RecvContext(ctx)
+			first <- v1
+			v2, _ := sub.RecvContext(ctx)
+			second <- v2
+		}()
+		go b.Send(2)
+		select {
+		case v := <-second:
+			if v != 2 {
+				t.Fatalf("iteration %d: second value = %d, want 2", i, v)
+			}
+		case <-time.After(scenarioGuard):
+			cancel()
+			t.Fatalf("iteration %d: overflowed value was never handed to the receiver", i)
+		}
+		cancel()
+		<-first
+		sub.Unsubscribe()
+	}
+}
+
 type baselineQueuedTestAdapter struct{ b *BaselineQueuedFanout[int] }
 
 func (a baselineQueuedTestAdapter) Send(v int) int { return a.b.Send(v) }
