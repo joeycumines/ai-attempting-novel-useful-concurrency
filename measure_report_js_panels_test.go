@@ -149,7 +149,7 @@ $('pathoB').addEventListener('change', function(){ pathoB = this.value; pathoPro
   var maxB = Math.max.apply(null, nonzero.map(function(r){return r.bytes;}).concat([1]));
   nonzero.slice(0, 22).forEach(function(r){
     var row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:minmax(150px,1fr) 3fr 80px 110px;gap:10px;align-items:center;font-size:11px;margin:3px 0';
+    row.className = 'bar-row retain';
     var oc = r.outcome === 'completed' ? '<span style="color:var(--green)">completed</span>' : '<span style="color:#fca5a5">blocked</span>';
     row.innerHTML = '<div class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)" title="'+esc(r.impl)+'">'+esc(r.impl)+'</div>'
       + '<div style="height:10px;background:#1a2350;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+Math.max(2, 100*r.bytes/maxB).toFixed(1)+'%;background:linear-gradient(90deg,#7c2d12,#fb923c)"></div></div>'
@@ -330,16 +330,21 @@ function downloadBlob(name, content, mime){
 
 /* ── Nav scrollspy + initial render ── */
 function initNav(){
-  var links = document.querySelectorAll('#nav a');
+  var links = document.querySelectorAll('#nav a, #sectionbar a');
   var map = {};
-  links.forEach(function(a){ map[a.getAttribute('href').slice(1)] = a; });
+  links.forEach(function(a){ var id = a.getAttribute('href').slice(1); (map[id] = map[id] || []).push(a); });
+  var bar = document.getElementById('sectionbar');
   if (typeof window.IntersectionObserver === 'function') {
     var io = new IntersectionObserver(function(entries){
       entries.forEach(function(entry){
         if (entry.isIntersecting) {
           links.forEach(function(a){ a.classList.remove('active'); });
-          var target = map[entry.target.id];
-          if (target) target.classList.add('active');
+          (map[entry.target.id] || []).forEach(function(a){
+            a.classList.add('active');
+            if (bar && a.parentElement === bar) {
+              bar.scrollTo({left: a.offsetLeft - (bar.clientWidth - a.offsetWidth) / 2, behavior: 'smooth'});
+            }
+          });
         }
       });
     }, {rootMargin: '-18% 0px -70% 0px', threshold: 0});

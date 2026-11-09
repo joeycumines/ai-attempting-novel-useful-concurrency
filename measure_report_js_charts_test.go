@@ -212,7 +212,7 @@ function renderMemory(){
   var maxB = Math.max.apply(null, top.map(function(r){return r.bytes;}).concat([1]));
   top.forEach(function(r){
     var row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:minmax(120px,1fr) 3fr 70px;gap:8px;align-items:center;font-size:11px;margin:3px 0';
+    row.className = 'bar-row';
     row.innerHTML = '<div class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)" title="'+esc(r.impl)+'">'+esc(r.impl)+'</div>'
       + '<div style="height:10px;background:#1a2350;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+Math.max(2, 100*r.bytes/maxB).toFixed(1)+'%;background:linear-gradient(90deg,#4c1d95,#a78bfa)"></div></div>'
       + '<div class="mono" style="text-align:right">'+fmtBytes(r.bytes)+'</div>';
@@ -225,7 +225,7 @@ function renderMemory(){
   var zmax = Math.max.apply(null, zeroRows.map(function(r){return r.ns;}).concat([1]));
   zeroRows.forEach(function(r){
     var row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:minmax(120px,1fr) 3fr 90px;gap:8px;align-items:center;font-size:11px;margin:2px 0';
+    row.className = 'bar-row zero';
     row.innerHTML = '<div class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)" title="'+esc(r.impl)+'">'+esc(r.impl)+'</div>'
       + '<div style="height:8px;background:#1a2350;border-radius:4px;overflow:hidden"><div style="height:100%;width:'+Math.max(2, 100*r.ns/zmax).toFixed(1)+'%;background:#155e75"></div></div>'
       + '<div class="mono" style="text-align:right">'+fmtNs(r.ns)+'</div>';
@@ -253,7 +253,7 @@ function renderChurn(){
   var maxV = Math.max.apply(null, rows.map(function(r){return r.ns;}));
   rows.forEach(function(r){
     var row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:minmax(140px,1fr) 2fr 100px;gap:10px;align-items:center;font-size:11.5px;margin:3px 0';
+    row.className = 'bar-row churn';
     row.innerHTML = '<div class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)" title="'+esc(r.impl)+'">'+esc(r.impl)+'</div>'
       + '<div style="height:11px;background:#1a2350;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+Math.max(2, 100*r.ns/maxV).toFixed(1)+'%;background:linear-gradient(90deg,#134e4a,#2dd4bf)"></div></div>'
       + '<div class="mono" style="text-align:right">'+fmtNs(r.ns)+'</div>';

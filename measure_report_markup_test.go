@@ -27,6 +27,21 @@ const reportHTMLBody = `<body>
     Every chart regenerates from the embedded JSONL records — nothing is hard-coded. Hover anything for values.
   </div>
 </nav>
+<nav class="sectionbar" id="sectionbar" aria-label="Report sections">
+  <a href="#overview" class="active">Overview</a>
+  <a href="#findings">Key Findings</a>
+  <a href="#scaling">Scaling Curves</a>
+  <a href="#leaderboard">Leaderboard</a>
+  <a href="#adoptability">Adoptability Radar</a>
+  <a href="#latency">Latency Distribution</a>
+  <a href="#memory">Memory &amp; Allocations</a>
+  <a href="#churn">Churn Cost</a>
+  <a href="#pathology">Pathology Lab</a>
+  <a href="#correctness">Correctness Signals</a>
+  <a href="#coverage">Scenario Coverage</a>
+  <a href="#methodology">Methodology &amp; Schema</a>
+  <a href="#data">Data &amp; Exports</a>
+</nav>
 <main>
 
 <!-- ══════════════ OVERVIEW ══════════════ -->
@@ -115,7 +130,7 @@ const reportHTMLBody = `<body>
   <h2 class="title">What publishing costs the allocator</h2>
   <p class="lede">Left: allocations per publish vs publish cost (log–log) at 8 subscribers. Right: estimated bytes retained per subscriber at steady state (heap before/after GC of 16 idle subscriptions), and cost of publishing into the void.</p>
   <div class="tabs" id="memTabs"></div>
-  <div class="card pad" style="display:grid;grid-template-columns:1.2fr 1fr;gap:24px" id="memGrid">
+  <div class="card pad mem-grid" id="memGrid">
     <div><h4 style="font-size:12px;color:var(--ink2);margin-bottom:8px">allocations/op vs ns/op</h4><div id="allocScatter"></div></div>
     <div><h4 style="font-size:12px;color:var(--ink2);margin-bottom:8px">bytes retained per idle subscriber</h4><div id="memBars"></div></div>
   </div>
@@ -193,7 +208,7 @@ const reportHTMLBody = `<body>
   </div></details>
 
   <details class="mdetail"><summary>Batteries &amp; metrics</summary><div>
-    <table class="gloss" id="batteryGloss"></table>
+    <div class="scroll-x"><table class="gloss" id="batteryGloss"></table></div>
   </div></details>
 
   <details class="mdetail"><summary>Record schema (JSONL v1)</summary><div>

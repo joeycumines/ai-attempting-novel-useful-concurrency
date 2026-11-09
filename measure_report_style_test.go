@@ -27,7 +27,6 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1
 
 /* layout */
 #shell{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
-@media (max-width:1080px){#shell{grid-template-columns:1fr}#nav{display:none}}
 nav#nav{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line);background:linear-gradient(180deg,#0a0f22,#0b1020 40%,#0a0f22);padding:26px 18px;display:flex;flex-direction:column;gap:4px}
 #brand{display:flex;align-items:center;gap:12px;padding:4px 8px 18px;border-bottom:1px solid var(--line);margin-bottom:14px}
 #brand .mark{width:38px;height:38px;border-radius:11px;background:conic-gradient(from 210deg,var(--cyan),var(--indigo),var(--violet),var(--cyan));display:grid;place-items:center;font-weight:800;color:#060a17;font-size:19px;box-shadow:0 0 22px rgba(56,189,248,.35)}
@@ -42,6 +41,22 @@ nav#nav{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px soli
 #navfoot{margin-top:auto;padding:14px 8px 2px;border-top:1px solid var(--line);color:var(--ink3);font-size:11px;line-height:1.7}
 #navfoot b{color:var(--ink2)}
 main{min-width:0;padding:34px 40px 80px;max-width:1560px}
+/* phone section bar: shown only when the sidebar is hidden */
+.sectionbar{display:none;position:sticky;top:0;z-index:20;gap:6px;overflow-x:auto;padding:10px 16px;background:#0a0f22;border-bottom:1px solid var(--line);scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+.sectionbar a{flex:none;color:var(--ink2);text-decoration:none;font-size:12.5px;padding:7px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);white-space:nowrap}
+.sectionbar a.active{color:#06121a;background:linear-gradient(90deg,#67e8f9,#a5b4fc);border-color:transparent;font-weight:600}
+.scroll-x{overflow-x:auto;max-width:100%;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+/* ranked bar rows: one template for every bar list, so each reflows at phone width */
+.bar-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2.4fr) 76px;gap:10px;align-items:center;font-size:11px;margin:3px 0}
+.bar-row.retain{grid-template-columns:minmax(0,1.3fr) minmax(0,2.2fr) 74px 84px}
+.bar-row.zero{grid-template-columns:minmax(0,1.3fr) minmax(0,2.4fr) 90px;margin:2px 0}
+.bar-row.churn{grid-template-columns:minmax(0,1.4fr) minmax(0,2fr) 100px;font-size:11.5px;gap:12px}
+@media (max-width:720px){.bar-row,.bar-row.zero,.bar-row.churn{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 64px;gap:8px}.bar-row.retain{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 64px 72px}}
+.mem-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:24px}
+.mem-grid>*{min-width:0}
+@media (max-width:1080px){#shell{grid-template-columns:minmax(0,1fr)}nav#nav{display:none}.sectionbar{display:flex}}
+@media (max-width:900px){.mem-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:720px){main{padding:18px 16px 64px}#hero{padding:24px 20px}#hero h1{font-size:26px}h2.title{font-size:22px}section.block{scroll-margin-top:76px}table.gloss td:first-child{white-space:normal;word-break:break-word}}
 
 /* sections */
 section.block{margin-bottom:56px;scroll-margin-top:24px}
@@ -122,7 +137,7 @@ table.tbl tr:hover td{background:rgba(99,102,241,.07)}
 .lgnd span.off{opacity:.35}
 
 /* pathology */
-.patho-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-top:16px}
+.patho-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;margin-top:16px}
 .patho-card{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--radius);padding:16px;position:relative}
 .patho-card h4{font-size:13px;margin-bottom:2px}
 .patho-card .outcome{font-family:var(--mono);font-size:11px;margin-top:6px;padding:4px 8px;border-radius:6px;display:inline-block}
