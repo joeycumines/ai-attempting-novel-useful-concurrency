@@ -1,6 +1,12 @@
 {
   "files": [
     {
+      "bytes": 3495,
+      "kind": "artifact",
+      "path": "README.md",
+      "sha256": "80c0ec90b76354d5c1ba88bda9bbd9914dd70c088b3d4248286ebd4116d4372b"
+    },
+    {
       "bytes": 294313,
       "generator": "bigbuff-measure report (--csv)",
       "kind": "csv-export",
@@ -85,7 +91,7 @@
       "sha256": "a6530525615eae5543b128d9a997102439a7bc9884bffd4369161343a29eb6fc"
     }
   ],
-  "generated": "2026-11-09T02:52:56.145402398Z",
+  "generated": "2026-11-09T02:54:05.341708222Z",
   "generator": "bigbuff-measure",
   "generator_version": "1.0.0",
   "root": "/home/user/ai-attempting-novel-useful-concurrency/results",
