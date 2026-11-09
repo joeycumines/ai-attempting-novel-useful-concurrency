@@ -440,4 +440,3 @@ func (x *ChanPubSub[C, V]) sanityCheckSubscribersDelta(subscribers, delta int) {
 func (x *ChanPubSub[C, V]) addSubscribers(delta int) int {
 	return int(x.subscribers.Add(int32(delta)))
 }
-

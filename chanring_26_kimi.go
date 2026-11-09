@@ -104,7 +104,7 @@ type ChanRing26Kimi[V any] struct {
 	cells []chanRing26KimiCell[V] // shared broadcast ring, seqlock-published
 	slots []chanRing26KimiSlot    // fixed subscriber slot pool (created once)
 
-	mask  uint64      // ringCapacity - 1 (power of two)
+	mask  uint64        // ringCapacity - 1 (power of two)
 	free  atomic.Uint64 // Treiber stack head: (tag << 32) | (slot idx + 1); 0 = empty
 	write atomic.Uint64 // next absolute ring position to publish
 
@@ -377,11 +377,11 @@ type chanRing26KimiCell[V any] struct {
 // channel are shared with senders. Padding mitigates false sharing between
 // a receiver's cursor traffic and sender signal traffic.
 type chanRing26KimiSlot struct {
-	live atomic.Bool     // set before the slot becomes observable by senders
-	ch   chan struct{}   // cap 1; private wake signal for the owning iterator
-	idx  uint32          // index into the pool (for the free list)
-	next atomic.Uint32   // free-list link, encoded idx+1 (0 = nil)
-	cur  uint64          // next ring position to read (owner only)
-	lost uint32          // values skipped due to overwrite (owner only)
+	live atomic.Bool   // set before the slot becomes observable by senders
+	ch   chan struct{} // cap 1; private wake signal for the owning iterator
+	idx  uint32        // index into the pool (for the free list)
+	next atomic.Uint32 // free-list link, encoded idx+1 (0 = nil)
+	cur  uint64        // next ring position to read (owner only)
+	lost uint32        // values skipped due to overwrite (owner only)
 	_    [64]byte
 }

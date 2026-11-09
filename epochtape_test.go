@@ -116,4 +116,3 @@ func TestEpochTape_SubscribeContext(t *testing.T) {
 		t.Fatalf("unexpected sequence: %v", got)
 	}
 }
-

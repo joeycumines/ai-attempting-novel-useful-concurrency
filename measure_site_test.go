@@ -54,20 +54,20 @@ type siteResponseMeta struct {
 }
 
 type siteScoreRow struct {
-	Family           string `json:"family"`
-	Impl             string `json:"impl"`
-	Score            string `json:"score"`
-	Verdict          string `json:"verdict"`
-	Baseline         string `json:"baseline"`
-	Integrity        string `json:"integrity"`
-	Throughput       string `json:"throughput"`
-	Latency          string `json:"latency"`
-	Allocations      string `json:"allocations"`
-	Churn            string `json:"churn"`
-	Scaling          string `json:"scaling"`
-	StallResilience  string `json:"stall_resilience"`
-	ExpectedGoodFit  string `json:"expected_good_fit"`
-	ExposureLimited  string `json:"exposure_limited"`
+	Family          string `json:"family"`
+	Impl            string `json:"impl"`
+	Score           string `json:"score"`
+	Verdict         string `json:"verdict"`
+	Baseline        string `json:"baseline"`
+	Integrity       string `json:"integrity"`
+	Throughput      string `json:"throughput"`
+	Latency         string `json:"latency"`
+	Allocations     string `json:"allocations"`
+	Churn           string `json:"churn"`
+	Scaling         string `json:"scaling"`
+	StallResilience string `json:"stall_resilience"`
+	ExpectedGoodFit string `json:"expected_good_fit"`
+	ExposureLimited string `json:"exposure_limited"`
 }
 
 type siteCatalog struct {

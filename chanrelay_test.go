@@ -1195,4 +1195,3 @@ func TestChanRelay_MultipleConsumers(t *testing.T) {
 		}
 	}
 }
-

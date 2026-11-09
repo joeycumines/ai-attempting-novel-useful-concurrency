@@ -104,7 +104,7 @@ import (
 
 const (
 	// vecastShards must be power of 2 for bitmask indexing
-	vecastShards = 64
+	vecastShards    = 64
 	vecastShardMask = vecastShards - 1
 
 	// Initial vector capacity per shard (power of 2)
@@ -165,7 +165,7 @@ type vecastSlot[V any] struct {
 	// registered. It is an atomic pointer because senders scan a published
 	// snapshot concurrently with subscription churn.
 	chPtr atomic.Pointer[chan V]
-	epoch uint64                  // registration global epoch (for reclamation)
+	epoch uint64                        // registration global epoch (for reclamation)
 	next  atomic.Pointer[vecastSlot[V]] // free list linkage
 }
 
@@ -220,13 +220,15 @@ func (v *Vecast[V]) shardFor(hash uint64) *vecastShard[V] {
 
 // Subscribe creates a new subscription.
 // Returns a Subscription that can be used with select:
-//   sub := v.Subscribe()
-//   select {
-//   case val := <-sub.C():
-//       ...
-//   case <-ctx.Done():
-//       ...
-//   }
+//
+//	sub := v.Subscribe()
+//	select {
+//	case val := <-sub.C():
+//	    ...
+//	case <-ctx.Done():
+//	    ...
+//	}
+//
 // Zero allocations on hot path.
 func (v *Vecast[V]) Subscribe() *VecastSubscription[V] {
 	if v.closed.Load() {
@@ -426,10 +428,10 @@ type snapshot[V any] struct {
 }
 
 type vecastShardSnapshot[V any] struct {
-	vec     *vector[V]
-	slots   []vecastSlot[V]   // direct slice reference for fast iteration
-	count   int
-	epoch   uint64      // shard local epoch at snapshot time
+	vec   *vector[V]
+	slots []vecastSlot[V] // direct slice reference for fast iteration
+	count int
+	epoch uint64 // shard local epoch at snapshot time
 }
 
 // acquireSnapshot performs a wait-free consistent snapshot of all shards.

@@ -16,11 +16,11 @@ import (
 // --- Payload family ---
 
 type payloadDrain struct {
-	counts    []atomic.Int64
-	torn      atomic.Int64
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	stopped   bool
+	counts  []atomic.Int64
+	torn    atomic.Int64
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	stopped bool
 }
 
 func startPayloadDrains(x asyncAPI, n int) *payloadDrain {
@@ -108,13 +108,13 @@ func measurePayloadThroughput(ctx *measureContext, mk func() asyncAPI, name stri
 			samples = append(samples, float64(d)/float64(n))
 		}
 		ctx.writeMetric(map[string]any{
-			"metric": "publish_ns_op",
-			"family": "payload",
-			"impl":   name,
-			"unit":   "ns",
-			"dims":   map[string]any{"subs": subs},
-			"ops":    lastOps,
-			"reps":   len(samples),
+			"metric":            "publish_ns_op",
+			"family":            "payload",
+			"impl":              name,
+			"unit":              "ns",
+			"dims":              map[string]any{"subs": subs},
+			"ops":               lastOps,
+			"reps":              len(samples),
 			"lower_is_better":   true,
 			"scenarios":         scen,
 			"expected_good_fit": goodFit,
@@ -147,19 +147,19 @@ func measurePayloadLatency(ctx *measureContext, mk func() asyncAPI, name string)
 		ctx.fail("%s: payload drains did not exit after latency run", name)
 	}
 	ctx.writeMetric(map[string]any{
-		"metric": "publish_latency_ns",
-		"family": "payload",
-		"impl":   name,
-		"unit":   "ns",
-		"dims":   map[string]any{"subs": subs},
-		"ops":    n,
-		"histogram":           hist,
-		"lower_is_better":     true,
-		"scenarios":           scen,
-		"expected_good_fit":   goodFit,
-		"exposure_limited":    expLimit,
-		"instrumented":        true,
-		"payload_words":       4,
+		"metric":            "publish_latency_ns",
+		"family":            "payload",
+		"impl":              name,
+		"unit":              "ns",
+		"dims":              map[string]any{"subs": subs},
+		"ops":               n,
+		"histogram":         hist,
+		"lower_is_better":   true,
+		"scenarios":         scen,
+		"expected_good_fit": goodFit,
+		"exposure_limited":  expLimit,
+		"instrumented":      true,
+		"payload_words":     4,
 	}, durations)
 }
 
@@ -190,18 +190,18 @@ func measurePayloadIntegrity(ctx *measureContext, mk func() asyncAPI, name strin
 		delivered += g.counts[i].Load()
 	}
 	ctx.writeMetric(map[string]any{
-		"metric": "torn_reads",
-		"family": "payload",
-		"impl":   name,
-		"unit":   "count",
-		"dims":   map[string]any{"subs": subs},
-		"checked":               delivered,
-		"violations":            g.torn.Load(),
-		"publishes":             n,
-		"lower_is_better":       true,
-		"scenarios":             scen,
-		"expected_good_fit":     goodFit,
-		"exposure_limited":      expLimit,
+		"metric":            "torn_reads",
+		"family":            "payload",
+		"impl":              name,
+		"unit":              "count",
+		"dims":              map[string]any{"subs": subs},
+		"checked":           delivered,
+		"violations":        g.torn.Load(),
+		"publishes":         n,
+		"lower_is_better":   true,
+		"scenarios":         scen,
+		"expected_good_fit": goodFit,
+		"exposure_limited":  expLimit,
 	}, nil)
 }
 
@@ -286,11 +286,11 @@ func measurePayloadStalledConsumer(ctx *measureContext, mk func() asyncAPI, name
 		retained = m1 - m0
 	}
 	ctx.writeMetric(map[string]any{
-		"metric": "stalled_consumer_ops_completed",
-		"family": "payload",
-		"impl":   name,
-		"unit":   "ops",
-		"dims":   map[string]any{"stalled_subscribers": 1, "fast_subscribers": fastSubs},
+		"metric":                "stalled_consumer_ops_completed",
+		"family":                "payload",
+		"impl":                  name,
+		"unit":                  "ops",
+		"dims":                  map[string]any{"stalled_subscribers": 1, "fast_subscribers": fastSubs},
 		"ops_planned":           r,
 		"outcome":               outcome,
 		"fast_min_delivered":    fastMin,
@@ -334,13 +334,13 @@ func measurePayloadChurn(ctx *measureContext, mk func() asyncAPI, name string) {
 		samples = append(samples, float64(d)/float64(n))
 	}
 	ctx.writeMetric(map[string]any{
-		"metric": "churn_ns_op",
-		"family": "payload",
-		"impl":   name,
-		"unit":   "ns",
-		"dims":   map[string]any{},
-		"ops":    lastOps,
-		"reps":   len(samples),
+		"metric":            "churn_ns_op",
+		"family":            "payload",
+		"impl":              name,
+		"unit":              "ns",
+		"dims":              map[string]any{},
+		"ops":               lastOps,
+		"reps":              len(samples),
 		"lower_is_better":   true,
 		"scenarios":         scen,
 		"expected_good_fit": goodFit,
@@ -410,13 +410,13 @@ func measureGatherWait(ctx *measureContext, name string, mk func() gatherLike) {
 	}
 	_ = lastOps
 	ctx.writeMetric(map[string]any{
-		"metric": "wait_ns_op",
-		"family": "gather",
-		"impl":   name,
-		"unit":   "ns",
-		"dims":   map[string]any{"senders": senders},
-		"ops":    waits,
-		"reps":   len(samples),
+		"metric":            "wait_ns_op",
+		"family":            "gather",
+		"impl":              name,
+		"unit":              "ns",
+		"dims":              map[string]any{"senders": senders},
+		"ops":               waits,
+		"reps":              len(samples),
 		"lower_is_better":   true,
 		"scenarios":         scen,
 		"expected_good_fit": goodFit,
@@ -456,13 +456,13 @@ func runGatherBatteries(ctx *measureContext) {
 				samples = append(samples, float64(d)/float64(n))
 			}
 			ctx.writeMetric(map[string]any{
-				"metric": "churn_ns_op",
-				"family": "gather",
-				"impl":   name,
-				"unit":   "ns",
-				"dims":   map[string]any{},
-				"ops":    lastOps,
-				"reps":   len(samples),
+				"metric":            "churn_ns_op",
+				"family":            "gather",
+				"impl":              name,
+				"unit":              "ns",
+				"dims":              map[string]any{},
+				"ops":               lastOps,
+				"reps":              len(samples),
 				"lower_is_better":   true,
 				"scenarios":         scen,
 				"expected_good_fit": goodFit,

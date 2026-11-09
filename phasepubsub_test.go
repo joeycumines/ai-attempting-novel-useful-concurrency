@@ -325,4 +325,3 @@ func ExamplePhasePubSub() {
 	<-done
 	// Output: hello
 }
-

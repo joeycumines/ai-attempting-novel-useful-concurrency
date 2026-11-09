@@ -89,7 +89,7 @@ type ChanMulticast33North[C ~chan V, V any] struct {
 	// read lock while iterating, and Subscribe/Unsubscribe to take a write lock.
 	subMu       sync.RWMutex
 	subscribers []chanmulticast33NorthSub[C, V]
-	subCount atomic.Int32 // fast check for "no active subscribers"
+	subCount    atomic.Int32 // fast check for "no active subscribers"
 
 	distDone chan struct{} // closed when the distributor exits
 	once     sync.Once     // starts the distributor on first subscription

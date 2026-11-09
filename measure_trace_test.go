@@ -215,22 +215,22 @@ func collectCasterTrace(x casterLike, ops, maxEvents int, deadline time.Duration
 
 func writeTraceRecord(ctx *measureContext, family, impl, traceName string, stalled bool, scen []string, goodFit, expLimit bool, res traceResult) {
 	ctx.write(map[string]any{
-		"type":          "trace",
-		"schema":        measureSchemaVersion,
-		"family":        family,
-		"impl":          impl,
-		"trace":         traceName,
-		"stalled":       stalled,
-		"subs":          res.subs,
-		"ops_planned":   ctx.profile.TraceOps,
-		"ops_completed": res.opsCompleted,
-		"outcome":       res.outcome,
-		"duration_ns":   res.duration.Nanoseconds(),
-		"truncated":     res.truncated,
-		"scenarios":     scen,
+		"type":              "trace",
+		"schema":            measureSchemaVersion,
+		"family":            family,
+		"impl":              impl,
+		"trace":             traceName,
+		"stalled":           stalled,
+		"subs":              res.subs,
+		"ops_planned":       ctx.profile.TraceOps,
+		"ops_completed":     res.opsCompleted,
+		"outcome":           res.outcome,
+		"duration_ns":       res.duration.Nanoseconds(),
+		"truncated":         res.truncated,
+		"scenarios":         scen,
 		"expected_good_fit": goodFit,
 		"exposure_limited":  expLimit,
-		"events":        res.events,
+		"events":            res.events,
 	})
 }
 

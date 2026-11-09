@@ -89,13 +89,13 @@ func measureCasterThroughput(ctx *measureContext, mk func() casterLike, name str
 			samples = append(samples, float64(d)/float64(n))
 		}
 		ctx.writeMetric(map[string]any{
-			"metric": "send_ns_op",
-			"family": "caster",
-			"impl":   name,
-			"unit":   "ns",
-			"dims":   map[string]any{"receivers": receivers},
-			"ops":    lastOps,
-			"reps":   len(samples),
+			"metric":            "send_ns_op",
+			"family":            "caster",
+			"impl":              name,
+			"unit":              "ns",
+			"dims":              map[string]any{"receivers": receivers},
+			"ops":               lastOps,
+			"reps":              len(samples),
 			"lower_is_better":   true,
 			"scenarios":         scen,
 			"expected_good_fit": goodFit,
@@ -131,18 +131,18 @@ func measureCasterLatency(ctx *measureContext, mk func() casterLike, name string
 		x.close()
 	}
 	ctx.writeMetric(map[string]any{
-		"metric": "send_latency_ns",
-		"family": "caster",
-		"impl":   name,
-		"unit":   "ns",
-		"dims":   map[string]any{"receivers": receivers},
-		"ops":    n,
-		"histogram":           hist,
-		"lower_is_better":     true,
-		"scenarios":           scen,
-		"expected_good_fit":   goodFit,
-		"exposure_limited":    expLimit,
-		"instrumented":        true,
+		"metric":            "send_latency_ns",
+		"family":            "caster",
+		"impl":              name,
+		"unit":              "ns",
+		"dims":              map[string]any{"receivers": receivers},
+		"ops":               n,
+		"histogram":         hist,
+		"lower_is_better":   true,
+		"scenarios":         scen,
+		"expected_good_fit": goodFit,
+		"exposure_limited":  expLimit,
+		"instrumented":      true,
 	}, durations)
 }
 
@@ -176,13 +176,13 @@ func measureCasterChurn(ctx *measureContext, mk func() casterLike, name string) 
 		samples = append(samples, float64(d)/float64(n)) // per pair
 	}
 	ctx.writeMetric(map[string]any{
-		"metric": "churn_ns_op",
-		"family": "caster",
-		"impl":   name,
-		"unit":   "ns",
-		"dims":   map[string]any{},
-		"ops":    lastOps,
-		"reps":   len(samples),
+		"metric":            "churn_ns_op",
+		"family":            "caster",
+		"impl":              name,
+		"unit":              "ns",
+		"dims":              map[string]any{},
+		"ops":               lastOps,
+		"reps":              len(samples),
 		"lower_is_better":   true,
 		"scenarios":         scen,
 		"expected_good_fit": goodFit,
@@ -272,11 +272,11 @@ func measureCasterWithdrawalCompensation(ctx *measureContext, mk func() casterLi
 		medianLat = summarize(roundLat).P50
 	}
 	ctx.writeMetric(map[string]any{
-		"metric": "withdrawal_compensation_success",
-		"family": "caster",
-		"impl":   name,
-		"unit":   "fraction",
-		"dims":   map[string]any{"intents": intents, "rounds": rounds},
+		"metric":            "withdrawal_compensation_success",
+		"family":            "caster",
+		"impl":              name,
+		"unit":              "fraction",
+		"dims":              map[string]any{"intents": intents, "rounds": rounds},
 		"scenarios":         scen,
 		"expected_good_fit": goodFit,
 		"exposure_limited":  expLimit,
@@ -397,17 +397,17 @@ func measureScatterDispatch(ctx *measureContext, name string, mk func() scatterL
 			samples = append(samples, float64(d)/float64(n))
 		}
 		ctx.writeMetric(map[string]any{
-			"metric": "dispatch_ns_op",
-			"family": "scatter",
-			"impl":   name,
-			"unit":   "ns",
-			"dims":   map[string]any{"receivers": receivers},
-			"ops":    lastOps,
-			"reps":   len(samples),
-			"lower_is_better":       true,
-			"scenarios":             scen,
-			"expected_good_fit":     goodFit,
-			"exposure_limited":      expLimit,
+			"metric":                  "dispatch_ns_op",
+			"family":                  "scatter",
+			"impl":                    name,
+			"unit":                    "ns",
+			"dims":                    map[string]any{"receivers": receivers},
+			"ops":                     lastOps,
+			"reps":                    len(samples),
+			"lower_is_better":         true,
+			"scenarios":               scen,
+			"expected_good_fit":       goodFit,
+			"exposure_limited":        expLimit,
 			"exactly_once_violations": violations,
 		}, samples)
 	}
@@ -450,13 +450,13 @@ func runScatterBatteries(ctx *measureContext) {
 				samples = append(samples, float64(d)/float64(n))
 			}
 			ctx.writeMetric(map[string]any{
-				"metric": "churn_ns_op",
-				"family": "scatter",
-				"impl":   name,
-				"unit":   "ns",
-				"dims":   map[string]any{},
-				"ops":    lastOps,
-				"reps":   len(samples),
+				"metric":            "churn_ns_op",
+				"family":            "scatter",
+				"impl":              name,
+				"unit":              "ns",
+				"dims":              map[string]any{},
+				"ops":               lastOps,
+				"reps":              len(samples),
 				"lower_is_better":   true,
 				"scenarios":         scen,
 				"expected_good_fit": goodFit,

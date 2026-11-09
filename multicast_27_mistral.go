@@ -26,10 +26,10 @@ import (
 
 // subscription lifecycle states, kept in Subscription.state.
 const (
-	multicastSubFresh  uint32 = iota // zero value; never registered
-	multicastSubActive               // registered; mailbox delivering
-	multicastSubDead                 // unsubscribed; quit channel closed
-	multicastSubUnlinked             // tombstone physically unlinked; grave released
+	multicastSubFresh    uint32 = iota // zero value; never registered
+	multicastSubActive                 // registered; mailbox delivering
+	multicastSubDead                   // unsubscribed; quit channel closed
+	multicastSubUnlinked               // tombstone physically unlinked; grave released
 )
 
 // Multicast.state is a single atomic word packing two 32-bit counters:

@@ -403,4 +403,3 @@ func BenchmarkChanRelay_TrySendBuffered(b *testing.B) {
 		})
 	}
 }
-
