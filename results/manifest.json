@@ -1,0 +1,94 @@
+{
+  "files": [
+    {
+      "bytes": 294313,
+      "generator": "bigbuff-measure report (--csv)",
+      "kind": "csv-export",
+      "path": "csv/metrics_wide.csv",
+      "sha256": "027eb2ac0f8fc2ad9987531b35ddd9a0bc06c135dab36e9af38494ce143ff016"
+    },
+    {
+      "bytes": 12337,
+      "generator": "bigbuff-measure report (--csv)",
+      "kind": "csv-export",
+      "path": "csv/scores.csv",
+      "sha256": "fc9c1ae6e77635284c9089837364481c68744fa298fb4899229ca2c00229abce"
+    },
+    {
+      "bytes": 2592295,
+      "commit": "07066eac13b3",
+      "cpu": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+      "generator_version": "1.0.0",
+      "go": "go1.27.3",
+      "gomaxprocs": 2,
+      "path": "measurements.jsonl",
+      "profile": "standard",
+      "records": {
+        "meta": 1,
+        "metric": 1819,
+        "skipped": 25,
+        "summary": 1,
+        "trace": 167
+      },
+      "seed": 1,
+      "sha256": "1445d5c331002f3f4795327ffd43fff269c1c8e1ecea7475e273d3933f43eda9",
+      "summary": {
+        "duration_s": 1541.052781847,
+        "failure_msg": null,
+        "failures": 0,
+        "records": 2013,
+        "skipped": 25
+      },
+      "timestamp": "2026-11-09T02:09:54.497657739Z",
+      "verified": true
+    },
+    {
+      "bytes": 1528056,
+      "commit": "887a4d80f9ef",
+      "cpu": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+      "generator_version": "1.0.0",
+      "go": "go1.27.3",
+      "gomaxprocs": 2,
+      "path": "quick.jsonl",
+      "profile": "quick",
+      "records": {
+        "meta": 1,
+        "metric": 1305,
+        "skipped": 5,
+        "summary": 1,
+        "trace": 167
+      },
+      "seed": 1,
+      "sha256": "cf9938a8a58bac1960ef183a3ab663281f6ddfa9265c053c1502ab0116a17530",
+      "summary": {
+        "duration_s": 175.676873801,
+        "failure_msg": null,
+        "failures": 0,
+        "records": 1479,
+        "skipped": 5
+      },
+      "timestamp": "2026-11-09T02:49:53.410554571Z",
+      "verified": true
+    },
+    {
+      "bytes": 150097,
+      "generator": "bigbuff-measure dump-registry",
+      "kind": "registry-dump",
+      "path": "registry.json",
+      "sha256": "e2cf72dcded0821a78a0e315e7e42d58202ef0147c880e0312c5e456fad6a0ce"
+    },
+    {
+      "bytes": 2880770,
+      "generator": "bigbuff-measure report",
+      "kind": "interactive-report",
+      "path": "report.html",
+      "sha256": "a6530525615eae5543b128d9a997102439a7bc9884bffd4369161343a29eb6fc"
+    }
+  ],
+  "generated": "2026-11-09T02:52:56.145402398Z",
+  "generator": "bigbuff-measure",
+  "generator_version": "1.0.0",
+  "root": "/home/user/ai-attempting-novel-useful-concurrency/results",
+  "schema": 1,
+  "type": "manifest"
+}

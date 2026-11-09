@@ -53,6 +53,7 @@ Commands:
   run            Run the measurement battery; write results (JSONL).
   verify         Verify a results file covers every registered implementation.
   report         Generate the interactive HTML report from results.
+  index          Write a SHA-256 manifest (results/manifest.json) for the results tree.
   help           Show this help.
 
 Common flags:
@@ -61,6 +62,7 @@ Common flags:
   report: --in results/measurements.jsonl    --out results/report.html
           --registry results/registry.json   --csv results/csv
   verify: --in results/measurements.jsonl
+  index:  --dir results                 --out results/manifest.json
 
 Everything after the bigbuff-measure sentinel is the subcommand argv; all
 other arguments are interpreted as usual by the test binary.
@@ -83,6 +85,8 @@ func runMeasureCommand(args []string) int {
 		return cmdMeasureVerify(args[1:])
 	case "report":
 		return cmdMeasureReport(args[1:])
+	case "index":
+		return cmdMeasureIndex(args[1:])
 	case "help", "-h", "--help":
 		measureUsage(os.Stdout)
 		return 0

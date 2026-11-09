@@ -76,6 +76,11 @@ measure.ci: ## CI gate: quick profile, verified. Fails the build on any failure 
 	$(MAKE) measure.run-quick
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) verify --in $(MEASURE_RESULTS_DIR)/quick.jsonl
 
+.PHONY: measure.index
+measure.index: ## Write results/manifest.json (SHA-256 index of every artifact; verifies JSONL files).
+	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) index --dir $(MEASURE_RESULTS_DIR) --out $(MEASURE_RESULTS_DIR)/manifest.json
+
 .PHONY: measure.clean
-measure.clean: ## Remove generated measurement artifacts (JSONL, registry dump, report, CSVs).
-	rm -rf $(MEASURE_RESULTS_DIR)
+measure.clean: ## Measurement artifacts are committed under results/; this target is intentionally non-destructive.
+	@echo "Measurement artifacts are committed under results/ (see results/README.md)."
+	@echo "Regenerate with 'make measure', re-index with 'make measure-index', then commit results/ explicitly."
