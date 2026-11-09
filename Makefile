@@ -79,6 +79,9 @@ GO_TARGET_PREFIX := go.
 # Go module makefile (lives at flat root per gist constraints).
 include $(PROJECT_ROOT)/go.mk
 
+# Measurement batteries makefile (lives at flat root per gist constraints).
+include $(PROJECT_ROOT)/measure.mk
+
 ##@ Standard Targets
 # https://www.gnu.org/software/make/manual/html_node/Standard-Targets.html
 
@@ -91,7 +94,7 @@ check: all ## Runs all checks (alias for all).
 .PHONY: clean
 clean: _clean go.clean ## Clean up all generated files and coverage reports.
 .PHONY: _clean
-_clean:
+_clean: measure.clean
 
 ##@ Other Targets
 
@@ -121,3 +124,33 @@ cover: go.cover ## Run tests with coverage and generate coverage report.
 
 .PHONY: doc
 doc: go.doc ## Run go doc.
+
+##@ Measurement Targets
+# Batteries, verification and the interactive report. See MEASUREMENT.md.
+
+.PHONY: measure
+measure: measure.pipeline ## Run the standard measurement profile, verify, and build the HTML report.
+
+.PHONY: measure-quick
+measure-quick: measure.run-quick ## Run the quick (CI-grade) measurement profile.
+
+.PHONY: measure-standard
+measure-standard: measure.run-standard ## Run the standard (decision-grade) measurement profile.
+
+.PHONY: measure-full
+measure-full: measure.run-full ## Run the full (publication-grade) measurement profile.
+
+.PHONY: measure-list
+measure-list: measure.list ## List measurement batteries, profiles and families.
+
+.PHONY: measure-verify
+measure-verify: measure.verify ## Verify a measurement results file against the registry.
+
+.PHONY: measure-report
+measure-report: measure.report ## Rebuild the interactive HTML report + CSVs from results.
+
+.PHONY: measure-registry
+measure-registry: measure.registry ## Dump the scenario/attachment registry to JSON.
+
+.PHONY: measure-ci
+measure-ci: measure.ci ## CI gate: quick profile + verification.

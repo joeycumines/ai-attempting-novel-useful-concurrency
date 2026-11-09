@@ -59,8 +59,19 @@ func (x *BaselineAsyncFanout[V]) run() {
 					select {
 					case ch <- v:
 					default:
-						<-ch
-						ch <- v
+						// Drop oldest, then retry the offer; both operations
+						// are non-blocking, so a consumer draining the
+						// mailbox between the two attempts can never park
+						// the dispatcher (and with it every Send, Subscribe,
+						// Unsubscribe) forever.
+						select {
+						case <-ch:
+						default:
+						}
+						select {
+						case ch <- v:
+						default:
+						}
 					}
 				}
 			}
@@ -78,9 +89,18 @@ func (x *BaselineAsyncFanout[V]) Send(v V) int {
 	select {
 	case x.input <- v:
 	default:
-		<-x.input
+		// The dispatcher may drain the input between the failed offer and
+		// the drop attempt; both are non-blocking, and the new value is
+		// dropped (counted) when the input will not accept it either way.
+		select {
+		case <-x.input:
+		default:
+		}
 		x.inputDropped++
-		x.input <- v
+		select {
+		case x.input <- v:
+		default:
+		}
 	}
 	return len(x.subs)
 }
