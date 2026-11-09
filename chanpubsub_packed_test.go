@@ -331,12 +331,17 @@ func TestChanPubSubPackedConcurrentContextChurn(t *testing.T) {
 	waitPackedState(t, x, workers, chanPubSubPackedPhaseIdle)
 
 	for i := range rounds {
-		if got := x.Send(i); got < 0 || got > workers {
-			t.Fatalf("Send returned impossible count %d", got)
+		if got := x.Send(i); got != workers {
+			t.Fatalf("Send returned %d, want the %d live subscribers", got, workers)
 		}
 		if i%5 == 0 {
 			idx := (i / 5) % len(cancels)
 			cancels[idx]()
+			// Cancellation unregisters asynchronously (context.AfterFunc), so wait
+			// for the count to settle before the replacement registers. Otherwise
+			// the cancelled and replacement subscribers are both counted and the
+			// exact per-round count is lost.
+			waitPackedState(t, x, workers-1, chanPubSubPackedPhaseIdle)
 			workerCtx, workerCancel := context.WithCancel(ctx)
 			cancels[idx] = workerCancel
 			seq := x.SubscribeContext(workerCtx)
