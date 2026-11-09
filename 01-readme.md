@@ -97,6 +97,18 @@ In cases where there were individual files attached, they are encoded as a txtar
 - [56-github-cloud-mai-code-1.1-flash-high.md](56-github-cloud-mai-code-1.1-flash-high.md)
 - [57-arena-deepseek-v4.1-flash-high-prompt-safe.md](57-arena-deepseek-v4.1-flash-high-prompt-safe.md)
 - [58-arena-muse-spark-1.3-xhigh-prompt-safe.md](58-arena-muse-spark-1.3-xhigh-prompt-safe.md)
+- [59-gemini-argo-high-prompt-bait.md](59-gemini-argo-high-prompt-bait.md)
+- [60-arena-gpt-6.1-terra-low-prompt-bait.md](60-arena-gpt-6.1-terra-low-prompt-bait.md)
+- [61-arena-deepseek-4.1-flash-high-prompt-bait.md](61-arena-deepseek-4.1-flash-high-prompt-bait.md)
+- [62-arena-claude-haiku-5.5-xhigh-prompt-bait.md](62-arena-claude-haiku-5.5-xhigh-prompt-bait.md)
+- [63-qwen-chat-qwen-3.8-max-prompt-bait.md](63-qwen-chat-qwen-3.8-max-prompt-bait.md)
+- [64-z.ai-chat-glm-5.3-max-prompt-bait.md](64-z.ai-chat-glm-5.3-max-prompt-bait.md)
+- [65-deepseek-flash-chat-prompt-bait.md](65-deepseek-flash-chat-prompt-bait.md)
+- [66-gemini-argo-high-prompt-bait.md](66-gemini-argo-high-prompt-bait.md)
+- [67-claude-haiku-extra-prompt-bait.md](67-claude-haiku-extra-prompt-bait.md) ([link](https://claude.ai/artifact/4H5av1QqiCLCNDF5ckg5ts))
+- [68-chatgpt-prompt-bait.md](68-chatgpt-prompt-bait.md) ([link](https://chatgpt.com/share/6af2529b-8210-83ec-ad47-033d3be5cc6e))
+- [69-deepseek-flash-chat-prompt-bait.md](69-deepseek-flash-chat-prompt-bait.md)
+- [70-meta-ai-prompt-bait.md](70-meta-ai-prompt-bait.md)
 
 ## Extraction status (integration tracker)
 
