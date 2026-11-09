@@ -1440,8 +1440,11 @@ function svg(tag, attrs, parent){
 }
 var tip = $('tip');
 function bindTip(el, htmlFn){
+  var cached = null;
+  el.addEventListener('mouseenter', function(){ cached = htmlFn(); });
   el.addEventListener('mousemove', function(ev){
-    tip.innerHTML = htmlFn();
+    if (cached === null) cached = htmlFn();
+    if (tip._lastFor !== el) { tip.innerHTML = cached; tip._lastFor = el; }
     tip.style.opacity = '1';
     var pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
     var x = ev.clientX + pad, y = ev.clientY + pad;
@@ -1595,16 +1598,23 @@ function renderScaling(){
   var allSubs = {}, allVals = [];
   series.forEach(function(s){ s.points.forEach(function(p){ allSubs[p.subs] = true; allVals.push(p.mean); }); });
   var subsTicks = Object.keys(allSubs).map(Number).sort(function(a,b){ return a-b; });
-  var minV = Math.min.apply(null, allVals), maxV = Math.max.apply(null, allVals);
+  var finVals = allVals.filter(function(v){ return isFinite(v) && v > 0; });
+  var minV = finVals.length ? Math.min.apply(null, finVals) : 1e-9;
+  var maxV = finVals.length ? Math.max.apply(null, finVals) : 1;
+  if (!(minV > 0)) minV = 1e-9;           // log scale cannot see zero/NaN
+  if (!(maxV > minV)) maxV = minV * 10;   // degenerate spread
   var minL = Math.log10(minV*0.7), maxL = Math.log10(maxV*1.3);
   var W = containerWidth(container), H = 380, padL = 64, padR = 14, padT = 16, padB = 44;
-  var xOf = function(subs){ return padL + (Math.log2(subs) - Math.log2(subsTicks[0])) / (Math.log2(subsTicks[subsTicks.length-1]) - Math.log2(subsTicks[0])) * (W - padL - padR); };
-  var yOf = function(v){ return padT + (maxL - Math.log10(v)) / (maxL - minL) * (H - padT - padB); };
+  var subsSpan = Math.log2(subsTicks[subsTicks.length-1]) - Math.log2(subsTicks[0]);
+  var xOf = function(subs){ return subsSpan > 0 ? padL + (Math.log2(subs) - Math.log2(subsTicks[0])) / subsSpan * (W - padL - padR) : (padL + W - padR) / 2; };
+  var yOf = function(v){ return padT + (maxL - Math.log10(Math.max(v, 1e-9))) / (maxL - minL) * (H - padT - padB); };
 
   var svgEl = svg('svg', {width:W, height:H, viewBox:'0 0 '+W+' '+H, role:'img'}, container);
-  // y grid at decades
-  for (var d = Math.ceil(Math.log10(minV)); d <= Math.floor(Math.log10(maxV)); d++) {
+  // y grid at decades — bounds must stay finite (minV may be exactly 0 in the data)
+  var dLo = Math.ceil(Math.log10(minV)), dHi = Math.floor(Math.log10(maxV));
+  for (var d = dLo; isFinite(d) && d <= dHi && d < dLo + 40; d++) {
     var y = yOf(Math.pow(10, d));
+    if (!isFinite(y)) continue;
     svg('line', {x1:padL, y1:y, x2:W-padR, y2:y, class:'grid'}, svgEl);
     var t = svg('text', {x:padL-8, y:y+3, 'text-anchor':'end', class:'axtxt'}, svgEl);
     t.textContent = fmtNs(Math.pow(10, d));
@@ -1720,10 +1730,12 @@ function renderMemory(){
     var W = containerWidth(scatter), H = 320, padL = 52, padR = 12, padT = 12, padB = 40;
     var maxA = Math.max.apply(null, pts.map(function(p){return p.alloc;}).concat([1]));
     var minN = Math.min.apply(null, pts.map(function(p){return p.ns;})), maxN = Math.max.apply(null, pts.map(function(p){return p.ns;}));
+    if (!isFinite(minN) || minN <= 0) minN = 1;
+    if (!isFinite(maxN) || maxN <= minN) maxN = minN * 10;
     var maxA10 = Math.log10(maxA) + 0.4;
     var minL = Math.log10(Math.max(1, minN*0.6)), maxL = Math.log10(maxN*1.4);
     var xOf = function(a){ return padL + (maxA10 === 0 ? 0 : Math.log10(a+1e-9) < 0 ? 0 : Math.log10(a+1e-9)/maxA10) * (W-padL-padR); };
-    var yOf = function(v){ return padT + (maxL - Math.log10(v)) / (maxL - minL) * (H - padT - padB); };
+    var yOf = function(v){ return padT + (maxL - Math.log10(Math.max(v, 1e-9))) / (maxL - minL) * (H - padT - padB); };
     var svgEl = svg('svg', {width:W, height:H, viewBox:'0 0 '+W+' '+H, role:'img'}, scatter);
     svg('line', {x1:padL, y1:H-padB, x2:W-padR, y2:H-padB, class:'ax'}, svgEl);
     svg('line', {x1:padL, y1:padT, x2:padL, y2:H-padB, class:'ax'}, svgEl);
