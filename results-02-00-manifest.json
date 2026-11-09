@@ -35,9 +35,33 @@
       },
       "timestamp": "2026-11-09T02:49:53.410554571Z",
       "verified": true
+    },
+    {
+      "bytes": 1819190,
+      "generator": "bigbuff-measure report",
+      "kind": "interactive-report",
+      "path": "results-02-03-report.html",
+      "sha256": "3c53b72a7d5cd70175b9f675702e1d226d628f35c1de71268b3ca155b98b731a",
+      "slot": "03"
+    },
+    {
+      "bytes": 202308,
+      "generator": "bigbuff-measure report",
+      "kind": "csv-export",
+      "path": "results-02-04-metrics_wide.csv",
+      "sha256": "0778d041c3571ba1e15382ccd42bdfabbea34692957e246ba48fe98a469ad143",
+      "slot": "04"
+    },
+    {
+      "bytes": 12314,
+      "generator": "bigbuff-measure report",
+      "kind": "csv-export",
+      "path": "results-02-05-scores.csv",
+      "sha256": "192c091575fc91d0c8513bff6accaea7435557d4e7d469176fda09522eb2f62b",
+      "slot": "05"
     }
   ],
-  "generated": "2026-11-09T03:29:50.699281942Z",
+  "generated": "2026-11-09T07:19:02.189204803Z",
   "generator": "bigbuff-measure",
   "generator_version": "1.0.0",
   "go": "go1.27.3",

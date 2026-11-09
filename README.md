@@ -1,6 +1,6 @@
 # AI: Attempting novel useful concurrency as a one-shot prompt
 
-[Original gist](https://gist.github.com/joeycumines/a20369832bf361063748d1bd18924d9d)
+[Project Landing Page (GitHub Pages)](https://joeycumines.github.io/ai-attempting-novel-useful-concurrency/) · [Local Landing Page](index.html) · [Original Gist](https://gist.github.com/joeycumines/a20369832bf361063748d1bd18924d9d) · [Gist First Page (01-readme.md)](01-readme.md)
 
 ## Premise
 
@@ -35,7 +35,11 @@ Essentially all outputs identified this characteristic.
 
 ## Output
 
-Still in the original gist flat project layout, so start at [01-readme.md](./01-readme.md). That file contains an index linking to each model response, in some cases annotated with a link to the actual chat session.
+Still in the original gist flat project layout.
+
+- Interactive reports, scorecards, and model directory: [Project Landing Page (GitHub Pages)](https://joeycumines.github.io/ai-attempting-novel-useful-concurrency/) (or [index.html](index.html) locally).
+- Gist entry point and model response index: [01-readme.md](./01-readme.md). That file contains an index linking to each model response, in some cases annotated with a link to the actual chat session.
+- Measurement methodology and run log: [measurement.md](measurement.md) and [results-00-00-readme.md](results-00-00-readme.md).
 
 ## Baselines
 

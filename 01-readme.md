@@ -1,5 +1,7 @@
 # Model benchmark: Novel concurrency implementations
 
+[Project Landing Page (GitHub Pages)](https://joeycumines.github.io/ai-attempting-novel-useful-concurrency/) · [Local Landing Page](index.html) · [README (GitHub Repository)](README.md) · [Original Gist](https://gist.github.com/joeycumines/a20369832bf361063748d1bd18924d9d)
+
 N.B. If you're reading this as a gist it is also an actual [repository](https://github.com/joeycumines/ai-attempting-novel-useful-concurrency).
 
 ## Introduction

@@ -53,6 +53,7 @@ Commands:
   run            Run the measurement battery; write results (JSONL).
   verify         Verify a results file covers every registered implementation.
   report         Generate the interactive HTML report from results.
+  site           Build landing page (index.html) and wire backlinks across all reports.
   index          Write per-run manifests (results-NN-00-manifest.json) for the flat tree.
   help           Show this help.
 
@@ -87,6 +88,8 @@ func runMeasureCommand(args []string) int {
 		return cmdMeasureVerify(args[1:])
 	case "report":
 		return cmdMeasureReport(args[1:])
+	case "site", "wire":
+		return cmdMeasureSite(args[1:])
 	case "index":
 		return cmdMeasureIndex(args[1:])
 	case "help", "-h", "--help":

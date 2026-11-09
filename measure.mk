@@ -96,6 +96,7 @@ measure.verify: ## Verify the newest results-*-01-results.jsonl against the regi
 .PHONY: measure.report
 measure.report: ## Build/refresh the report (+ CSVs) for the newest results JSONL (or MEASURE_IN=<file>).
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) report $(if $(MEASURE_IN),--in $(MEASURE_IN),) --csv-metrics $(MEASURE_METRICS_CSV) --csv-scores $(MEASURE_SCORES_CSV)
+	$(MAKE) site.build
 
 .PHONY: measure.index
 measure.index: ## Rebuild every results-NN-00-manifest.json (verifies JSONL files; exits non-zero on failure).
@@ -107,6 +108,7 @@ measure.pipeline: ## New run in group $(MEASURE_NN): measure -> registry -> repo
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) dump-registry --out $(MEASURE_REGISTRY)
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) report --in $(MEASURE_JSONL) --csv-metrics $(MEASURE_PREFIX)-04-metrics_wide.csv --csv-scores $(MEASURE_PREFIX)-05-scores.csv
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) index --dir .
+	$(MAKE) site.build
 
 .PHONY: measure.ci
 measure.ci: ## CI gate: quick profile, verified. Fails the build on any failure or missing coverage.
