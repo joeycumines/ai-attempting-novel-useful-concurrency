@@ -11,10 +11,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -147,7 +148,7 @@ func registryDump() (map[string]any, error) {
 
 func cmdDumpRegistry(args []string) int {
 	fs := flag.NewFlagSet("dump-registry", flag.ContinueOnError)
-	out := fs.String("out", "results/registry.json", "output path for registry JSON")
+	out := fs.String("out", "registry.json", "output path for registry JSON (make passes results-NN-02-registry.json)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -191,7 +192,7 @@ func filepathDir(p string) string {
 
 func cmdMeasureRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	out := fs.String("out", "results/measurements.jsonl", "output path for JSONL results")
+	out := fs.String("out", "results.jsonl", "output path for JSONL results (make passes results-NN-01-results.jsonl)")
 	profileName := fs.String("profile", "standard", "measurement profile: quick|standard|full")
 	implGlob := fs.String("impl", "", "only measure implementations matching this glob (or substring)")
 	batteryGlob := fs.String("battery", "", "only run batteries matching this glob (or substring), e.g. broadcast.*")
@@ -376,143 +377,238 @@ func verifyResults(path string, out io.Writer) int {
 
 func cmdMeasureVerify(args []string) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
-	in := fs.String("in", "results/measurements.jsonl", "results file to verify")
+	in := fs.String("in", "", "results file to verify (default: newest results-*-01-results.jsonl)")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *in == "" {
+		*in = latestRunResultsJSONL(".")
+		if *in == "" {
+			fmt.Fprintf(os.Stderr, "verify: no results-*-01-results.jsonl found; pass --in explicitly\n")
+			return 2
+		}
+		fmt.Fprintf(os.Stderr, "verify: defaulting to newest results file: %s\n", *in)
 	}
 	return verifyResults(*in, os.Stdout)
 }
 
-// --- bigbuff-measure index: machine-readable artifact manifest ---
+// --- bigbuff-measure index: flat-tree run manifests ---
 
-// cmdMeasureIndex scans a results directory and writes a manifest (default:
-// <dir>/manifest.json). The manifest records, for every artifact: path
-// (relative to the directory, forward slashes), SHA-256, byte length, and —
-// for JSONL results files — the record histogram, the meta fingerprint
-// (profile, seed, timestamp, commit, go version), the summary footer, and the
-// verification verdict. It is the canonical index for the committed results
-// tree: everything under results/ is reproducible or regenerable from
-// MEASUREMENT.md, and anything modified after the fact is detectable by
-// re-running `bigbuff-measure index` and diffing the manifest.
+// Run-group file grammar (repository root stays flat):
+//
+//	results-<rr>-<ss>-<slug>.<ext>
+//
+//	rr  run sequence, zero-padded (00 = documentation group, 01.. = runs)
+//	ss  slot within the run, zero-padded (00 = manifest, 01 = JSONL results,
+//	    02 = registry dump, 03 = HTML report, 04 = metrics CSV, 05 = scores CSV)
+//
+// Enumerating a directory listing of results-*-*-* and iterating it in sorted
+// order yields, per run, the manifest first and then its artifacts; the run
+// consists of exactly the files sharing its rr segment.
+
+var runFileRe = regexp.MustCompile(`^results-([0-9]{2})-([0-9]{2})-[^/]+$`)
+
 func cmdMeasureIndex(args []string) int {
 	fs := flag.NewFlagSet("index", flag.ContinueOnError)
-	dir := fs.String("dir", "results", "results directory to index")
-	out := fs.String("out", "", "manifest path (default: <dir>/manifest.json)")
+	dir := fs.String("dir", ".", "directory holding the flat results-*-*-* files")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *out == "" {
-		*out = filepath.Join(*dir, "manifest.json")
-	}
-
-	type entry struct {
-		m map[string]any
-	}
-	files := []map[string]any{}
-	anyFailed := false
-	err := filepath.WalkDir(*dir, func(path string, d iofs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(*dir, path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if rel == "manifest.json" {
-			return nil
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		sum := sha256.Sum256(raw)
-		e := map[string]any{
-			"path":   rel,
-			"sha256": hex.EncodeToString(sum[:]),
-			"bytes":  len(raw),
-		}
-		switch {
-		case strings.HasSuffix(rel, ".jsonl"):
-			counts, meta, summary := indexJSONL(path)
-			if counts != nil {
-				e["records"] = counts
-			}
-			if meta != nil {
-				for _, k := range []string{"profile", "seed", "timestamp", "commit", "go", "gomaxprocs", "cpu", "generator_version"} {
-					if v, ok := meta[k]; ok {
-						e[k] = v
-					}
-				}
-			}
-			if summary != nil {
-				e["summary"] = map[string]any{
-					"records":     summary["records"],
-					"failures":    summary["failures"],
-					"skipped":     summary["skipped"],
-					"duration_s":  summary["duration_s"],
-					"failure_msg": summary["failure_msg"],
-				}
-			}
-			if verifyResults(path, io.Discard) == 0 {
-				e["verified"] = true
-			} else {
-				e["verified"] = false
-				anyFailed = true
-			}
-		case strings.HasSuffix(rel, ".html"):
-			e["generator"] = "bigbuff-measure report"
-			e["kind"] = "interactive-report"
-		case strings.HasSuffix(rel, "registry.json"):
-			e["generator"] = "bigbuff-measure dump-registry"
-			e["kind"] = "registry-dump"
-		case strings.HasSuffix(rel, ".csv"):
-			e["generator"] = "bigbuff-measure report (--csv)"
-			e["kind"] = "csv-export"
-		default:
-			e["kind"] = "artifact"
-		}
-		files = append(files, e)
-		return nil
-	})
+	entries, err := os.ReadDir(*dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: %v\n", err)
 		return 1
 	}
-	sort.Slice(files, func(i, j int) bool { return fmt.Sprint(files[i]["path"]) < fmt.Sprint(files[j]["path"]) })
-	manifest := map[string]any{
-		"type":              "manifest",
-		"schema":            measureSchemaVersion,
-		"generator":         "bigbuff-measure",
-		"generator_version": "1.0.0",
-		"generated":         time.Now().UTC().Format(time.RFC3339Nano),
-		"root":              filepath.ToSlash(*dir),
-		"files":             files,
+	type member struct {
+		path, name, slot string
+		run              int
 	}
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: marshal: %v\n", err)
+	runs := map[int][]member{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		m := runFileRe.FindStringSubmatch(name)
+		if m == nil {
+			continue
+		}
+		rr, _ := strconv.Atoi(m[1])
+		if rr == 0 {
+			continue // documentation group (e.g. results-00-00-readme.md)
+		}
+		runs[rr] = append(runs[rr], member{path: filepath.Join(*dir, name), name: name, slot: m[2], run: rr})
+	}
+	runNums := make([]int, 0, len(runs))
+	for rr := range runs {
+		runNums = append(runNums, rr)
+	}
+	sort.Ints(runNums)
+	if len(runNums) == 0 {
+		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: no results-<rr>-<ss>-* files found under %s\n", *dir)
 		return 1
 	}
-	if d := filepath.Dir(*out); d != "" {
-		if err := os.MkdirAll(d, 0o755); err != nil {
+	hostname, _ := os.Hostname()
+	anyFailed := false
+	for _, rr := range runNums {
+		members := runs[rr]
+		sort.Slice(members, func(i, j int) bool { return members[i].name < members[j].name })
+		// Guard the reserved slot: anything other than the manifest occupying
+		// slot 00 is a naming error, reported loudly.
+		for _, m := range members {
+			if m.slot == "00" && m.name != fmt.Sprintf("results-%02d-00-manifest.json", rr) {
+				fmt.Fprintf(os.Stderr, "bigbuff-measure: index: run %02d: slot 00 is reserved for the manifest, found %s\n", rr, m.name)
+				return 1
+			}
+		}
+		files := []map[string]any{}
+		fingerprint := map[string]any{}
+		type summaryT struct {
+			records   any
+			failures  float64
+			skipped   float64
+			duration  any
+			failureMu any
+		}
+		var totalSummary *summaryT
+		allVerified := true
+		hasJSONL := false
+		for _, m := range members {
+			if m.slot == "00" {
+				continue // the manifest does not index itself
+			}
+			raw, err := os.ReadFile(m.path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "bigbuff-measure: index: %v\n", err)
+				return 1
+			}
+			sum := sha256.Sum256(raw)
+			e := map[string]any{
+				"path":   m.name,
+				"slot":   m.slot,
+				"sha256": hex.EncodeToString(sum[:]),
+				"bytes":  len(raw),
+			}
+			switch {
+			case strings.HasSuffix(m.name, ".jsonl"):
+				hasJSONL = true
+				counts, meta, summary := indexJSONL(m.path)
+				if counts != nil {
+					e["records"] = counts
+				}
+				if meta != nil {
+					for _, k := range []string{"profile", "seed", "timestamp", "commit", "go", "goos", "goarch", "num_cpu", "gomaxprocs", "cpu", "generator_version"} {
+						if v, ok := meta[k]; ok {
+							e[k] = v
+							fingerprint[k] = v
+						}
+					}
+				}
+				if summary != nil {
+					e["summary"] = map[string]any{
+						"records":     summary["records"],
+						"failures":    summary["failures"],
+						"skipped":     summary["skipped"],
+						"duration_s":  summary["duration_s"],
+						"failure_msg": summary["failure_msg"],
+					}
+					if f, ok := summary["failures"].(float64); ok && totalSummary == nil {
+						totalSummary = &summaryT{records: summary["records"], failures: f, duration: summary["duration_s"], failureMu: summary["failure_msg"]}
+						if s, ok := summary["skipped"].(float64); ok {
+							totalSummary.skipped = s
+						}
+					}
+				}
+				if verifyResults(m.path, io.Discard) == 0 {
+					e["verified"] = true
+				} else {
+					e["verified"] = false
+					allVerified = false
+					anyFailed = true
+				}
+			case strings.HasSuffix(m.name, ".html"):
+				e["generator"] = "bigbuff-measure report"
+				e["kind"] = "interactive-report"
+			case strings.HasSuffix(m.name, "registry.json"):
+				e["generator"] = "bigbuff-measure dump-registry"
+				e["kind"] = "registry-dump"
+			case strings.HasSuffix(m.name, ".csv"):
+				e["generator"] = "bigbuff-measure report"
+				e["kind"] = "csv-export"
+			case strings.HasSuffix(m.name, ".md"):
+				e["kind"] = "documentation"
+			default:
+				e["kind"] = "artifact"
+			}
+			files = append(files, e)
+		}
+		manifest := map[string]any{
+			"type":              "manifest",
+			"schema":            measureSchemaVersion,
+			"generator":         "bigbuff-measure",
+			"generator_version": "1.0.0",
+			"generated":         time.Now().UTC().Format(time.RFC3339Nano),
+			"indexed_hostname":  hostname,
+			"prefix":            "results",
+			"run":               rr,
+			"files":             files,
+		}
+		for k, v := range fingerprint {
+			manifest[k] = v
+		}
+		if totalSummary != nil {
+			manifest["duration_s"] = totalSummary.duration
+			manifest["failures"] = totalSummary.failures
+			manifest["skipped"] = totalSummary.skipped
+		}
+		if hasJSONL {
+			manifest["verified"] = allVerified
+		}
+		data, err := json.MarshalIndent(manifest, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bigbuff-measure: index: marshal run %02d: %v\n", rr, err)
+			return 1
+		}
+		outPath := filepath.Join(*dir, fmt.Sprintf("results-%02d-00-manifest.json", rr))
+		if err := os.WriteFile(outPath, data, 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "bigbuff-measure: index: %v\n", err)
 			return 1
 		}
+		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: run %02d: wrote %s (%d files, verified=%t)\n", rr, filepath.Base(outPath), len(files), manifest["verified"])
 	}
-	if err := os.WriteFile(*out, data, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: %v\n", err)
-		return 1
-	}
-	fmt.Fprintf(os.Stderr, "bigbuff-measure: index: wrote %s (%d files)\n", *out, len(files))
 	if anyFailed {
 		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: WARNING: at least one JSONL results file failed verification\n")
 		return 1
 	}
 	return 0
+}
+
+// latestRunResultsJSONL returns the newest (highest run sequence) results
+// JSONL under dir, or "" if none exists. Used by verify/report defaults.
+func latestRunResultsJSONL(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	best := -1
+	bestName := ""
+	for _, e := range entries {
+		m := runFileRe.FindStringSubmatch(e.Name())
+		if m == nil {
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		rr, _ := strconv.Atoi(m[1])
+		if rr > best {
+			best, bestName = rr, e.Name()
+		}
+	}
+	if bestName == "" {
+		return ""
+	}
+	return filepath.Join(dir, bestName)
 }
 
 func indexJSONL(path string) (map[string]int, map[string]any, map[string]any) {

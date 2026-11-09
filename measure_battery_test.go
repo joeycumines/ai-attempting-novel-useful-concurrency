@@ -1,6 +1,6 @@
 package bigbuff
 
-// Measurement batteries (see MEASUREMENT.md). Each battery is a self-contained
+// Measurement batteries (see measurement.md). Each battery is a self-contained
 // experiment over one family of implementations, writing schema-versioned
 // JSONL records through measureContext. Batteries must be bounded: every
 // blocking probe uses a watchdog, and a measurement must never wedge the
@@ -191,7 +191,7 @@ func heapAllocBytes() uint64 {
 }
 
 // heapDeltaGC measures retained heap growth around fn (GC before and after),
-// clamped at zero. It is approximate by design (see MEASUREMENT.md) and is
+// clamped at zero. It is approximate by design (see measurement.md) and is
 // used comparatively across implementations, never as an absolute.
 func heapDeltaGC(fn func()) uint64 {
 	runtime.GC()

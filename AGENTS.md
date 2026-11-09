@@ -103,3 +103,7 @@ result?*
 Record the *reasoning* for an exposure limitation at the attachment, where a
 reader deciding whether to use the implementation will see it — not buried
 in a test that merely avoids the path.
+
+## Measurement
+
+Measurement methodology, profiles and the committed run log (`results-*-*-*`) are documented in `measurement.md`; consult it rather than duplicating its contents here.

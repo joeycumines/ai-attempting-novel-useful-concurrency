@@ -1,6 +1,6 @@
 package bigbuff
 
-// Measurement harness entry points (see MEASUREMENT.md for the methodology,
+// Measurement harness entry points (see measurement.md for the methodology,
 // schema and runbook).
 //
 // This file wires a subcommand-dispatched measurement CLI into the test
@@ -53,16 +53,18 @@ Commands:
   run            Run the measurement battery; write results (JSONL).
   verify         Verify a results file covers every registered implementation.
   report         Generate the interactive HTML report from results.
-  index          Write a SHA-256 manifest (results/manifest.json) for the results tree.
+  index          Write per-run manifests (results-NN-00-manifest.json) for the flat tree.
   help           Show this help.
 
 Common flags:
-  run:    --out results/measurements.jsonl  --profile quick|standard|full
+  Flat layout (see measurement.md): results-NN-SS-slug.ext, zero-padded;
+  run 01 = standard profile, run 02 = quick profile; slot 00 = manifest.
+  run:    --out results-NN-01-results.jsonl  --profile quick|standard|full
           --impl <glob>   --battery <glob>   --no-verify
-  report: --in results/measurements.jsonl    --out results/report.html
-          --registry results/registry.json   --csv results/csv
-  verify: --in results/measurements.jsonl
-  index:  --dir results                 --out results/manifest.json
+  report: --in  results-NN-01-results.jsonl  --out results-NN-03-report.html
+          --registry <file>   --csv-metrics <file>   --csv-scores <file>
+  verify: --in  results-NN-01-results.jsonl  (default: newest results-*-01-results.jsonl)
+  index:  --dir .                            (rewrites every results-NN-00-manifest.json)
 
 Everything after the bigbuff-measure sentinel is the subcommand argv; all
 other arguments are interpreted as usual by the test binary.
@@ -130,6 +132,14 @@ func (w *measureWriter) close() error { return w.f.Close() }
 
 // --- Environment metadata ---
 
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	return h
+}
+
 func gitCommit() string {
 	out, err := exec.Command("git", "rev-parse", "--short=12", "HEAD").Output()
 	if err != nil {
@@ -164,6 +174,7 @@ func measureMetaRecords(profile string, seed int64) map[string]any {
 		"num_cpu":           runtime.NumCPU(),
 		"gomaxprocs":        runtime.GOMAXPROCS(0),
 		"cpu":               cpuModel(),
+		"hostname":          hostname(),
 		"commit":            gitCommit(),
 		"profile":           profile,
 		"seed":              seed,
