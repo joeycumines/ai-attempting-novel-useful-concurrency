@@ -308,11 +308,35 @@ func TestMulticastChurn(t *testing.T) {
 	}
 }
 
+// waitMulticastLinked reports whether m's subscription list gains a node within
+// timeout. Send reads the list from its head, so a linked head is the exact
+// precondition for delivery. Len is not a substitute: register counts a
+// subscription before it links it, so Len can read 1 while Send still sees an
+// empty list. It polls, as waitPackedState does, and returns as soon as the
+// link is observed.
+func waitMulticastLinked(m *Multicast27Mistral[chan int, int], timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for m.head.Load() == nil {
+		if time.Now().After(deadline) {
+			return false
+		}
+		runtime.Gosched()
+	}
+	return true
+}
+
 func TestMulticastSubscribeContext(t *testing.T) {
 	m := NewMulticast27Mistral(make(chan int, 16))
-	ctx, cancel := context.WithCancel(context.Background())
+	// The iteration ends with a shortfall error, not a hang, if the values never arrive.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// SubscribeContext registers its subscription when the range starts, and a
+	// value sent before that subscription is linked is never delivered to it. The
+	// sender therefore waits for the link.
 	go func() {
+		if !waitMulticastLinked(m, 10*time.Second) {
+			return // the iteration times out and reports the shortfall
+		}
 		for n := 0; n < 5; n++ {
 			m.Send(n)
 		}
