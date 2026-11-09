@@ -614,8 +614,8 @@ func roundTrip[V comparable](t *testing.T, in []V) {
 func TestRingRoundTripLayouts(t *testing.T) {
 	roundTrip(t, []struct{}{struct{}{}, struct{}{}, struct{}{}})                                                   // size 0
 	roundTrip(t, []byte{1, 2, 3})                                                          // sub-word
-	roundTrip(t, []ringOddLayout{{1, 2, [3]byte{3, 4, 5}}, {255, 65535, [3]byte{9, 8, 7}}}) // tail word
-	roundTrip(t, []ringNineBytes{{1, 2, 3, 4, 5, 6, 7, 8, 9}, {9, 9, 9, 9, 9, 9, 9, 9, 0}})
+	roundTrip(t, []ringOddLayout{ringOddLayout{1, 2, [3]byte{3, 4, 5}}, ringOddLayout{255, 65535, [3]byte{9, 8, 7}}}) // tail word
+	roundTrip(t, []ringNineBytes{ringNineBytes{1, 2, 3, 4, 5, 6, 7, 8, 9}, ringNineBytes{9, 9, 9, 9, 9, 9, 9, 9, 0}})
 	roundTrip(t, []complex128{1 + 2i, -3.5i})
 	roundTrip(t, []ringPayload{newRingPayload(1), newRingPayload(1 << 40)})
 }
