@@ -37,11 +37,11 @@
       "verified": true
     },
     {
-      "bytes": 1821988,
+      "bytes": 1821986,
       "generator": "bigbuff-measure report",
       "kind": "interactive-report",
       "path": "results-02-03-report.html",
-      "sha256": "b6e137b233f2335f967c88485b9c7d867aab170b3c3abed274f9d46d0d2057fb",
+      "sha256": "667d9a3f00866c9931e62bb3434824e22e74d3dc452f2a9f8917cf0efc88e111",
       "slot": "03"
     },
     {
@@ -61,14 +61,14 @@
       "slot": "05"
     }
   ],
-  "generated": "2026-11-09T07:38:52.700024Z",
+  "generated": "2026-11-09T21:56:09.147797089Z",
   "generator": "bigbuff-measure",
   "generator_version": "1.0.0",
   "go": "go1.27.3",
   "goarch": "amd64",
   "gomaxprocs": 2,
   "goos": "linux",
-  "indexed_hostname": "joeyc-mbp.lan",
+  "indexed_hostname": "e2b.local",
   "num_cpu": 2,
   "prefix": "results",
   "profile": "quick",

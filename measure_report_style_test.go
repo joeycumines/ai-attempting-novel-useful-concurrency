@@ -46,6 +46,13 @@ main{min-width:0;padding:34px 40px 80px;max-width:1560px}
 .sectionbar a{flex:none;color:var(--ink2);text-decoration:none;font-size:12.5px;padding:7px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);white-space:nowrap}
 .sectionbar a.active{color:#06121a;background:linear-gradient(90deg,#67e8f9,#a5b4fc);border-color:transparent;font-weight:600}
 .scroll-x{overflow-x:auto;max-width:100%;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+/* Visible scroll cues: custom (non-overlay) scrollbars on every intentional scroller, so a
+   horizontal overflow is obvious in screenshots and to touch users, not a hidden overlay bar. */
+.sectionbar::-webkit-scrollbar,.tbl-wrap::-webkit-scrollbar,.cov-wrap::-webkit-scrollbar,.scroll-x::-webkit-scrollbar,.torn-scroll::-webkit-scrollbar,nav#nav::-webkit-scrollbar{height:8px;width:8px}
+.sectionbar::-webkit-scrollbar-track,.tbl-wrap::-webkit-scrollbar-track,.cov-wrap::-webkit-scrollbar-track,.scroll-x::-webkit-scrollbar-track,.torn-scroll::-webkit-scrollbar-track,nav#nav::-webkit-scrollbar-track{background:#0d1330;border-radius:4px}
+.sectionbar::-webkit-scrollbar-thumb,.tbl-wrap::-webkit-scrollbar-thumb,.cov-wrap::-webkit-scrollbar-thumb,.scroll-x::-webkit-scrollbar-thumb,.torn-scroll::-webkit-scrollbar-thumb,nav#nav::-webkit-scrollbar-thumb{background:#33407a;border-radius:4px}
+.sectionbar::-webkit-scrollbar-thumb:hover,.tbl-wrap::-webkit-scrollbar-thumb:hover,.cov-wrap::-webkit-scrollbar-thumb:hover,.scroll-x::-webkit-scrollbar-thumb:hover,.torn-scroll::-webkit-scrollbar-thumb:hover,nav#nav::-webkit-scrollbar-thumb:hover{background:#46569b}
+.tbl-wrap,.cov-wrap{scrollbar-width:thin;scrollbar-color:#33407a #0d1330}
 /* ranked bar rows: one template for every bar list, so each reflows at phone width */
 .bar-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2.4fr) 76px;gap:10px;align-items:center;font-size:11px;margin:3px 0}
 .bar-row.retain{grid-template-columns:minmax(0,1.3fr) minmax(0,2.2fr) 74px 84px}
@@ -54,12 +61,15 @@ main{min-width:0;padding:34px 40px 80px;max-width:1560px}
 @media (max-width:720px){.bar-row,.bar-row.zero,.bar-row.churn{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 64px;gap:8px}.bar-row.retain{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 64px 72px}}
 .mem-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:24px}
 .mem-grid>*{min-width:0}
-@media (max-width:1080px){#shell{grid-template-columns:minmax(0,1fr)}nav#nav{display:none}.sectionbar{display:flex}.mobile-topbar{display:flex!important}}
-@media (max-width:900px){.mem-grid{grid-template-columns:minmax(0,1fr)}}
+/* base scroll-margin must precede the media queries below or the 24px default wins the cascade
+   and every tap lands the section under the sticky section bar */
+section.block{scroll-margin-top:24px}
+@media (max-width:1080px){#shell{grid-template-columns:minmax(0,1fr)}nav#nav{display:none}.sectionbar{display:flex}.mobile-topbar{display:flex!important}section.block{scroll-margin-top:76px}}
+@media (max-width:732px){.mem-grid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:720px){main{padding:18px 16px 64px}#hero{padding:24px 20px}#hero h1{font-size:26px}h2.title{font-size:22px}section.block{scroll-margin-top:76px}table.gloss td:first-child{white-space:normal;word-break:break-word}}
 
 /* sections */
-section.block{margin-bottom:56px;scroll-margin-top:24px}
+section.block{margin-bottom:56px}
 .kicker{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--cyan);font-weight:700;margin-bottom:6px}
 h2.title{font-size:26px;letter-spacing:-.01em;margin-bottom:6px}
 .lede{color:var(--ink2);max-width:880px;font-size:14px}
@@ -82,7 +92,7 @@ h2.title{font-size:26px;letter-spacing:-.01em;margin-bottom:6px}
 .kpi .s{font-size:10.5px;color:var(--ink3);margin-top:3px}
 
 /* findings */
-.findings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;margin-top:16px}
+.findings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(326px,1fr));gap:14px;margin-top:16px}
 .finding{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 17px 14px;overflow:hidden}
 .finding::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--cyan),var(--indigo))}
 .finding.pathology::before{background:linear-gradient(180deg,var(--red),var(--orange))}
@@ -104,7 +114,7 @@ h2.title{font-size:26px;letter-spacing:-.01em;margin-bottom:6px}
 .search{background:var(--panel);border:1px solid var(--line2);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;min-width:220px;outline:none}
 .search:focus{border-color:var(--indigo)}
 .toggle{cursor:pointer;user-select:none;font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px}
-select.sel{background:var(--panel);border:1px solid var(--line2);color:var(--ink);border-radius:9px;padding:7px 10px;font-size:12.5px}
+select.sel{background:var(--panel);border:1px solid var(--line2);color:var(--ink);border-radius:9px;padding:7px 10px;font-size:12.5px;min-width:0;max-width:100%}
 
 /* leaderboard table */
 .tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);max-height:640px;overflow-y:auto}
@@ -137,7 +147,7 @@ table.tbl tr:hover td{background:rgba(99,102,241,.07)}
 .lgnd span.off{opacity:.35}
 
 /* pathology */
-.patho-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;margin-top:16px}
+.patho-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,304px),1fr));gap:16px;margin-top:16px}
 .patho-card{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--radius);padding:16px;position:relative}
 .patho-card h4{font-size:13px;margin-bottom:2px}
 .patho-card .outcome{font-family:var(--mono);font-size:11px;margin-top:6px;padding:4px 8px;border-radius:6px;display:inline-block}
@@ -165,8 +175,10 @@ table.cov td{width:15px;height:15px;border:1px solid rgba(7,11,20,.6);text-align
 .cov-legend i{width:13px;height:13px;border-radius:3px;display:inline-block;vertical-align:-2px;margin-right:6px}
 
 /* radar + verdict */
-.radar-flex{display:grid;grid-template-columns:minmax(280px,430px) 1fr;gap:22px;align-items:center}
-@media (max-width:900px){.radar-flex{grid-template-columns:1fr}}
+.radar-flex{display:grid;grid-template-columns:minmax(280px,430px) minmax(0,1fr);gap:22px;align-items:center}
+.radar-flex>*{min-width:0}
+@media (max-width:900px){.radar-flex{grid-template-columns:minmax(280px,340px) minmax(0,1fr)}}
+@media (max-width:755px){.radar-flex{grid-template-columns:1fr}}
 .score-rows{display:flex;flex-direction:column;gap:9px}
 .srow{display:grid;grid-template-columns:150px 1fr 42px;gap:10px;align-items:center;font-size:12px}
 .srow .dim{color:var(--ink2)}

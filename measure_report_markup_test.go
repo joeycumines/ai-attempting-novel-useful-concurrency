@@ -236,7 +236,7 @@ const reportHTMLBody = `<body>
 
   <details class="mdetail"><summary>Record schema (JSONL v1)</summary><div>
     <p>One record per line. <code class="k">type</code> is one of <code class="k">meta</code>, <code class="k">metric</code>, <code class="k">trace</code>, <code class="k">skipped</code>, <code class="k">summary</code>, <code class="k">registry</code>.</p>
-    <table class="gloss">
+    <div class="scroll-x"><table class="gloss">
       <tr><td>metric</td><td>record kind; dims carry the sweep dimension (<code class="k">subs</code> / <code class="k">receivers</code> / <code class="k">senders</code>)</td></tr>
       <tr><td>mean / stddev / cv</td><td>distributional summaries over <code class="k">reps</code> repetitions of <code class="k">ops</code> operations each</td></tr>
       <tr><td>p50 / p90 / p99 / max</td><td>reservoir-sampled latencies (ADR-004 HDR-ish reservoir, per-run)</td></tr>
@@ -247,7 +247,7 @@ const reportHTMLBody = `<body>
       <tr><td>withdrawal_compensation_success</td><td>fraction of rounds where Add(-1) unstuck a Send parked on a never-receiving intent</td></tr>
       <tr><td>exposure_limited</td><td>true when the implementation is excluded from batteries it would fail by construction (policy: limit exposure, never mis-measure)</td></tr>
       <tr><td>expected_good_fit / scenarios</td><td>attachment registry: the scenarios this implementation was designed for</td></tr>
-    </table>
+    </table></div>
   </div></details>
 
   <details class="mdetail"><summary>Adoptability score</summary><div>

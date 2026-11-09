@@ -135,12 +135,15 @@ function renderLatency(){
   var maxV = Math.max.apply(null, top.map(function(r){ return r.max; })) * 1.05;
   var W = containerWidth(container), rowH = 27, padL = Math.min(300, Math.floor(W*0.36)), padR = 84, padT = 8;
   var H = top.length * rowH + padT + 26;
+  // Name column: keep every label inside [0, padL-10] so nothing clips at narrow widths
+  // (11px mono ≈ 6.6px/char); cap at 34 chars for wide layouts.
+  var maxName = Math.max(8, Math.min(34, Math.floor((padL - 14) / 6.6)));
   var svgEl = svg('svg', {width:W, height:H, viewBox:'0 0 '+W+' '+H, role:'img'}, container);
   var xOf = function(v){ return padL + v/maxV * (W - padL - padR); };
   top.forEach(function(r, i){
     var y = padT + i*rowH + rowH/2;
     var t = svg('text', {x:padL-10, y:y+4, 'text-anchor':'end', class:'axtxt', style:'font-size:11px'}, svgEl);
-    t.textContent = r.impl.length > 34 ? r.impl.slice(0,33)+'…' : r.impl;
+    t.textContent = r.impl.length > maxName ? r.impl.slice(0, maxName-1)+'…' : r.impl;
     // p99 bar
     svg('rect', {x:padL, y:y-8, width:Math.max(2, xOf(r.p99)-padL), height:16, rx:4, fill:'url(#latGrad)'}, svgEl);
     // p50 / p90 markers
@@ -157,8 +160,18 @@ function renderLatency(){
   var defs = svg('defs', {}, svgEl);
   var grad = svg('linearGradient', {id:'latGrad', x1:'0', y1:'0', x2:'1', y2:'0'}, defs);
   svg('stop', {offset:'0%', 'stop-color':'#155e75'}, grad); svg('stop', {offset:'60%', 'stop-color':'#0e7490'}, grad); svg('stop', {offset:'100%', 'stop-color':'#22d3ee'}, grad);
-  var lg = svg('text', {x:padL, y:H-6, class:'axtxt'}, svgEl);
-  lg.textContent = '● p50   ● p90   ● p99 (bar end)   sorted by p99, best 26 shown';
+  var lgFull = '● p50   ● p90   ● p99 (bar end)   sorted by p99, best 26 shown';
+  // 10px mono ≈ 6px/char; when one line would run past the right edge (narrow viewports),
+  // split into two legend lines that both start at x=8 so nothing clips.
+  if (padL + lgFull.length * 6 <= W - 4) {
+    var lg = svg('text', {x:padL, y:H-6, class:'axtxt'}, svgEl);
+    lg.textContent = lgFull;
+  } else {
+    var lg1 = svg('text', {x:8, y:H-17, class:'axtxt'}, svgEl);
+    lg1.textContent = '● p50   ● p90   ● p99 (bar end)';
+    var lg2 = svg('text', {x:8, y:H-5, class:'axtxt'}, svgEl);
+    lg2.textContent = 'sorted by p99, best 26 shown';
+  }
 }
 
 /* ── Memory & allocations ── */
