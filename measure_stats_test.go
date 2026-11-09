@@ -1,6 +1,6 @@
 package bigbuff
 
-// Statistical primitives for the measurement harness (see MEASUREMENT.md for
+// Statistical primitives for the measurement harness (see measurement.md for
 // the methodology). Everything here is dependency-free and deterministic.
 
 import (

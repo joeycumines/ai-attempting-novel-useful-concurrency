@@ -1,0 +1,58 @@
+{
+  "commit": "887a4d80f9ef",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+  "duration_s": 175.676873801,
+  "failures": 0,
+  "files": [
+    {
+      "bytes": 1528056,
+      "commit": "887a4d80f9ef",
+      "cpu": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+      "generator_version": "1.0.0",
+      "go": "go1.27.3",
+      "goarch": "amd64",
+      "gomaxprocs": 2,
+      "goos": "linux",
+      "num_cpu": 2,
+      "path": "results-02-01-results.jsonl",
+      "profile": "quick",
+      "records": {
+        "meta": 1,
+        "metric": 1305,
+        "skipped": 5,
+        "summary": 1,
+        "trace": 167
+      },
+      "seed": 1,
+      "sha256": "cf9938a8a58bac1960ef183a3ab663281f6ddfa9265c053c1502ab0116a17530",
+      "slot": "01",
+      "summary": {
+        "duration_s": 175.676873801,
+        "failure_msg": null,
+        "failures": 0,
+        "records": 1479,
+        "skipped": 5
+      },
+      "timestamp": "2026-11-09T02:49:53.410554571Z",
+      "verified": true
+    }
+  ],
+  "generated": "2026-11-09T03:13:39.040160745Z",
+  "generator": "bigbuff-measure",
+  "generator_version": "1.0.0",
+  "go": "go1.27.3",
+  "goarch": "amd64",
+  "gomaxprocs": 2,
+  "goos": "linux",
+  "indexed_hostname": "e2b.local",
+  "num_cpu": 2,
+  "prefix": "results",
+  "profile": "quick",
+  "run": 2,
+  "schema": 1,
+  "seed": 1,
+  "skipped": 5,
+  "timestamp": "2026-11-09T02:49:53.410554571Z",
+  "type": "manifest",
+  "verified": true
+}

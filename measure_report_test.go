@@ -25,12 +25,24 @@ import (
 
 func cmdMeasureReport(args []string) int {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
-	in := fs.String("in", "results/measurements.jsonl", "bigbuff-measure results file")
-	out := fs.String("out", "results/report.html", "output HTML report path")
+	in := fs.String("in", "", "bigbuff-measure results file (default: newest results-*-01-results.jsonl)")
+	out := fs.String("out", "", "output HTML report path (default: same run group, -03-report.html)")
 	registryPath := fs.String("registry", "", "registry JSON (default: dumped live from the test binary)")
-	csvDir := fs.String("csv", "", "optional directory for CSV exports")
+	csvMetrics := fs.String("csv-metrics", "", "optional output path for the metrics_wide CSV")
+	csvScores := fs.String("csv-scores", "", "optional output path for the scores CSV")
+	csvDir := fs.String("csv", "", "deprecated alias: write <dir>/metrics_wide.csv and <dir>/scores.csv")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *in == "" {
+		*in = latestRunResultsJSONL(".")
+		if *in == "" {
+			fmt.Fprintf(os.Stderr, "report: no results-*-01-results.jsonl found; pass --in explicitly\n")
+			return 2
+		}
+	}
+	if *out == "" {
+		*out = reportDefaultOut(*in)
 	}
 	data, err := loadReportData(*in)
 	if err != nil {
@@ -76,13 +88,33 @@ func cmdMeasureReport(args []string) int {
 	}
 	fmt.Fprintf(os.Stderr, "report: wrote %s (%d bytes)\n", *out, len(page))
 	if *csvDir != "" {
-		if err := writeReportCSVs(*csvDir, data, derived); err != nil {
+		if *csvMetrics == "" {
+			*csvMetrics = filepath.Join(*csvDir, "metrics_wide.csv")
+		}
+		if *csvScores == "" {
+			*csvScores = filepath.Join(*csvDir, "scores.csv")
+		}
+	}
+	if *csvMetrics != "" || *csvScores != "" {
+		if err := writeReportCSVs(*csvMetrics, *csvScores, data, derived); err != nil {
 			fmt.Fprintf(os.Stderr, "report: csv: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(os.Stderr, "report: wrote CSVs to %s\n", *csvDir)
+		fmt.Fprintf(os.Stderr, "report: wrote CSVs (%s, %s)\n", *csvMetrics, *csvScores)
 	}
 	return 0
+}
+
+// reportDefaultOut derives the run-group-consistent report path for a results
+// JSONL: results-NN-01-results.jsonl -> results-NN-03-report.html.
+func reportDefaultOut(in string) string {
+	base := filepath.Base(in)
+	dir := filepath.Dir(in)
+	m := runFileRe.FindStringSubmatch(base)
+	if m == nil {
+		return filepath.Join(dir, "report.html")
+	}
+	return filepath.Join(dir, "results-"+m[1]+"-03-report.html")
 }
 
 // --- Loading ---
@@ -402,7 +434,7 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 				scaleScore = percentileRank(scaleVals, scale, true)
 			}
 
-			// Weights documented in MEASUREMENT.md.
+			// Weights documented in measurement.md.
 			raw := 0.28*float64(thrScore) + 0.14*float64(latScore) + 0.14*float64(allocScore) +
 				0.08*float64(churnScore) + 0.16*float64(scaleScore) + 0.20*float64(stallScore)
 
@@ -803,12 +835,12 @@ func humanBytes(b float64) string {
 
 // --- CSV exports ---
 
-func writeReportCSVs(dir string, data *reportData, derived derivedData) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
+func writeReportCSVs(metricsPath, scoresPath string, data *reportData, derived derivedData) error {
 	// metrics_wide.csv
-	mf, err := os.Create(filepath.Join(dir, "metrics_wide.csv"))
+	if metricsPath == "" {
+		metricsPath = scoresPath + ".metrics.csv"
+	}
+	mf, err := os.Create(metricsPath)
 	if err != nil {
 		return err
 	}
@@ -833,8 +865,11 @@ func writeReportCSVs(dir string, data *reportData, derived derivedData) error {
 	mw.Flush()
 	mf.Close()
 
-	// scores.csv
-	sf, err := os.Create(filepath.Join(dir, "scores.csv"))
+	// scores.csv — deterministic order: family asc, score desc, impl asc.
+	if scoresPath == "" {
+		scoresPath = metricsPath + ".scores.csv"
+	}
+	sf, err := os.Create(scoresPath)
 	if err != nil {
 		return err
 	}
@@ -842,7 +877,22 @@ func writeReportCSVs(dir string, data *reportData, derived derivedData) error {
 	if err := sw.Write([]string{"family", "impl", "score", "verdict", "baseline", "integrity", "throughput", "latency", "allocations", "churn", "scaling", "stall_resilience", "expected_good_fit", "exposure_limited"}); err != nil {
 		return err
 	}
-	for family, scores := range derived.Scores {
+	families := make([]string, 0, len(derived.Scores))
+	for family := range derived.Scores {
+		families = append(families, family)
+	}
+	sort.Strings(families)
+	for _, family := range families {
+		scores := make([]implScore, 0, len(derived.Scores[family]))
+		for _, s := range derived.Scores[family] {
+			scores = append(scores, s)
+		}
+		sort.Slice(scores, func(i, j int) bool {
+			if scores[i].Score != scores[j].Score {
+				return scores[i].Score > scores[j].Score
+			}
+			return scores[i].Impl < scores[j].Impl
+		})
 		for _, s := range scores {
 			row := []string{
 				family, s.Impl, fmt.Sprint(s.Score), s.Verdict, fmt.Sprint(s.Baseline), s.Integrity,

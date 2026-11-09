@@ -1,4 +1,4 @@
-# MEASUREMENT.md — the bigbuff measurement harness
+# measurement.md — the bigbuff measurement harness
 
 This repository carries two contracts at once:
 
@@ -18,22 +18,25 @@ Everything below is enforced by `go test -run=NONE -args bigbuff-measure verify`
 ## Quick start
 
 ```sh
-make measure            # standard profile: run → verify → interactive HTML report
+make measure            # new run: measure → registry → report → index (default profile: standard)
 make measure-quick      # CI-grade quick profile (~2–4 min on 2 vCPUs)
 make measure-standard   # decision-grade standard profile (~30–60 min on 2 vCPUs)
 make measure-full       # publication-grade full profile (hours on 2 vCPUs; use more cores)
-make measure-report     # rebuild results/report.html + CSVs from results
+make measure-report     # rebuild the report (+ CSVs) for the newest committed run
 make measure-list       # families, batteries, profiles
-make measure-verify     # verify results/measurements.jsonl
+make measure-verify     # verify the newest results-*-01-results.jsonl
 make measure-ci         # quick + verify, intended for CI
+make measure-index      # rewrite every results-NN-00-manifest.json
 ```
 
-Direct invocation (what Make does):
+Direct invocation (what Make does), using the flat layout (see next section):
 
 ```sh
-go test -run=NONE -count=1 -timeout=120m -args bigbuff-measure run --profile standard --out results/measurements.jsonl
-go test -run=NONE -count=1 -args bigbuff-measure verify --in results/measurements.jsonl
-go test -run=NONE -count=1 -args bigbuff-measure report --in results/measurements.jsonl --out results/report.html --csv results/csv
+NN=$(ls results-*-01-results.jsonl 2>/dev/null | sed -E 's/^results-([0-9]+)-.*/\1/' | sort -n | tail -1); NN=${NN:-00}; NN=$(printf '%02d' $((10#$NN + 1)))
+go test -run=NONE -count=1 -timeout=120m -args bigbuff-measure run --profile standard --out results-$NN-01-results.jsonl
+go test -run=NONE -count=1 -args bigbuff-measure verify --in results-$NN-01-results.jsonl
+go test -run=NONE -count=1 -args bigbuff-measure report --in results-$NN-01-results.jsonl --csv-metrics results-$NN-04-metrics_wide.csv --csv-scores results-$NN-05-scores.csv
+go test -run=NONE -count=1 -args bigbuff-measure index --dir .
 ```
 
 `--seed`, `--impl`, `--battery`, `--no-verify` and `list --family <name>` narrow the
@@ -42,25 +45,61 @@ run. Partial JSONL is streamed line-by-line; a crashed run leaves a prefix that
 
 ---
 
-## Committed artifacts & index
+## Committed artifacts & the run log (flat layout)
 
-The canonical measurement outputs are **committed to this repository** under
-`results/` (standard + quick profiles, the interactive report, the registry
-dump, CSV exports and the manifest). `results/README.md` is the index of record:
-it names every artifact, how it was generated, and how to refresh it.
-`results/manifest.json` is the machine-readable companion — per file: path,
-SHA-256, byte count, and for the JSONL files the record histogram, meta
-fingerprint, summary footer and verification verdict. Rebuild it with
-`make measure-index` (powered by `bigbuff-measure index`); it exits non-zero if
-any JSONL file fails verification. `make clean` intentionally does not touch
-`results/`.
+This repository is **flat** (see AGENTS.md): every file lives at the root. The
+measurement artifacts therefore live at the root too — there is **no `results/`
+directory**. Artifacts are grouped into zero-padded, numerically ordered *run
+groups* so the tree reads as a log:
+
+```
+results-<rr>-<ss>-<slug>.<ext>
+```
+
+- `rr` — run sequence, two digits: `00` is the documentation group, `01..` are
+  measurement runs in commit order (run 01 = standard profile, run 02 = quick).
+- `ss` — slot within the run, two digits:
+  - `00` — `results-NN-00-manifest.json` (the run's manifest; **first file of the group**)
+  - `01` — `results-NN-01-results.jsonl` (the JSONL results)
+  - `02` — `results-NN-02-registry.json` (scenario/case/attachment registry dump)
+  - `03` — `results-NN-03-report.html` (self-contained interactive report)
+  - `04` — `results-NN-04-metrics_wide.csv` (flattened metric records)
+  - `05` — `results-NN-05-scores.csv` (adoptability scores and verdicts)
+- `slug` — free-form lower-snake descriptor (`results`, `manifest`, `report`, `readme`, …).
+
+**Enumeration contract.** Iterate the listing `results-*-*-*` in sorted
+(lexicographic = numeric, thanks to zero-padding) order. Each run group consists
+exactly of the files sharing its `rr`; the first file of a group is always the
+manifest, which carries every detail needed to interpret the rest (mirroring a
+`go test -bench` output header): the run sequence, the full meta fingerprint —
+machine (`cpu`, `num_cpu`, `gomaxprocs`), OS/arch, Go toolchain, git commit,
+profile, seed, hostname captured at index time — plus duration, record histogram,
+per-file SHA-256 and byte counts, and the verification verdict. Reading the log
+of runs is: glob, sort, then walk groups; manifest first, artifacts after.
+
+**The documentation group** (`rr = 00`) holds exactly one file,
+`results-00-00-readme.md` — the human index of record: what each run contains,
+provenance, and how to refresh.
+
+**Manifests are regenerated, never hand-edited.** `make measure-index` (powered
+by `bigbuff-measure index --dir .`) rewrites every `results-NN-00-manifest.json`
+from the bytes on disk: hashes, sizes, record histograms, and a fresh
+verification verdict per JSONL (it exits non-zero if any run fails
+verification). Re-running it after changing artifacts is mandatory; diff a
+regenerated manifest to detect drift. The manifest does not hash itself.
+
+**Refreshing a run.** Runs are produced with `make measure` (or the per-profile
+targets), which allocates the next free `rr` automatically (override with
+`MEASURE_RUN=N`). To refresh the committed log: run the pipeline, then
+`git add results-*-*.*` and commit. `make clean` intentionally does not touch
+these committed artifacts.
 
 ## Data contracts
 
-### Results: JSONL schema v1 (`results/*.jsonl`)
+### Results: JSONL schema v1 (`results-NN-01-results.jsonl`)
 
-One JSON object per line. The committed files are `results/measurements.jsonl`
-(standard profile) and `results/quick.jsonl` (quick profile). `type` is one of:
+One JSON object per line. The committed files are `results-01-01-results.jsonl`
+(standard profile) and `results-02-01-results.jsonl` (quick profile). `type` is one of:
 
 | type      | meaning                                                            |
 |-----------|--------------------------------------------------------------------|
@@ -90,7 +129,10 @@ One JSON object per line. The committed files are `results/measurements.jsonl`
 | `withdrawal_compensation_success` | caster: fraction of rounds where `Add(-1)` unstuck a parked `Send` |
 | `median_round_ns` | withdrawal round latency |
 
-### Registry: `results/registry.json` (`dump-registry`)
+### Registry: `results-NN-02-registry.json` (`dump-registry`)
+
+Committed at slot `02` of the run that ships the matching report
+(`results-01-02-registry.json`). Dump fresh with `make measure-registry`.
 
 `{type, schema, scenarios, cases, attachments}`. Attachments bind implementations to
 scenarios with `expected_good_fit` (bool), `exposure_limited` (bool), `remarks`
@@ -99,10 +141,15 @@ dangling references; the report's coverage matrix consumes the same file.
 
 ### Report exports
 
-`make measure-report` additionally writes `results/csv/metrics_wide.csv` (one row per
-metric record) and `scores.csv` (per-family adoptability scores + verdicts). The HTML
-report embeds the full JSONL + registry and can download all three, plus a JSONL
-re-export, client-side.
+`make measure-report` (or `bigbuff-measure report`) additionally writes the
+run's `-04-metrics_wide.csv` (one row per metric record) and `-05-scores.csv`
+(per-family adoptability scores + verdicts); output paths default into the same
+run group (`--csv-metrics` / `--csv-scores` override). CSV output is
+deterministic: `metrics_wide.csv` follows the JSONL record order, `scores.csv`
+is sorted by family asc, score desc, then impl asc — regenerating from the same
+results file and registry reproduces both byte-for-byte (so does the HTML
+report). The HTML report embeds the full JSONL + registry and can download all
+three, plus a JSONL re-export, client-side.
 
 ---
 

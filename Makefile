@@ -126,7 +126,7 @@ cover: go.cover ## Run tests with coverage and generate coverage report.
 doc: go.doc ## Run go doc.
 
 ##@ Measurement Targets
-# Batteries, verification and the interactive report. See MEASUREMENT.md.
+# Batteries, verification and the interactive report. See measurement.md.
 
 .PHONY: measure
 measure: measure.pipeline ## Run the standard measurement profile, verify, and build the HTML report.
@@ -153,7 +153,7 @@ measure-report: measure.report ## Rebuild the interactive HTML report + CSVs fro
 measure-registry: measure.registry ## Dump the scenario/attachment registry to JSON.
 
 .PHONY: measure-index
-measure-index: measure.index ## Rebuild results/manifest.json (SHA-256 index of the committed artifacts).
+measure-index: measure.index ## Rebuild every results-NN-00-manifest.json (SHA-256 index of committed run groups).
 
 .PHONY: measure-ci
 measure-ci: measure.ci ## CI gate: quick profile + verification.
