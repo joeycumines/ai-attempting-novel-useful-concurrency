@@ -42,11 +42,25 @@ run. Partial JSONL is streamed line-by-line; a crashed run leaves a prefix that
 
 ---
 
+## Committed artifacts & index
+
+The canonical measurement outputs are **committed to this repository** under
+`results/` (standard + quick profiles, the interactive report, the registry
+dump, CSV exports and the manifest). `results/README.md` is the index of record:
+it names every artifact, how it was generated, and how to refresh it.
+`results/manifest.json` is the machine-readable companion — per file: path,
+SHA-256, byte count, and for the JSONL files the record histogram, meta
+fingerprint, summary footer and verification verdict. Rebuild it with
+`make measure-index` (powered by `bigbuff-measure index`); it exits non-zero if
+any JSONL file fails verification. `make clean` intentionally does not touch
+`results/`.
+
 ## Data contracts
 
 ### Results: JSONL schema v1 (`results/*.jsonl`)
 
-One JSON object per line. `type` is one of:
+One JSON object per line. The committed files are `results/measurements.jsonl`
+(standard profile) and `results/quick.jsonl` (quick profile). `type` is one of:
 
 | type      | meaning                                                            |
 |-----------|--------------------------------------------------------------------|

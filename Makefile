@@ -152,5 +152,8 @@ measure-report: measure.report ## Rebuild the interactive HTML report + CSVs fro
 .PHONY: measure-registry
 measure-registry: measure.registry ## Dump the scenario/attachment registry to JSON.
 
+.PHONY: measure-index
+measure-index: measure.index ## Rebuild results/manifest.json (SHA-256 index of the committed artifacts).
+
 .PHONY: measure-ci
 measure-ci: measure.ci ## CI gate: quick profile + verification.
