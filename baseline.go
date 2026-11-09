@@ -552,18 +552,35 @@ type BaselineScatterQueue[V any] struct {
 	C  chan V
 	mu sync.Mutex
 	n  int
+	// gone is open while at least one receiver is registered and closed once the
+	// count returns to zero. A send that has passed the count check waits on it,
+	// so the last withdrawal releases an in-flight admission instead of leaving it
+	// blocked on a channel that no receiver will ever read.
+	gone chan struct{}
 }
 
 func NewBaselineScatterQueue[V any]() *BaselineScatterQueue[V] {
-	return &BaselineScatterQueue[V]{C: make(chan V)}
+	gone := make(chan struct{})
+	close(gone)
+	return &BaselineScatterQueue[V]{C: make(chan V), gone: gone}
 }
 
 func (x *BaselineScatterQueue[V]) Add(delta int) int {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	prev := x.n
 	x.n += delta
-	if x.n < 0 {
+	underflow := x.n < 0
+	if underflow {
 		x.n = 0
+	}
+	switch {
+	case prev == 0 && x.n > 0:
+		x.gone = make(chan struct{})
+	case prev > 0 && x.n == 0:
+		close(x.gone)
+	}
+	if underflow {
 		panic(`bigbuff: baseline scatter: receiver count underflow`)
 	}
 	return x.n
@@ -571,13 +588,19 @@ func (x *BaselineScatterQueue[V]) Add(delta int) int {
 
 func (x *BaselineScatterQueue[V]) Send(v V) int {
 	x.mu.Lock()
-	n := x.n
+	n, gone := x.n, x.gone
 	x.mu.Unlock()
 	if n == 0 {
 		return 0
 	}
-	x.C <- v
-	return 1
+	select {
+	case x.C <- v:
+		return 1
+	case <-gone:
+		// The last receiver withdrew while this admission was in flight. Nothing
+		// was delivered, so report that rather than wait on a channel nobody reads.
+		return 0
+	}
 }
 
 // BaselineGatherBarrier is the vacuum N-to-1 signal gatherer: a mutex-guarded
