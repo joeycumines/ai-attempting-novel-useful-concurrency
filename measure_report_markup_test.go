@@ -9,6 +9,17 @@ const reportHTMLBody = `<body>
     <div class="mark">B</div>
     <div><h1>bigbuff</h1><small>Concurrency Measurement</small></div>
   </div>
+  <!-- START AUTOMATED BACKLINKS -->
+  <div class="nav-backlinks" style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:5px">
+    <a href="index.html" style="color:var(--cyan);font-weight:600;display:flex;align-items:center;gap:6px" title="Return to Landing Page">
+      <span style="font-size:12px">&larr;</span> <span>Landing Page</span>
+    </a>
+    <a href="report-01-gemini-flash-3.8-high.html" style="color:var(--ink2);font-size:12px" title="Architectural &amp; Empirical Analysis Report">Architectural Analysis</a>
+    <a href="01-readme.md" style="color:var(--ink2);font-size:12px" title="Gist Entry Point &amp; Response Index">Gist Index (01-readme.md)</a>
+    <a href="https://github.com/joeycumines/ai-attempting-novel-useful-concurrency" target="_blank" rel="noopener" style="color:var(--ink2);font-size:12px" title="GitHub Repository">GitHub Repository</a>
+    <a href="README.md" style="color:var(--ink2);font-size:12px" title="Project README">README.md</a>
+  </div>
+  <!-- END AUTOMATED BACKLINKS -->
   <a href="#overview" class="active"><span class="dot"></span>Overview</a>
   <a href="#findings"><span class="dot"></span>Key Findings</a>
   <a href="#scaling"><span class="dot"></span>Scaling Curves</a>
@@ -43,6 +54,18 @@ const reportHTMLBody = `<body>
   <a href="#data">Data &amp; Exports</a>
 </nav>
 <main>
+
+<!-- START AUTOMATED MOBILE TOPBAR -->
+<div class="mobile-topbar" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:24px;font-size:12.5px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+  <a href="index.html" style="color:var(--cyan);text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:6px">
+    <span>&larr;</span> <span>Landing Page</span>
+  </a>
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="01-readme.md" style="color:var(--ink2);text-decoration:none">Gist Index</a>
+    <a href="https://github.com/joeycumines/ai-attempting-novel-useful-concurrency" target="_blank" rel="noopener" style="color:var(--ink2);text-decoration:none">GitHub</a>
+  </div>
+</div>
+<!-- END AUTOMATED MOBILE TOPBAR -->
 
 <!-- ══════════════ OVERVIEW ══════════════ -->
 <header id="hero">
