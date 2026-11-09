@@ -82,21 +82,30 @@ include $(PROJECT_ROOT)/go.mk
 # Measurement batteries makefile (lives at flat root per gist constraints).
 include $(PROJECT_ROOT)/measure.mk
 
+# Landing page & report wire-up makefile (lives at flat root per gist constraints).
+include $(PROJECT_ROOT)/site.mk
+
 ##@ Standard Targets
 # https://www.gnu.org/software/make/manual/html_node/Standard-Targets.html
 
 .PHONY: all
-all: go.all ## Builds all packages, runs linters, and executes the test suite.
+all: go.all site.build ## Builds all packages, runs linters, executes the test suite, and builds/wires the site.
 
 .PHONY: check
-check: all ## Runs all checks (alias for all).
+check: all site.check ## Runs all checks (alias for all).
 
 .PHONY: clean
 clean: _clean go.clean ## Clean up all generated files and coverage reports.
 .PHONY: _clean
-_clean: measure.clean
+_clean: measure.clean site.clean
 
 ##@ Other Targets
+
+.PHONY: site
+site: site.build ## Build/update landing page and wire report links and backlinks.
+
+.PHONY: wire-reports
+wire-reports: site.wire ## Wire up report links and backlinks across all reports.
 
 .PHONY: build
 build: go.build ## Compile all packages.

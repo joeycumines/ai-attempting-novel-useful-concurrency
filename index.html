@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>AI Attempting Novel Useful Concurrency in Go · bigbuff</title>
+<meta name="description" content="Empirical benchmark, architectural analysis, and verification of 58+ AI model outputs implementing novel synchronous Go channel concurrency patterns.">
+<style>
+:root {
+  --bg: #070b14;
+  --bg2: #0b1020;
+  --panel: #0e1530;
+  --panel2: #121a3a;
+  --panel3: #182148;
+  --line: #1f2a55;
+  --line2: #2b3a6e;
+  --ink: #e8ecf8;
+  --ink2: #a9b3d6;
+  --ink3: #6b769e;
+  --cyan: #22d3ee;
+  --indigo: #818cf8;
+  --violet: #a78bfa;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --orange: #fb923c;
+  --red: #f87171;
+  --teal: #2dd4bf;
+  --radius: 14px;
+  --shadow: 0 18px 50px rgba(0,0,0,.45);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+::selection { background: rgba(129,140,248,.35); }
+a { color: var(--cyan); text-decoration: none; transition: color .18s; }
+a:hover { color: #a5f3fc; text-decoration: underline; }
+
+/* Top Navbar */
+header.site-nav {
+  position: sticky; top: 0; z-index: 1000;
+  background: rgba(11,16,32,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line); padding: 12px 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.nav-brand { display: flex; align-items: center; gap: 12px; }
+.nav-brand .mark {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: conic-gradient(from 210deg, var(--cyan), var(--indigo), var(--violet), var(--cyan));
+  display: grid; place-items: center; font-weight: 800; color: #060a17; font-size: 18px;
+  box-shadow: 0 0 20px rgba(56,189,248,.35);
+}
+.nav-brand h1 { font-size: 15px; letter-spacing: .02em; line-height: 1.2; color: #fff; }
+.nav-brand small { display: block; color: var(--ink3); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+
+.nav-links { display: flex; align-items: center; gap: 20px; font-size: 13px; font-weight: 500; }
+.nav-links a { color: var(--ink2); }
+.nav-links a:hover { color: #fff; text-decoration: none; }
+.nav-actions { display: flex; align-items: center; gap: 10px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600;
+  border: 1px solid var(--line2); background: var(--panel); color: var(--ink);
+  cursor: pointer; transition: all .18s; text-decoration: none !important;
+}
+.btn:hover { background: var(--panel2); border-color: var(--cyan); color: #fff; transform: translateY(-1px); }
+.btn-primary {
+  background: linear-gradient(90deg, #0e7490, #312e81); border-color: #38bdf8; color: #f0f9ff;
+}
+.btn-primary:hover { background: linear-gradient(90deg, #0891b2, #3730a3); border-color: #67e8f9; color: #fff; }
+
+/* Container */
+.container { max-width: 1440px; margin: 0 auto; padding: 32px 32px 80px; }
+
+/* Hero Section */
+.hero {
+  position: relative; overflow: hidden; border: 1px solid var(--line2); border-radius: 20px;
+  padding: 44px 44px 38px;
+  background: radial-gradient(1100px 480px at 12% -10%, rgba(99,102,241,.32), transparent 55%),
+              radial-gradient(900px 420px at 95% 0%, rgba(34,211,238,.18), transparent 50%),
+              linear-gradient(180deg, #101736, #0b1020);
+  box-shadow: var(--shadow); margin-bottom: 48px;
+}
+.hero::after {
+  content: ""; position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(148,163,216,.12) 1px, transparent 1px);
+  background-size: 22px 22px; pointer-events: none;
+  mask-image: linear-gradient(180deg, #000 20%, transparent 90%);
+}
+.kicker {
+  font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--cyan);
+  font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
+}
+.hero h2 {
+  font-size: 38px; letter-spacing: -.02em; line-height: 1.15; max-width: 960px; position: relative; color: #fff;
+}
+.hero h2 em {
+  font-style: normal;
+  background: linear-gradient(90deg, #67e8f9, #a5b4fc 55%, #c4b5fd);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero p.lead {
+  color: var(--ink2); margin-top: 14px; max-width: 860px; font-size: 15.5px; position: relative; line-height: 1.6;
+}
+.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; position: relative; z-index: 2; }
+.hero-cta .btn { padding: 10px 18px; font-size: 13.5px; border-radius: 10px; }
+
+.kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-top: 28px; position: relative;
+}
+.kpi {
+  background: rgba(9,13,30,.65); border: 1px solid var(--line2); border-radius: 14px; padding: 14px 18px;
+}
+.kpi .v { font-size: 28px; font-weight: 750; letter-spacing: -.01em; font-family: var(--mono); color: #fff; }
+.kpi .l { font-size: 11px; color: var(--ink2); text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; font-weight: 600; }
+.kpi .s { font-size: 11px; color: var(--ink3); margin-top: 3px; }
+
+/* Section Styling */
+section.block { margin-bottom: 56px; scroll-margin-top: 80px; }
+h3.section-title { font-size: 24px; letter-spacing: -.01em; color: #fff; margin-bottom: 8px; }
+.lede { color: var(--ink2); max-width: 900px; font-size: 14px; margin-bottom: 20px; }
+
+/* Featured Reports Grid */
+.reports-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+.report-card {
+  background: linear-gradient(180deg, var(--panel), var(--bg2));
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 24px 26px;
+  position: relative; overflow: hidden; transition: all .2s; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; justify-content: space-between;
+}
+.report-card:hover { border-color: var(--line2); transform: translateY(-2px); }
+.report-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+}
+.report-card.meas::before { background: linear-gradient(180deg, var(--cyan), var(--indigo)); }
+.report-card.arch::before { background: linear-gradient(180deg, var(--violet), var(--teal)); }
+.report-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em;
+  padding: 3px 10px; border-radius: 999px; margin-bottom: 12px;
+}
+.report-card.meas .report-badge { background: rgba(34,211,238,.12); color: var(--cyan); border: 1px solid rgba(34,211,238,.3); }
+.report-card.arch .report-badge { background: rgba(167,139,250,.12); color: var(--violet); border: 1px solid rgba(167,139,250,.3); }
+.report-card h4 { font-size: 18px; color: #fff; margin-bottom: 8px; line-height: 1.3; }
+.report-card p { font-size: 13.5px; color: var(--ink2); line-height: 1.55; margin-bottom: 18px; }
+.report-features { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 22px; font-size: 12.5px; color: var(--ink2); }
+.report-features li { display: flex; align-items: center; gap: 8px; }
+.report-features li span.dot { width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); flex: none; }
+.report-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
+
+/* Card Panels */
+.card {
+  background: linear-gradient(180deg, var(--panel), var(--bg2));
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.card.pad { padding: 22px 24px; }
+
+/* Filter Toolbars */
+.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.search-input {
+  background: var(--panel2); border: 1px solid var(--line2); color: var(--ink);
+  border-radius: 8px; padding: 8px 14px; font-size: 13px; min-width: 240px; outline: none;
+}
+.search-input:focus { border-color: var(--cyan); }
+.filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill {
+  cursor: pointer; border: 1px solid var(--line2); background: var(--panel);
+  color: var(--ink2); font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 8px; transition: all .15s;
+}
+.pill:hover { color: var(--ink); border-color: var(--line); }
+.pill.active { background: linear-gradient(90deg, #164e63, #312e81); border-color: #38bdf8; color: #fff; font-weight: 600; }
+
+/* Tables */
+.tbl-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); max-height: 580px; }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; text-align: left; }
+table.tbl th {
+  position: sticky; top: 0; background: #131b3f; color: var(--ink2); padding: 11px 12px;
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase; border-bottom: 1px solid var(--line2);
+  white-space: nowrap; cursor: pointer; user-select: none;
+}
+table.tbl td { padding: 9px 12px; border-bottom: 1px solid rgba(31,42,85,.5); vertical-align: middle; }
+table.tbl tr:hover td { background: rgba(99,102,241,.06); }
+
+.scorebar { position: relative; height: 16px; background: #1a2350; border-radius: 4px; min-width: 110px; overflow: hidden; }
+.scorebar .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg, #0e7490, #22d3ee); }
+.scorebar span { position: absolute; left: 6px; top: 1px; font-size: 10.5px; font-weight: 700; color: #04121a; }
+
+.verdict { font-size: 11px; font-weight: 700; white-space: nowrap; }
+.v-strong { color: var(--green); }
+.v-situational { color: var(--amber); }
+.v-niche { color: var(--orange); }
+.v-avoid { color: var(--red); }
+
+.tag {
+  display: inline-block; font-size: 10px; font-family: var(--mono);
+  border: 1px solid var(--line2); padding: 2px 7px; border-radius: 4px; color: var(--ink2);
+}
+.tag-prov { color: var(--indigo); border-color: rgba(129,140,248,.3); background: rgba(129,140,248,.08); }
+.tag-prompt { color: var(--cyan); border-color: rgba(34,211,238,.3); background: rgba(34,211,238,.08); }
+
+/* Grid Cards for Paradigms & Findings */
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.f-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px 20px; position: relative; overflow: hidden;
+}
+.f-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--cyan); }
+.f-card.danger::before { background: var(--red); }
+.f-card.warn::before { background: var(--amber); }
+.f-card.info::before { background: var(--indigo); }
+.f-card h4 { font-size: 14.5px; color: #fff; margin-bottom: 6px; line-height: 1.35; }
+.f-card p { font-size: 12.5px; color: var(--ink2); line-height: 1.5; }
+
+/* Footer */
+footer.site-foot {
+  border-top: 1px solid var(--line); padding: 40px 32px 30px; color: var(--ink3); font-size: 12px; line-height: 1.7;
+  display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 24px;
+}
+footer.site-foot a { color: var(--ink2); }
+footer.site-foot a:hover { color: var(--cyan); }
+
+@media (max-width: 900px) {
+  header.site-nav { flex-direction: column; align-items: flex-start; padding: 14px 20px; }
+  .nav-links { display: none; }
+  .container { padding: 20px 16px 60px; }
+  .hero { padding: 28px 22px; }
+  .hero h2 { font-size: 28px; }
+  .reports-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header class="site-nav">
+  <div class="nav-brand">
+    <div class="mark">b</div>
+    <div>
+      <h1>bigbuff</h1>
+      <small>AI Concurrency Benchmark</small>
+    </div>
+  </div>
+  <nav class="nav-links">
+    <a href="#reports">Reports</a>
+    <a href="#leaderboard">Leaderboard</a>
+    <a href="#responses">58 Responses</a>
+    <a href="#paradigms">Paradigms</a>
+    <a href="#baselines">Baselines</a>
+    <a href="#pathology">Pathology Lab</a>
+    <a href="#downloads">Datasets</a>
+  </nav>
+  <div class="nav-actions">
+    <a href="results-01-03-report.html" class="btn btn-primary" title="Launch Run 01 Measurement Report">Measurement Report (Run 01)</a>
+    <a href="report-01-gemini-flash-3.8-high.html" class="btn" title="View Architectural Evolution Analysis">Architectural Analysis</a>
+    <a href="https://github.com/joeycumines/ai-attempting-novel-useful-concurrency" target="_blank" rel="noopener" class="btn" title="GitHub Repository">GitHub Repo</a>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="kicker"><span>Empirical Concurrency Research</span> &middot; <span>Deterministic Harness</span></div>
+    <h2>AI Attempting <em>Novel Useful Concurrency</em> in Go</h2>
+    <p class="lead">
+      We challenged <strong>58 AI model configurations</strong> with a one-shot prompt requiring novel, low-allocation Go concurrency primitives for synchronous channel broadcast. We then extracted, repaired in spirit, and measured <strong>116 concurrent primitives</strong> against 10 staff-engineer baselines across 18 scenarios and 2,013 deterministic benchmark runs.
+    </p>
+    <div class="hero-cta">
+      <a href="results-01-03-report.html" class="btn btn-primary">Measurement Report (Run 01 &middot; Standard)</a>
+      <a href="results-02-03-report.html" class="btn">Measurement Report (Run 02 &middot; Quick)</a>
+      <a href="report-01-gemini-flash-3.8-high.html" class="btn">Architectural &amp; Empirical Analysis</a>
+      <a href="#responses" class="btn">Browse 58 Responses</a>
+      <a href="https://github.com/joeycumines/ai-attempting-novel-useful-concurrency" target="_blank" rel="noopener" class="btn">GitHub Repository</a>
+    </div>
+    <div class="kpis">
+      <div class="kpi">
+        <div class="v">58</div>
+        <div class="l">Model Responses</div>
+        <div class="s">OpenAI, Anthropic, Google, DeepSeek, Qwen...</div>
+      </div>
+      <div class="kpi">
+        <div class="v">116</div>
+        <div class="l">Evaluated Primitives</div>
+        <div class="s">Casters, PubSubs, Rings, Epochs, Fans</div>
+      </div>
+      <div class="kpi">
+        <div class="v">18 / 291</div>
+        <div class="l">Scenarios / Attachments</div>
+        <div class="s">Strict exhaustiveness invariants</div>
+      </div>
+      <div class="kpi">
+        <div class="v">2,013</div>
+        <div class="l">Measurements (Run 01)</div>
+        <div class="s">Verified PASS across all batteries</div>
+      </div>
+      <div class="kpi">
+        <div class="v">0</div>
+        <div class="l">Test Flakiness</div>
+        <div class="s">100% deterministic ack/ready synchronization</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REPORTS HUB -->
+  <section class="block" id="reports">
+    <div class="kicker">Interactive Analysis &amp; Data Hub</div>
+    <h3 class="section-title">Comprehensive Reports &amp; Artifacts</h3>
+    <p class="lede">
+      Every report is completely self-contained with embedded data &mdash; no CDNs or external assets. Open them online or locally from disk via <code>file://</code>.
+    </p>
+
+    <div class="reports-grid">
+      <!-- Card 1: Measurement Report Run 01 -->
+      <div class="report-card meas">
+        <div>
+          <span class="report-badge">Interactive Report &middot; Run 01 (Standard Profile)</span>
+          <h4>Measurement Report (Run 01 &middot; Standard)</h4>
+          <p>
+            The master decision-grade benchmark report computed from 2,013 JSONL records. Features interactive throughput scaling curves (1&rarr;64 subscribers), adoptability radar, latency percentiles (p50/p90/p99), memory allocations, churn costs, and the Pathology Lab.
+          </p>
+          <ul class="report-features">
+            <li><span class="dot"></span> <strong>Interactive Scaling Curves:</strong> Toggle implementations, inspect log&sup2; fan-out scaling</li>
+            <li><span class="dot"></span> <strong>Adoptability Leaderboard:</strong> 116 primitives scored by throughput, latency, memory &amp; stability</li>
+            <li><span class="dot"></span> <strong>Pathology Lab:</strong> Concrete case studies of races, deadlocks, and silent drops</li>
+            <li><span class="dot"></span> <strong>Scenario Coverage Matrix:</strong> Complete 18-scenario attachment and baseline grid</li>
+          </ul>
+        </div>
+        <div class="report-actions">
+          <a href="results-01-03-report.html" class="btn btn-primary">Open Run 01 Report &rarr;</a>
+          <div style="display:flex;gap:8px">
+            <a href="results-01-04-metrics_wide.csv" download class="btn" title="Download Flattened Metrics CSV">Metrics CSV</a>
+            <a href="results-01-05-scores.csv" download class="btn" title="Download Scores CSV">Scores CSV</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Measurement Report Run 02 -->
+      <div class="report-card meas">
+        <div>
+          <span class="report-badge">Interactive Report &middot; Run 02 (Quick Profile)</span>
+          <h4>Measurement Report (Run 02 &middot; Quick)</h4>
+          <p>
+            The fast smoke / CI-grade benchmark report computed from 1,479 JSONL records. Provides rapid verification across all registered primitives with identical visual tooling and metric exports.
+          </p>
+          <ul class="report-features">
+            <li><span class="dot"></span> <strong>CI-Grade Verification:</strong> 1,479 verified records across all scenario attachments</li>
+            <li><span class="dot"></span> <strong>Identical Analytics:</strong> Full scaling charts, adoptability scorecards, and data downloads</li>
+            <li><span class="dot"></span> <strong>Run Comparison:</strong> Evaluates consistency across toolchain revisions</li>
+          </ul>
+        </div>
+        <div class="report-actions">
+          <a href="results-02-03-report.html" class="btn btn-primary">Open Run 02 Report &rarr;</a>
+          <div style="display:flex;gap:8px">
+            <a href="results-02-04-metrics_wide.csv" download class="btn" title="Download Flattened Metrics CSV">Metrics CSV</a>
+            <a href="results-02-05-scores.csv" download class="btn" title="Download Scores CSV">Scores CSV</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Architectural Analysis Report -->
+      <div class="report-card arch">
+        <div>
+          <span class="report-badge">Structural Analysis &middot; Gemini 3.8 Flash</span>
+          <h4>Architectural &amp; Empirical Evolution Report</h4>
+          <p>
+            An in-depth structural review of Go channel broadcast evolution. Unpacks protocol constructions, explicit registration/receive contracts, safe mid-flight withdrawal mechanics, O(1) control-plane state, and select compatibility.
+          </p>
+          <ul class="report-features">
+            <li><span class="dot"></span> <strong>Protocol Taxonomy:</strong> Lock-step vs Cursor Rings vs Epoch Gates vs RCU Fanout</li>
+            <li><span class="dot"></span> <strong>Zero-Allocation Analysis:</strong> Probing runtime slice escapes and interface conversions</li>
+            <li><span class="dot"></span> <strong>State Machine Teardown:</strong> Safe cancellation vs deadlock on blocked receivers</li>
+          </ul>
+        </div>
+        <div class="report-actions">
+          <a href="report-01-gemini-flash-3.8-high.html" class="btn btn-primary">Read Architectural Analysis &rarr;</a>
+          <a href="01-readme.md" class="btn">Extraction Tracker</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LEADERBOARD -->
+  <section class="block" id="leaderboard">
+    <div class="kicker">Adoptability Leaderboard</div>
+    <h3 class="section-title">Empirical Scorecards (116 Primitives)</h3>
+    <p class="lede">
+      Adoptability scores (0&ndash;100) computed from multi-dimensional statistical metrics: throughput, tail latency, allocation rate, subscriber churn resistance, fan-out scalability, and stall resilience.
+    </p>
+
+    <div class="card pad">
+      <div class="toolbar">
+        <input type="text" id="scoreSearch" class="search-input" placeholder="Search implementation, model, or baseline...">
+        <div class="filter-pills" id="familyPills">
+          <div class="pill active" data-family="all">All Families</div>
+          <div class="pill" data-family="broadcast">Broadcast (Lossless/Lossy)</div>
+          <div class="pill" data-family="caster">Casters (Rendezvous)</div>
+          <div class="pill" data-family="scatter">Scatter (Queue)</div>
+          <div class="pill" data-family="gather">Gather (Barrier)</div>
+          <div class="pill" data-family="payload">Payload (Async)</div>
+        </div>
+        <div class="filter-pills" id="verdictPills">
+          <div class="pill active" data-verdict="all">All Verdicts</div>
+          <div class="pill" data-verdict="Strong candidate">Strong Candidate</div>
+          <div class="pill" data-verdict="Situational">Situational</div>
+          <div class="pill" data-verdict="Niche">Niche</div>
+          <div class="pill" data-verdict="Avoid">Avoid</div>
+        </div>
+      </div>
+
+      <div class="tbl-wrap">
+        <table class="tbl" id="scoresTable">
+          <thead>
+            <tr>
+              <th>Family</th>
+              <th>Implementation / Origin</th>
+              <th>Adoptability Score</th>
+              <th>Verdict</th>
+              <th>Throughput</th>
+              <th>Latency</th>
+              <th>Memory</th>
+              <th>Scaling</th>
+              <th>Churn</th>
+            </tr>
+          </thead>
+          <tbody id="scoresBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- MODEL RESPONSES (58 RESPONSES) -->
+  <section class="block" id="responses">
+    <div class="kicker">One-Shot Prompt Archive</div>
+    <h3 class="section-title">58 AI Model Responses (03 &rarr; 58)</h3>
+    <p class="lede">
+      Filter, search, and inspect the raw outputs, prompt variants, extracted Go code, and chat links across all tested model providers.
+    </p>
+
+    <div class="card pad">
+      <div class="toolbar">
+        <input type="text" id="respSearch" class="search-input" placeholder="Filter by model, provider, Go file, or mechanism...">
+        <div class="filter-pills" id="providerPills">
+          <div class="pill active" data-prov="all">All Providers</div>
+          <div class="pill" data-prov="OpenAI">OpenAI</div>
+          <div class="pill" data-prov="Anthropic">Anthropic</div>
+          <div class="pill" data-prov="Google">Google</div>
+          <div class="pill" data-prov="DeepSeek">DeepSeek</div>
+          <div class="pill" data-prov="Alibaba / Qwen">Qwen</div>
+          <div class="pill" data-prov="Meta / Muse">Meta / Muse</div>
+          <div class="pill" data-prov="xAI / Grok">Grok</div>
+          <div class="pill" data-prov="Mistral AI">Mistral</div>
+          <div class="pill" data-prov="NVIDIA / Nemotron">Nemotron</div>
+          <div class="pill" data-prov="OpenRouter">OpenRouter</div>
+        </div>
+        <div class="filter-pills" id="promptPills">
+          <div class="pill active" data-prompt="all">All Prompts</div>
+          <div class="pill" data-prompt="Standard">Standard (02-prompt.md)</div>
+          <div class="pill" data-prompt="Prompt-Mini">Mini (02-prompt-mini.md)</div>
+          <div class="pill" data-prompt="Prompt-Safe">Safe (02-prompt-safe.md)</div>
+        </div>
+      </div>
+
+      <div class="tbl-wrap">
+        <table class="tbl" id="respTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Response File</th>
+              <th>Provider</th>
+              <th>Prompt</th>
+              <th>Extracted Primitive(s)</th>
+              <th>Go Source</th>
+              <th>Status / Mechanism</th>
+              <th>Chat Link</th>
+            </tr>
+          </thead>
+          <tbody id="respBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURAL PARADIGMS -->
+  <section class="block" id="paradigms">
+    <div class="kicker">Architectural Taxonomy</div>
+    <h3 class="section-title">7 Core Concurrency Paradigms</h3>
+    <p class="lede">
+      How AI models attempted to evolve beyond linear rendezvous and lock-step barriers.
+    </p>
+
+    <div class="cards-grid">
+      <div class="f-card info">
+        <h4>1. Lock-step PubSub &amp; Barrier Rendezvous</h4>
+        <p>
+          Zero-allocation synchronous handoff where sender blocks until all registered subscribers acknowledge. Evolved with phase-alternating generations (<code>PhasePubSub</code>, <code>GenPubSub</code>) and atomic acknowledgement planes (<code>ChanPubSub57DeepSeek</code>).
+        </p>
+      </div>
+      <div class="f-card info">
+        <h4>2. Synchronous Rendezvous Casters</h4>
+        <p>
+          Dynamic subscriber registries with explicit registration/receive contracts and safe mid-flight withdrawal (<code>ChanCaster</code>, <code>SeqCaster</code>, <code>SenseCaster</code>). Zero-allocation fast-paths achieve sub-microsecond latency.
+        </p>
+      </div>
+      <div class="f-card info">
+        <h4>3. Bounded Lossy &amp; Lossless Rings</h4>
+        <p>
+          Sequence-stamped ring buffers with atomic cursors (<code>RingPubSub</code>, <code>RingCaster55Haiku</code>, <code>PhantomCast</code>). Eliminates sender blocking while allowing subscribers to catch up or detect overruns.
+        </p>
+      </div>
+      <div class="f-card info">
+        <h4>4. Epoch Gates &amp; Generation Signals</h4>
+        <p>
+          Parity-flipped generation markers and channel-close fan-out (<code>EpochBroadcast</code>, <code>EpochTape</code>, <code>EpochCaster</code>). Wakes unbounded subscribers with O(1) control-plane operations.
+        </p>
+      </div>
+      <div class="f-card info">
+        <h4>5. Nonblocking Mailbox &amp; RCU Fanout</h4>
+        <p>
+          Copy-on-write subscriber arrays paired with per-consumer unbounded FIFO queues (<code>QueuedFanout24Meta</code>, <code>SelectFanout</code>, <code>Fanout56MaiCode</code>). Guarantees sender non-blocking at the cost of heap allocations.
+        </p>
+      </div>
+      <div class="f-card info">
+        <h4>6. Work Distribution / Competing Consumers</h4>
+        <p>
+          Distributes each item to exactly one receiver (<code>ChanScatter</code>, <code>BaselineScatterQueue</code>, <code>StableRing32Nano</code>). Safe mid-flight withdrawal prevents item loss when a consumer cancels.
+        </p>
+      </div>
+      <div class="f-card info">
+        <h4>7. Signal Gathering &amp; State Beacons</h4>
+        <p>
+          Inverted fan-in signal collection (<code>ChanGatherer</code>) and loss-tracking atomic state beacons (<code>ChanBeacon</code>, <code>RingBeacon</code>).
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- BASELINES -->
+  <section class="block" id="baselines">
+    <div class="kicker">Textbook Standard Practice</div>
+    <h3 class="section-title">10 Staff-Engineer Baselines</h3>
+    <p class="lede">
+      Every scenario is anchored by a textbook baseline (see <code>baseline.go</code>) &mdash; the simplest sound design an expert staff engineer would write in a vacuum.
+    </p>
+
+    <div class="card pad">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Variant / Scenario</th>
+              <th>Baseline Implementation</th>
+              <th>Source File</th>
+              <th>Textbook Design Rationale</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Lock-step Pub-Sub</strong></td>
+              <td><code>BaselineBarrierPubSub</code></td>
+              <td><code>baseline.go</code></td>
+              <td>Lossless synchronous broadcast using slice of subscriber channels with mutex barrier</td>
+            </tr>
+            <tr>
+              <td><strong>Rendezvous Caster</strong></td>
+              <td><code>BaselineRendezvousCaster</code></td>
+              <td><code>baseline.go</code></td>
+              <td>Rendezvous fan-out with explicit registration and per-send slice snapshot</td>
+            </tr>
+            <tr>
+              <td><strong>Latest-Value Coalescing</strong></td>
+              <td><code>BaselineLatestBroadcast</code></td>
+              <td><code>baseline.go</code></td>
+              <td>Single-slot atomic value buffer with rotating notification channel</td>
+            </tr>
+            <tr>
+              <td><strong>Buffered Lossless Broadcast</strong></td>
+              <td><code>BaselineBufferedBroadcast</code></td>
+              <td><code>baseline.go</code></td>
+              <td>Bounded per-subscriber channel buffers with backpressure blocking</td>
+            </tr>
+            <tr>
+              <td><strong>Work Distribution</strong></td>
+              <td><code>BaselineScatterQueue</code></td>
+              <td><code>baseline.go</code></td>
+              <td>Single-item dispatch to exactly one available worker via synchronized queue</td>
+            </tr>
+            <tr>
+              <td><strong>Signal Gathering</strong></td>
+              <td><code>BaselineGatherBarrier</code></td>
+              <td><code>baseline.go</code></td>
+              <td>N senders coordinate to unblock a single waiter via sync.WaitGroup / barrier</td>
+            </tr>
+            <tr>
+              <td><strong>Async Fan-Out</strong></td>
+              <td><code>BaselineFanout</code></td>
+              <td><code>baseline.go</code></td>
+              <td>Non-blocking worker goroutine per subscriber with unbounded channel queue</td>
+            </tr>
+            <tr>
+              <td><strong>Unbounded Queued Fan-Out</strong></td>
+              <td><code>BaselineQueuedFanout</code></td>
+              <td><code>baseline_queued.go</code></td>
+              <td>COW subscriber registry with non-blocking per-consumer FIFO mailboxes</td>
+            </tr>
+            <tr>
+              <td><strong>Bounded Scatter Queue</strong></td>
+              <td><code>BaselineBoundedScatterQueue</code></td>
+              <td><code>baseline_scatter_bounded.go</code></td>
+              <td>Fixed-ring competing consumer queue with exact overflow eviction</td>
+            </tr>
+            <tr>
+              <td><strong>Bounded Catch-up Replay</strong></td>
+              <td><code>BaselineBoundedReplay</code></td>
+              <td><code>baseline_replay_test.go</code></td>
+              <td>Synchronized live handoff with bounded history ring for late joiners</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- PATHOLOGY LAB -->
+  <section class="block" id="pathology">
+    <div class="kicker">Failure Mode Analysis</div>
+    <h3 class="section-title">Pathology Lab: Concurrency Traps in AI Code</h3>
+    <p class="lede">
+      Testing AI code under rigorous stress, race-detection, and fuzzing uncovered fundamental failure patterns.
+    </p>
+
+    <div class="cards-grid">
+      <div class="f-card danger">
+        <h4>1. Concurrent Mid-Flight Withdrawal Races</h4>
+        <p>
+          When a receiver abandons a <code>select</code> midway through a publication round, models frequently reused channel slots or completed a stale rendezvous, causing data races or double-deliveries.
+        </p>
+      </div>
+      <div class="f-card danger">
+        <h4>2. Deadlock on Unbuffered Hub Teardown</h4>
+        <p>
+          Calling <code>Close()</code> while a publisher or subscriber was blocked on an unbuffered rendezvous channel routinely deadlocked because the teardown routine waited for active rounds to complete.
+        </p>
+      </div>
+      <div class="f-card warn">
+        <h4>3. Hidden Lock Contention in "Non-Blocking" Paths</h4>
+        <p>
+          Several designs claimed lock-free non-blocking operation, but placed <code>sync.Mutex</code> inside <code>TrySend()</code>, causing catastrophic throughput collapse under 64-subscriber fan-out.
+        </p>
+      </div>
+      <div class="f-card warn">
+        <h4>4. Silent Message Loss in Ring Buffers</h4>
+        <p>
+          Ring buffer outputs frequently failed to stamp items with monotonic sequences, causing slow subscribers to read torn values or skip laps without ever noticing they fell behind.
+        </p>
+      </div>
+      <div class="f-card info">
+        <h4>5. Zero-Allocation Illusions</h4>
+        <p>
+          Over 60% of models claimed "0 allocations per send", but runtime profiling detected hidden allocations from interface boxing (<code>any</code>), slice headers escaping to heap, or ephemeral notification channels.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- RAW DATA & DOWNLOADS -->
+  <section class="block" id="downloads">
+    <div class="kicker">Raw Data &amp; Verification</div>
+    <h3 class="section-title">Committed Runs &amp; Datasets</h3>
+    <p class="lede">
+      All raw data is committed directly at repository root in the zero-padded run log (<code>results-*-*-*</code>).
+    </p>
+
+    <div class="card pad">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>Profile</th>
+              <th>Artifact File</th>
+              <th>Description</th>
+              <th>Verification</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Run 01</strong></td>
+              <td><span class="tag tag-prompt">standard</span></td>
+              <td><code>results-01-03-report.html</code></td>
+              <td>Interactive Concurrency Measurement Report (2,013 records)</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-01-03-report.html" class="btn btn-primary">Open Report</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 01</strong></td>
+              <td><span class="tag tag-prompt">standard</span></td>
+              <td><code>results-01-01-results.jsonl</code></td>
+              <td>Raw JSONL benchmark records (2.59 MB)</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-01-01-results.jsonl" download class="btn">Download JSONL</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 01</strong></td>
+              <td><span class="tag tag-prompt">standard</span></td>
+              <td><code>results-01-04-metrics_wide.csv</code></td>
+              <td>Flattened wide metrics CSV (294 KB)</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-01-04-metrics_wide.csv" download class="btn">Download CSV</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 01</strong></td>
+              <td><span class="tag tag-prompt">standard</span></td>
+              <td><code>results-01-05-scores.csv</code></td>
+              <td>Adoptability scores &amp; dimension verdicts CSV</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-01-05-scores.csv" download class="btn">Download CSV</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 01</strong></td>
+              <td><span class="tag tag-prompt">standard</span></td>
+              <td><code>results-01-02-registry.json</code></td>
+              <td>Scenario/Case/Attachment registry snapshot</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-01-02-registry.json" download class="btn">Download JSON</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 01</strong></td>
+              <td><span class="tag tag-prompt">standard</span></td>
+              <td><code>results-01-00-manifest.json</code></td>
+              <td>Run environment fingerprint &amp; SHA-256 manifest</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-01-00-manifest.json" download class="btn">Download JSON</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 02</strong></td>
+              <td><span class="tag tag-prov">quick</span></td>
+              <td><code>results-02-03-report.html</code></td>
+              <td>Interactive Concurrency Measurement Report (1,479 records)</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-02-03-report.html" class="btn btn-primary">Open Report</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 02</strong></td>
+              <td><span class="tag tag-prov">quick</span></td>
+              <td><code>results-02-01-results.jsonl</code></td>
+              <td>Smoke / CI profile JSONL (1.53 MB)</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-02-01-results.jsonl" download class="btn">Download JSONL</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 02</strong></td>
+              <td><span class="tag tag-prov">quick</span></td>
+              <td><code>results-02-04-metrics_wide.csv</code></td>
+              <td>Flattened wide metrics CSV (Run 02)</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-02-04-metrics_wide.csv" download class="btn">Download CSV</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 02</strong></td>
+              <td><span class="tag tag-prov">quick</span></td>
+              <td><code>results-02-05-scores.csv</code></td>
+              <td>Adoptability scores CSV (Run 02)</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-02-05-scores.csv" download class="btn">Download CSV</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 02</strong></td>
+              <td><span class="tag tag-prov">quick</span></td>
+              <td><code>results-02-00-manifest.json</code></td>
+              <td>Run 02 environment fingerprint &amp; SHA-256 manifest</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="results-02-00-manifest.json" download class="btn">Download JSON</a></td>
+            </tr>
+            <tr>
+              <td><strong>Analysis</strong></td>
+              <td><span class="tag tag-prov">empirical</span></td>
+              <td><code>report-01-gemini-flash-3.8-high.html</code></td>
+              <td>Architectural &amp; Empirical Evolution Analysis</td>
+              <td><span class="v-strong">PASS</span></td>
+              <td><a href="report-01-gemini-flash-3.8-high.html" class="btn">Open Analysis</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div>
+    <div style="font-weight:700;color:var(--ink);margin-bottom:4px">bigbuff &middot; AI Concurrency Benchmark</div>
+    <div>Copyright &copy; 2026 Joseph Cumines &middot; MIT License</div>
+    <div style="margin-top:6px;max-width:520px;color:var(--ink3)">
+      Flat layout constraint: all source files, reports, and manifests reside directly at the repository root to maintain sync with the original GitHub Gist.
+    </div>
+  </div>
+  <div style="display:flex;gap:32px;flex-wrap:wrap">
+    <div>
+      <div style="font-weight:600;color:var(--ink);margin-bottom:8px">Reports &amp; Analysis</div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <a href="results-01-03-report.html">Measurement Report (Run 01 &middot; Standard)</a>
+        <a href="results-02-03-report.html">Measurement Report (Run 02 &middot; Quick)</a>
+        <a href="report-01-gemini-flash-3.8-high.html">Architectural Evolution Report</a>
+        <a href="results-00-00-readme.md">Run Log Documentation</a>
+      </div>
+    </div>
+    <div>
+      <div style="font-weight:600;color:var(--ink);margin-bottom:8px">Repository Links</div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <a href="https://github.com/joeycumines/ai-attempting-novel-useful-concurrency" target="_blank" rel="noopener">GitHub Repository</a>
+        <a href="01-readme.md">Gist Index (01-readme.md)</a>
+        <a href="README.md">README.md</a>
+        <a href="measurement.md">Measurement Methodology</a>
+        <a href="AGENTS.md">AGENTS.md</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var RESPONSES = [{"num":"03","filename":"03-chatgpt-1.md","slug":"chatgpt-1","provider":"OpenAI","prompt_type":"Standard","impls":"ChanLatest","files":"chanlatest.go","state":"Slab-based latest-value broadcast with ring notification","chat_link":"","size":26491},{"num":"04","filename":"04-deepseek-v4.1-flash-chat.md","slug":"deepseek-v4.1-flash-chat","provider":"DeepSeek","prompt_type":"Standard","impls":"ChanFeed","files":"chanfeed.go","state":"Dynamic subscriber slice with lockless send fast-path","chat_link":"","size":16492},{"num":"05","filename":"05-qwen-3.8-max-chat.md","slug":"qwen-3.8-max-chat","provider":"Alibaba / Qwen","prompt_type":"Standard","impls":"ChanGatherer","files":"changatherer.go","state":"Signal gathering barrier \u0026 broadcast with O(1) state","chat_link":"","size":16106},{"num":"06","filename":"06-meta-chat-probably-muse-spark-1.3.md","slug":"meta-chat-probably-muse-spark-1.3","provider":"Meta / Muse","prompt_type":"Standard","impls":"ChanCasterV2_06meta, ChanPubSubV2_06meta, GenCaster","files":"chancaster_06_meta.go, chanpubsub_06_meta.go, gencaster.go","state":"Generational barrier pub-sub \u0026 lock-free fast-path caster","chat_link":"","size":8094},{"num":"07","filename":"07-qwen-3.8-max-arena.md","slug":"qwen-3.8-max-arena","provider":"Alibaba / Qwen","prompt_type":"Standard","impls":"ChanBeacon, ChanRotor","files":"chanbeacon.go, chanrotor.go","state":"State beacon notification \u0026 round-robin ring dispatcher","chat_link":"","size":20637},{"num":"08","filename":"08-muse-spark-open-arena.md","slug":"muse-spark-open-arena","provider":"Meta / Muse","prompt_type":"Standard","impls":"RingBeacon, ReliableBeacon, Beacon","files":"ring_beacon.go, reliable_beacon.go, beacon.go","state":"Lock-free atomic generation beacons with loss tracking","chat_link":"","size":16727},{"num":"09","filename":"09-gemini-argon-medium.md","slug":"gemini-argon-medium","provider":"Google","prompt_type":"Standard","impls":"ChanCaster09Gemini, ChanPubSub09Gemini, EpochCasterGemini","files":"chancaster_09_gemini.go, chanpubsub_09_gemini.go, epochcaster_09_gemini.go","state":"Epoch-based generational caster and lock-step pub-sub","chat_link":"","size":58954},{"num":"10","filename":"10-gemini-argon-medium.md","slug":"gemini-argon-medium","provider":"Google","prompt_type":"Standard","impls":"ChanPubSub10Gemini, EpochTape","files":"chanpubsub_10_gemini.go, epochtape.go","state":"Generational ring buffer tape \u0026 synchronous pub-sub","chat_link":"","size":34468},{"num":"11","filename":"11-meta-chat-probably-muse-spark-1.3.md","slug":"meta-chat-probably-muse-spark-1.3","provider":"Meta / Muse","prompt_type":"Standard","impls":"ChanCaster11Meta, EpochPubSub","files":"chancaster_11_meta.go, epochpubsub_11_meta.go","state":"Epoch-fenced atomic publication barrier \u0026 zero-allocation caster","chat_link":"","size":6473},{"num":"12","filename":"12-openrouter-crouton-alpha-chat.md","slug":"openrouter-crouton-alpha-chat","provider":"OpenRouter","prompt_type":"Standard","impls":"ChanFanout, ChanRelay","files":"chanfanout.go, chanrelay.go","state":"Asynchronous ring buffer fan-out \u0026 buffered relay","chat_link":"","size":32007},{"num":"13","filename":"13-openrouter-crouton-alpha-chat.md","slug":"openrouter-crouton-alpha-chat","provider":"OpenRouter","prompt_type":"Standard","impls":"EpochCaster13Crouton","files":"epochcaster_13_crouton.go","state":"Ref-counted epoch caster over shared sequence ring","chat_link":"","size":25660},{"num":"14","filename":"14-xing4.0-29b-a4b.md","slug":"xing4.0-29b-a4b","provider":"Xing / Baichuan","prompt_type":"Standard","impls":"ChanCaster14Xing, ChanPubSub14Xing, RingFanOut14Xing","files":"chancaster_14_xing.go, chanpubsub_14_xing.go, ringfanout_14_xing.go","state":"High-throughput ring fanout \u0026 rendezvous caster with fast-path CAS","chat_link":"","size":15832},{"num":"15","filename":"15-nemotron-super-vl.md","slug":"nemotron-super-vl","provider":"NVIDIA / Nemotron","prompt_type":"Standard","impls":"ChanCaster15Nemotron, ChanHub","files":"chancaster_15_nemotron.go, chanhub.go","state":"Cursor-based ring hub \u0026 low-overhead registration caster","chat_link":"","size":13562},{"num":"16","filename":"16-deepseek-v4.1-flash-chat.md","slug":"deepseek-v4.1-flash-chat","provider":"DeepSeek","prompt_type":"Standard","impls":"ChanPubSub16DeepSeek","files":"chanpubsub_16_deepseek.go","state":"Two-tier completion barrier pub-sub with withdrawal protocol","chat_link":"","size":29924},{"num":"17","filename":"17-gemini-argon-medium.md","slug":"gemini-argon-medium","provider":"Google","prompt_type":"Standard","impls":"ChanCaster17FastPath, ChanCaster17Pumped, ChanPubSub17Gemini","files":"chancaster_17_gemini.go, chanpubsub_17_gemini.go","state":"Pumped ring caster \u0026 split-state pub-sub barrier","chat_link":"","size":104368},{"num":"18","filename":"18-chatgpt-2.md","slug":"chatgpt-2","provider":"OpenAI","prompt_type":"Standard","impls":"RingPubSub","files":"ringpubsub.go","state":"Bounded lossless/lossy ring buffer pub-sub with subscriber cursors","chat_link":"","size":373782},{"num":"19","filename":"19-chatgpt-3.md","slug":"chatgpt-3","provider":"OpenAI","prompt_type":"Standard","impls":"ChanHub, PhasePubSub, RelayPubSub","files":"chanhub.go, phasepubsub.go, relaypubsub.go","state":"Phase-alternating transfer pub-sub \u0026 lockless hub","chat_link":"","size":347522},{"num":"20","filename":"20-arena-agent.md","slug":"arena-agent","provider":"Other","prompt_type":"Standard","impls":"EpochTape, ChanRelay","files":"epochtape.go, chanrelay.go","state":"Ref-counted epoch log tape with replay cursors","chat_link":"","size":120825},{"num":"21","filename":"21-claude-haiku-extra.md","slug":"claude-haiku-extra","provider":"Anthropic","prompt_type":"Standard","impls":"Carillon","files":"carillon.go","state":"adapter + broadcast scenario attachments; focused tests/benchmarks","chat_link":"https://claude.ai/share/bddce53b-2891-4698-95c7-b3af42f46dfd","size":59394},{"num":"22","filename":"22-chatgpt.md","slug":"chatgpt","provider":"OpenAI","prompt_type":"Standard","impls":"ChanPubSubPacked","files":"chanpubsub_packed.go","state":"adapter + lockstep attachment; focused tests","chat_link":"https://chatgpt.com/share/6aee742e-fdc0-83ec-bb9c-7227206d2528","size":28426},{"num":"23","filename":"23-meta-ai.md","slug":"meta-ai","provider":"Meta / Muse","prompt_type":"Standard","impls":"SeqCaster23Meta, AdaptiveCaster23Meta","files":"seqcaster_23_meta.go, chancaster_23_meta.go","state":"`SeqCaster` adapter + loss scenario, loss/close/redirect tests and send benchmark; adaptive focused test","chat_link":"","size":11828},{"num":"24","filename":"24-meta-ai-prompt-mini.md","slug":"meta-ai-prompt-mini","provider":"Meta / Muse","prompt_type":"Prompt-Mini","impls":"QueuedFanout24Meta","files":"queuedfanout_24_meta.go","state":"Extracted and wired to nonblocking unbounded overflow with `BaselineQueuedFanout`; repaired concurrent per-producer FIFO admission and withdrawal backlog drain; focused tests, FIFO fuzz, mailbox/overflow benchmarks.","chat_link":"https://meta.ai/share/TiLaDoJVDD","size":11838},{"num":"25","filename":"25-claude-haiku-extra-prompt-mini.md","slug":"claude-haiku-extra-prompt-mini","provider":"Anthropic","prompt_type":"Prompt-Mini","impls":"SenseCaster","files":"sensecaster.go","state":"adapter + lockstep attachment; focused tests/benchmarks","chat_link":"https://claude.ai/share/b7f1326f-456f-4807-8d24-f77aed549dac","size":45426},{"num":"26","filename":"26-kimi-ai-instant-prompt-mini.md","slug":"kimi-ai-instant-prompt-mini","provider":"Moonshot / Kimi","prompt_type":"Prompt-Mini","impls":"ChanRing26Kimi","files":"chanring_26_kimi.go","state":"adapter + lossy-ring attachment; focused tests","chat_link":"","size":20768},{"num":"27","filename":"27-mistral-ai-chat-prompt-mini.md","slug":"mistral-ai-chat-prompt-mini","provider":"Mistral AI","prompt_type":"Prompt-Mini","impls":"Multicast27Mistral","files":"multicast_27_mistral.go","state":"eager-subscription adapter + synchronous-handoff attachment; focused tests","chat_link":"","size":35336},{"num":"28","filename":"28-openrouter-chat-flint-free-prompt-mini.md","slug":"openrouter-chat-flint-free-prompt-mini","provider":"OpenRouter","prompt_type":"Prompt-Mini","impls":"Broadcast28Flint","files":"broadcast_28_flint.go","state":"adapter + synchronous-handoff attachment; source-level validation only","chat_link":"","size":3426},{"num":"29","filename":"29-openrouter-chat-nemotron-3.5-super-vl-free-prompt-mini.md","slug":"openrouter-chat-nemotron-3.5-super-vl-free-prompt-mini","provider":"NVIDIA / Nemotron","prompt_type":"Prompt-Mini","impls":"Relay29Nemotron","files":"relay_29_nemotron.go","state":"adapter + lossy-ring attachment; source-level validation only","chat_link":"","size":10836},{"num":"30","filename":"30-openrouter-chat-dots3-note-preview-free-prompt-mini.md","slug":"openrouter-chat-dots3-note-preview-free-prompt-mini","provider":"OpenRouter","prompt_type":"Prompt-Mini","impls":"Arcadia","files":"arcadia_30_dots3.go","state":"adapter + lossy-ring attachment; probe test passed, repository-specific test still outstanding","chat_link":"","size":22320},{"num":"31","filename":"31-openrouter-chat-nemotron-3-ultra-free-prompt-mini.md","slug":"openrouter-chat-nemotron-3-ultra-free-prompt-mini","provider":"NVIDIA / Nemotron","prompt_type":"Prompt-Mini","impls":"Vecast","files":"vecast_31_nemotron.go","state":"adapter + synchronous-handoff attachment; probe test passed, repository-specific test still outstanding","chat_link":"","size":20694},{"num":"32","filename":"32-openrouter-chat-nemotron-3-nano-omni-free-prompt-mini.md","slug":"openrouter-chat-nemotron-3-nano-omni-free-prompt-mini","provider":"NVIDIA / Nemotron","prompt_type":"Prompt-Mini","impls":"StableRing32Nano","files":"stablering_32_nano.go","state":"Extracted and wired to bounded competing-consumer overflow with `BaselineBoundedScatterQueue`; exact eviction tests/fuzz/admission benchmark. Explicit poor-fit attachment for work-distribution scatter.","chat_link":"","size":4786},{"num":"33","filename":"33-openrouter-chat-north-mini-code-free-prompt-mini.md","slug":"openrouter-chat-north-mini-code-free-prompt-mini","provider":"OpenRouter","prompt_type":"Prompt-Mini","impls":"ChanMulticast33North","files":"chanmulticast_33_north.go","state":"adapter + handoff attachment; probe test passed, repository-specific test still outstanding","chat_link":"","size":10979},{"num":"34","filename":"34-openrouter-chat-nemotron-3.5-lightning-free-prompt-mini.md","slug":"openrouter-chat-nemotron-3.5-lightning-free-prompt-mini","provider":"NVIDIA / Nemotron","prompt_type":"Prompt-Mini","impls":"ChanMultiCast34Lightning","files":"chanmulticast_34_lightning.go","state":"exposure-limited adapter + focused test; churn excluded because removal can deadlock behind Send","chat_link":"","size":11602},{"num":"35","filename":"35-chatjimmy-prompt-mini.md","slug":"chatjimmy-prompt-mini","provider":"ChatJimmy","prompt_type":"Prompt-Mini","impls":"ChanPubSub35ChatJimmy","files":"chanpubsub_35_chatjimmy.go","state":"caster-family registration + single-receiver acknowledged facet; explicit no-churn/identity exposure limit","chat_link":"","size":7984},{"num":"36","filename":"36-meta-ai-prompt-mini.md","slug":"meta-ai-prompt-mini","provider":"Meta / Muse","prompt_type":"Prompt-Mini","impls":"ShardCaster36Meta","files":"shardcaster_36_meta.go","state":"adapter + synchronous-handoff attachment; direct unsubscribe/send tests; node pooling removed to prevent stale snapshot reuse","chat_link":"","size":17026},{"num":"37","filename":"37-gemini-3.8-flash-high-prompt-mini.md","slug":"gemini-3.8-flash-high-prompt-mini","provider":"Google","prompt_type":"Prompt-Mini","impls":"SelectCaster37Gemini","files":"selectcaster_37_gemini.go","state":"adapter + latest attachment; policy and concurrent Subscribe/Close tests; membership mutex added while Send remains lock-free","chat_link":"","size":16142},{"num":"38","filename":"38-chatgpt-prompt-mini.md","slug":"chatgpt-prompt-mini","provider":"OpenAI","prompt_type":"Prompt-Mini","impls":"SelectFanout","files":"selectfanout.go","state":"Unified adapter + synchronous-handoff/churn/lifecycle/edge attachments; cancellation/close and churn benchmark coverage.","chat_link":"https://chatgpt.com/share/6aee8fc4-aad0-83ec-9cdc-d07e45cb9fab","size":31097},{"num":"39","filename":"39-arena-mistral-large-4-high-prompt-mini.md","slug":"arena-mistral-large-4-high-prompt-mini","provider":"Mistral AI","prompt_type":"Prompt-Mini","impls":"ShardCast39Mistral","files":"shardcast_39_mistral.go","state":"latest-policy adapter + latest attachment; drop/latest/close tests","chat_link":"","size":12346},{"num":"40","filename":"40-arena-gemini-3.8-flash-high-prompt-mini.md","slug":"arena-gemini-3.8-flash-high-prompt-mini","provider":"Google","prompt_type":"Prompt-Mini","impls":"SlabCaster40Gemini","files":"slabcaster_40_gemini.go","state":"DropOldest-only exposure-limited adapter + latest attachment; policy tests; concurrent slot lifecycle excluded","chat_link":"","size":13132},{"num":"41","filename":"41-arena-claude-sonnet-5.5-high-prompt-mini.md","slug":"arena-claude-sonnet-5.5-high-prompt-mini","provider":"Anthropic","prompt_type":"Prompt-Mini","impls":"EpochCast41Sonnet","files":"epochcast_41_sonnet.go","state":"lossy adapter + bounded-ring attachment; lossless/lossy/cancel/close tests","chat_link":"","size":24675},{"num":"42","filename":"42-arena-muse-spark-1.3-xhigh-prompt-mini.md","slug":"arena-muse-spark-1.3-xhigh-prompt-mini","provider":"Meta / Muse","prompt_type":"Prompt-Mini","impls":"Broadcast42Spark","files":"broadcast_42_spark.go","state":"adapter + bounded-ring attachment; batch/replay/overrun/close tests","chat_link":"","size":15274},{"num":"43","filename":"43-grok-chat-prompt-mini.md","slug":"grok-chat-prompt-mini","provider":"xAI / Grok","prompt_type":"Prompt-Mini","impls":"SlotPubSub43Grok","files":"slotpubsub_43_grok.go","state":"exposure-limited lockstep adapter + acknowledgement attachment; deterministic fan-out test","chat_link":"","size":12825},{"num":"44","filename":"44-qwen-chat-qwen-3.7-max-prompt-mini.md","slug":"qwen-chat-qwen-3.7-max-prompt-mini","provider":"Alibaba / Qwen","prompt_type":"Prompt-Mini","impls":"PhantomCast44Qwen","files":"phantomcast_44_qwen.go","state":"repaired atomic-version ring + adapter + bounded-ring attachment; cursor/loss/wide-payload/close tests","chat_link":"","size":8188},{"num":"45","filename":"45-chatgpt-prompt-mini.md","slug":"chatgpt-prompt-mini","provider":"OpenAI","prompt_type":"Prompt-Mini","impls":"Fanout, RingFanout","files":"fanout.go, ringfanout.go","state":"Unified sync/buffered Fanout and RingFanout adapters; handoff/backpressure/bounded-ring/replay/churn/lifecycle/edge attachments; replay repair and shared coverage.","chat_link":"","size":47897},{"num":"46","filename":"46-arena-grok-4.6-medium-prompt-mini.md","slug":"arena-grok-4.6-medium-prompt-mini","provider":"xAI / Grok","prompt_type":"Prompt-Mini","impls":"ChanHub46Grok","files":"chanhub_46_grok.go","state":"cursor-ring adapter + buffered/churn/lifecycle/zero-subscriber attachments; atomic payload/closure/cursor repair; focused backpressure/close tests; shared broadcast fuzz + benchmark","chat_link":"","size":8960},{"num":"47","filename":"47-arena-gemini-3.8-flash.md","slug":"arena-gemini-3.8-flash","provider":"Google","prompt_type":"Standard","impls":"ChanCaster47Gemini, ChanPubSub47Gemini, ChanRing47Gemini","files":"chancaster_47_gemini.go, chanpubsub_47_gemini.go, chanring_47_gemini.go","state":"caster + broadcaster adapters; lockstep, buffered, churn, cancellation, and edge attachments; direct tests/benchmarks + shared fuzz; repaired pong/cancellation accounting, serialized iterator cleanup, and removed racy slot clearing (payload retention bounded by capacity). Local probes observed nonzero allocations for both pub/sub and ring sends, so the response's zero-allocation claims are not treated as verified.","chat_link":"","size":46075},{"num":"48","filename":"48-grok-chat.md","slug":"grok-chat","provider":"xAI / Grok","prompt_type":"Standard","impls":"WatchCaster48Grok","files":"watchcaster_48_grok.go","state":"latest-watch adapter + latest/churn/edge attachments; coherent-snapshot, nil-payload, multi-observer wake tests; benchmark + shared fuzz. Replaced the non-broadcast cap-1 signal and split value/generation atomics with a rotating close-notify channel and locked snapshot; measured 1 alloc/send, so zero-allocation claim is not verified.","chat_link":"","size":9679},{"num":"49","filename":"49-qwen-chat-qwen-3.7-max.md","slug":"qwen-chat-qwen-3.7-max","provider":"Alibaba / Qwen","prompt_type":"Standard","impls":"SelectBroadcaster49Qwen","files":"selectbroadcaster_49_qwen.go","state":"latest/churn/edge attachments plus explicit bad-fit attachment to detectable-loss scenario (no loss counter); immutable epochs, sequence-stamped slots, eager subscription point; overrun/multi-observer/state tests + terminal-checked benchmark + shared fuzz. One-shot benchmark observed 3 allocs/send; no zero-allocation claim accepted.","chat_link":"","size":13834},{"num":"50","filename":"50-meta-ai.md","slug":"meta-ai","provider":"Meta / Muse","prompt_type":"Standard","impls":"GenPubSub50Meta","files":"genpubsub_50_meta.go","state":"Completed the disconnected generation-wait design into a runnable namespaced implementation; repaired pre-ping round arming versus parity epoch identity and added a same-round Done gate. Wired to lockstep/churn/lifecycle/edge with send benchmark; measured 1 alloc/Send.","chat_link":"","size":11176},{"num":"51","filename":"51-deepseek-flash-chat.md","slug":"deepseek-flash-chat","provider":"DeepSeek","prompt_type":"Standard","impls":"ChanReplay51DeepSeek","files":"chanreplay_51_deepseek.go","state":"lockstep/live adapter + new bounded-catch-up scenario with `BaselineBoundedReplay`; synchronized replay/live-boundary test, churn/edge/lifecycle coverage, snapshot + live-send benchmarks, shared fuzz. Bounded retention is evaluated separately from the unbounded-history scenario; one-shot probes observed nonzero allocations, so the source’s zero-allocation claim is not verified.","chat_link":"","size":15232},{"num":"52","filename":"52-arena-claude-opus-5-medium.md","slug":"arena-claude-opus-5-medium","provider":"Anthropic","prompt_type":"Standard","impls":"ChanCascade52Opus","files":"chancascade_52_opus.go","state":"Namespaced cooperative two-phase relay; fixed disabled-instance `Subscribe` contract gap; wired to synchronous handoff with exact fan-out, active-round join/withdraw tests, fuzz/harness/churn, and warmed direct send benchmark (observed 0 allocs/op for the measured Send loop). Continue adversarial lifecycle review with later batches.","chat_link":"","size":24624},{"num":"53","filename":"53-arena-gpt-6-sol.md","slug":"arena-gpt-6-sol","provider":"OpenAI","prompt_type":"Standard","impls":"ReplayCast53Gpt6Sol","files":"replaycast_53_gpt6sol.go","state":"Bounded lossy ring + generation signal wired to bounded-ring and large-fanout scenarios; exact-missed-count model/fuzz, zero-subscriber/close/concurrent-publisher tests, adapter lifecycle/churn, direct publish benchmark. Fixed a zero-value guard race found by `-race`; active Publish measured 1 alloc/op (112 B/op), consistent with the one-notification-channel design.","chat_link":"","size":7636},{"num":"54","filename":"54-arena-gpt-6.1-terra-medium-prompt-safe.md","slug":"arena-gpt-6.1-terra-medium-prompt-safe","provider":"OpenAI","prompt_type":"Prompt-Safe","impls":"EpochBroadcast54Terra","files":"epochbroadcast_54_terra.go","state":"Selectable epoch notification + receipt barrier integrated into lockstep, churn, zero-subscriber, lifecycle (per-subscription only; no hub Close), and large-fanout (explicit poor-fit measurement). Added membership-boundary/mid-send withdrawal tests and direct benchmark; focused race passed, warmed 8-subscriber probe observed 2 allocs/op.","chat_link":"","size":9557},{"num":"55","filename":"55-arena-claude-haiku-5.5-high-prompt-safe.md","slug":"arena-claude-haiku-5.5-high-prompt-safe","provider":"Anthropic","prompt_type":"Prompt-Safe","impls":"RingCaster55Haiku","files":"ringcaster_55_haiku.go","state":"Immutable slab cells + caller-owned cursors wired to bounded-ring, large-fanout, churn, zero-subscriber, lifecycle; direct no-sleep Arm/recheck/Close test, concurrent publication, exact resume/lap accounting, allocation assertions, and ring-model fuzz/bench. Repaired resume-gap accounting, lapping that skipped still-retained cells, zero-value errors, late Arm-after-Close, and uint64 sequence wrap. Full tests/vet, focused race and fuzz passed; direct probes: slab allocation 1/256 values, TryRecv 0 allocs.","chat_link":"","size":22049},{"num":"56","filename":"56-github-cloud-mai-code-1.1-flash-high.md","slug":"github-cloud-mai-code-1.1-flash-high","provider":"GitHub Copilot / Mai","prompt_type":"Standard","impls":"Fanout56MaiCode","files":"fanout_56_maicode.go","state":"Namespaced COW subscriber-slice fan-out attached to buffered backpressure, churn, zero-subscriber, lifecycle (sub-close only), and explicitly poor-fit lockstep/large-fanout reports. Added per-sub send/close exclusion and serialized Send order to honor no-post-Close delivery and consistent subscriber ordering; full tests/vet and focused race passed. Warmed 8-subscriber send measured 0 allocs/op.","chat_link":"","size":5746},{"num":"57","filename":"57-arena-deepseek-v4.1-flash-high-prompt-safe.md","slug":"arena-deepseek-v4.1-flash-high-prompt-safe","provider":"DeepSeek","prompt_type":"Prompt-Safe","impls":"ChanPubSub57DeepSeek","files":"chanpubsub_57_deepseek.go","state":"Namespaced phase-gated shared-channel pub/sub with an atomic acknowledgement plane and one-slot final-ack notification; retains ChanCaster withdrawal protocol. Adapter/harness/scenario attachments, direct tests, model-free shared fuzz, and eight-subscriber benchmark added. `go vet ./...`, `go test ./...`, shared FuzzScenarioBroadcast, focused race tests (direct x10 and churn/TryReceive x3) pass. Direct Send benchmark: 0 allocs/op. No hub-wide Close exists; lifecycle is explicitly cancellation/unsubscribe only.","chat_link":"","size":17227},{"num":"58","filename":"58-arena-muse-spark-1.3-xhigh-prompt-safe.md","slug":"arena-muse-spark-1.3-xhigh-prompt-safe","provider":"Meta / Muse","prompt_type":"Prompt-Safe","impls":"ChanCaster58Spark, ChanPubSub58Spark, Broadcaster58Spark","files":"chancaster_58_spark.go, chanpubsub_58_spark.go, broadcaster_58_spark.go","state":"All three designs extracted and wired. PubSub uses a same-round Done gate (1 alloc/Send measured); caster TryRecv steal-block documented; broadcaster ring model fuzz/wide-payload/send benchmark.","chat_link":"","size":11989}];
+  var SCORES = [{"family":"broadcast","impl":"RingPubSub TrySend (18-ChatGPT)","score":"90","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"100","latency":"100","allocations":"43","churn":"83","scaling":"93","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"EpochCast41Sonnet/lossy (41-Sonnet)","score":"88","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"99","latency":"99","allocations":"43","churn":"68","scaling":"92","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"RingCaster55Haiku (55-ClaudeHaiku)","score":"88","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"97","latency":"93","allocations":"37","churn":"97","scaling":"91","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"RingFanOut14Xing (14-Xing)","score":"86","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"92","latency":"88","allocations":"43","churn":"78","scaling":"96","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Relay29Nemotron (29-Nemotron)","score":"84","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"96","latency":"95","allocations":"20","churn":"91","scaling":"84","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"BaselineAsyncFanout (baseline)","score":"81","verdict":"Strong candidate","baseline":"true","integrity":"verified","throughput":"95","latency":"91","allocations":"43","churn":"17","scaling":"89","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanBeacon (07-Qwen)","score":"80","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"86","latency":"75","allocations":"9","churn":"99","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ReplayCast53Gpt6Sol (53-GPT-6-Sol)","score":"80","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"87","latency":"84","allocations":"20","churn":"66","scaling":"99","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Broadcaster58Spark (58-MuseSpark)","score":"79","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"83","latency":"74","allocations":"20","churn":"92","scaling":"95","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Broadcast42Spark (42-MuseSpark)","score":"77","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"84","latency":"71","allocations":"9","churn":"87","scaling":"97","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Arcadia (30-dots3)","score":"76","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"93","latency":"96","allocations":"20","churn":"7","scaling":"82","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanFeed (04-DeepSeek)","score":"76","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"89","latency":"89","allocations":"20","churn":"42","scaling":"78","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"PhantomCast44Qwen (44-Qwen)","score":"76","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"91","latency":"87","allocations":"20","churn":"53","scaling":"71","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"EpochCasterGemini (09-Gemini)","score":"74","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"88","latency":"92","allocations":"20","churn":"30","scaling":"72","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"RingFanout (45-ChatGPT)","score":"74","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"78","latency":"76","allocations":"43","churn":"54","scaling":"68","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"EpochCaster (13-OpenRouter)","score":"73","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"76","latency":"72","allocations":"43","churn":"63","scaling":"66","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"RingPubSub (18-ChatGPT)","score":"73","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"71","latency":"67","allocations":"43","churn":"86","scaling":"67","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"GenCaster (06-Meta)","score":"72","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"75","latency":"66","allocations":"9","churn":"100","scaling":"80","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"BaselineQueuedFanout (baseline)","score":"71","verdict":"Situational (strengths offset by trade-offs)","baseline":"true","integrity":"verified","throughput":"70","latency":"82","allocations":"39","churn":"58","scaling":"64","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Beacon (01-baseline)","score":"71","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"82","latency":"80","allocations":"1","churn":"33","scaling":"86","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanFanout (12-OpenRouter)","score":"70","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"74","latency":"68","allocations":"3","churn":"62","scaling":"88","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanRing26Kimi (26-Kimi)","score":"70","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"80","latency":"78","allocations":"20","churn":"25","scaling":"75","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"SelectBroadcaster49Qwen (49-Qwen)","score":"69","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"72","latency":"83","allocations":"3","churn":"38","scaling":"83","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"RingBeacon (08-MuseSpark)","score":"68","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"79","latency":"64","allocations":"3","churn":"28","scaling":"87","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"SeqCaster23Meta (23-MetaAI)","score":"68","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"51","latency":"97","allocations":"43","churn":"21","scaling":"76","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"WatchCaster48Grok (48-Grok)","score":"68","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"53","latency":"79","allocations":"20","churn":"89","scaling":"79","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanRing47Gemini (47-Gemini)","score":"67","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"67","latency":"62","allocations":"8","churn":"88","scaling":"70","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Carillon (21-ClaudeHaiku)","score":"66","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"68","latency":"70","allocations":"43","churn":"67","scaling":"34","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ShardCast39Mistral/latest (39-Mistral)","score":"64","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"62","latency":"57","allocations":"43","churn":"59","scaling":"47","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"BaselineFanout (standard)","score":"63","verdict":"Situational (strengths offset by trade-offs)","baseline":"true","integrity":"verified","throughput":"64","latency":"63","allocations":"43","churn":"26","scaling":"50","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"BaselineLatestBroadcast (baseline)","score":"61","verdict":"Situational (strengths offset by trade-offs)","baseline":"true","integrity":"verified","throughput":"63","latency":"59","allocations":"43","churn":"0","scaling":"58","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"QueuedFanout24Meta (24-MetaAI)","score":"61","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"54","latency":"61","allocations":"38","churn":"47","scaling":"53","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"SlabCaster40Gemini/drop-oldest (40-Gemini)","score":"60","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"66","latency":"58","allocations":"43","churn":"55","scaling":"18","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"ChanRelay TrySend (20-Arena)","score":"58","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"58","latency":"54","allocations":"43","churn":"51","scaling":"26","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanRotor (17-Gemini)","score":"58","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"38","latency":"38","allocations":"43","churn":"76","scaling":"59","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Fanout45ChatGPT/buffered (45-ChatGPT)","score":"58","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"55","latency":"50","allocations":"43","churn":"41","scaling":"41","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanHub TrySend (15-Nemotron)","score":"56","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"61","latency":"55","allocations":"43","churn":"34","scaling":"14","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanLatest (03-ChatGPT)","score":"55","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"57","latency":"51","allocations":"43","churn":"64","scaling":"5","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanPubSub (Baseline)","score":"55","verdict":"Niche use only","baseline":"true","integrity":"verified","throughput":"43","latency":"41","allocations":"41","churn":"80","scaling":"30","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"SelectCaster37Gemini (37-Gemini)","score":"55","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"59","latency":"53","allocations":"43","churn":"43","scaling":"8","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanCascade52Opus (52-ClaudeOpus)","score":"54","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"30","latency":"24","allocations":"43","churn":"96","scaling":"55","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"RelayPubSub (19-ChatGPT)","score":"54","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"42","latency":"45","allocations":"43","churn":"93","scaling":"13","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanPubSub57DeepSeek (57-DeepSeek)","score":"53","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"41","latency":"36","allocations":"43","churn":"71","scaling":"29","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"ChanReplay51DeepSeek (51-DeepSeek)","score":"53","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"22","latency":"37","allocations":"43","churn":"70","scaling":"61","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"SlotPubSub43Grok (43-Grok)","score":"53","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"28","latency":"25","allocations":"43","churn":"74","scaling":"63","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"ChanHub (15-Nemotron)","score":"52","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"50","latency":"49","allocations":"43","churn":"32","scaling":"17","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"PhasePubSub (19-ChatGPT)","score":"52","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"46","latency":"43","allocations":"43","churn":"84","scaling":"1","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"EpochTape (10-Gemini)","score":"51","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"21","latency":"86","allocations":"42","churn":"95","scaling":"0","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"BaselineBoundedReplay (baseline)","score":"50","verdict":"Niche use only","baseline":"true","integrity":"verified","throughput":"49","latency":"47","allocations":"18","churn":"37","scaling":"24","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"EpochBroadcast54Terra (54-GPT-6.1-Terra)","score":"50","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"33","latency":"28","allocations":"9","churn":"82","scaling":"54","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"Multicast27Mistral (27-Mistral)","score":"50","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"17","latency":"42","allocations":"43","churn":"50","scaling":"57","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanGathererPubSub (05-Qwen)","score":"49","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"29","latency":"21","allocations":"43","churn":"79","scaling":"33","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"SenseCaster (25-ClaudeHaiku)","score":"49","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"26","latency":"12","allocations":"43","churn":"75","scaling":"51","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Fanout56MaiCode (56-MaiCode)","score":"48","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"45","latency":"34","allocations":"43","churn":"49","scaling":"4","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"ChanMultiCast34Lightning (34-Lightning)","score":"47","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"34","latency":"29","allocations":"43","churn":"57","scaling":"20","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"ChanPubSubV2_06meta","score":"47","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"18","latency":"20","allocations":"43","churn":"36","scaling":"62","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"ChanRelay (20-Arena)","score":"47","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"39","latency":"32","allocations":"43","churn":"61","scaling":"3","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Fanout45ChatGPT/sync (45-ChatGPT)","score":"47","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"36","latency":"30","allocations":"43","churn":"45","scaling":"22","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"BaselineBufferedBroadcast (baseline)","score":"44","verdict":"Avoid for most uses","baseline":"true","integrity":"verified","throughput":"37","latency":"39","allocations":"20","churn":"16","scaling":"25","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanHub46Grok (46-Grok)","score":"44","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"47","latency":"46","allocations":"17","churn":"3","scaling":"11","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"SelectFanout (38-ChatGPT)","score":"44","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"32","latency":"22","allocations":"43","churn":"39","scaling":"16","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ShardCaster36Meta (36-MetaAI)","score":"42","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"24","latency":"33","allocations":"43","churn":"46","scaling":"9","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Broadcast28Flint (28-Flint)","score":"41","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"25","latency":"26","allocations":"43","churn":"9","scaling":"21","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanMulticast33North (33-North)","score":"39","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"20","latency":"14","allocations":"36","churn":"1","scaling":"39","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanPubSub16DeepSeek","score":"38","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"11","latency":"11","allocations":"43","churn":"18","scaling":"36","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanPubSub47Gemini (47-Gemini)","score":"38","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"14","latency":"4","allocations":"43","churn":"72","scaling":"12","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"ChanPubSub09Gemini","score":"37","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"5","latency":"17","allocations":"43","churn":"4","scaling":"43","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanPubSub10Gemini","score":"37","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"8","latency":"5","allocations":"43","churn":"14","scaling":"45","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanPubSub17Gemini","score":"37","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"12","latency":"1","allocations":"43","churn":"13","scaling":"42","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"EpochPubSub (11-meta)","score":"37","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"13","latency":"16","allocations":"9","churn":"29","scaling":"49","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ReliableBeacon (08-MuseSpark)","score":"36","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"16","latency":"18","allocations":"0","churn":"24","scaling":"46","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"Vecast (31-Nemotron)","score":"35","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"0","latency":"0","allocations":"7","churn":"22","scaling":"74","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"true"},{"family":"broadcast","impl":"ChanPubSub14Xing","score":"34","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"4","latency":"8","allocations":"43","churn":"12","scaling":"32","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"BaselineBarrierPubSub (baseline)","score":"32","verdict":"Avoid for most uses","baseline":"true","integrity":"verified","throughput":"7","latency":"9","allocations":"9","churn":"20","scaling":"38","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanPubSubPacked (22-ChatGPT)","score":"32","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"9","latency":"13","allocations":"43","churn":"11","scaling":"7","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"GenPubSub50Meta (50-MetaAI)","score":"31","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"3","latency":"7","allocations":"20","churn":"8","scaling":"37","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"broadcast","impl":"ChanPubSub58Spark (58-MuseSpark)","score":"28","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"1","latency":"3","allocations":"20","churn":"5","scaling":"28","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster14Xing","score":"95","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"100","latency":"100","allocations":"100","churn":"42","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster11Meta","score":"92","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"83","latency":"83","allocations":"100","churn":"83","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster17FastPath","score":"86","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"92","latency":"33","allocations":"100","churn":"67","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster","score":"80","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"75","latency":"50","allocations":"100","churn":"25","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster15Nemotron","score":"79","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"50","latency":"58","allocations":"100","churn":"92","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster09Gemini","score":"77","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"58","latency":"17","allocations":"100","churn":"100","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster47Gemini","score":"77","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"42","latency":"67","allocations":"100","churn":"75","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster2","score":"76","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"67","latency":"42","allocations":"100","churn":"17","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster17Pumped","score":"70","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"17","latency":"75","allocations":"100","churn":"58","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"AdaptiveCaster23Meta","score":"66","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"8","latency":"92","allocations":"100","churn":"8","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCaster58Spark","score":"64","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"33","latency":"8","allocations":"100","churn":"50","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"ChanCasterV2_06meta","score":"63","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"25","latency":"25","allocations":"100","churn":"33","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"caster","impl":"BaselineRendezvousCaster","score":"50","verdict":"Niche use only","baseline":"true","integrity":"verified","throughput":"0","latency":"0","allocations":"100","churn":"0","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"gather","impl":"ChanGatherer","score":"100","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"100","latency":"100","allocations":"100","churn":"100","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"gather","impl":"BaselineGatherBarrier","score":"92","verdict":"Strong candidate","baseline":"true","integrity":"verified","throughput":"100","latency":"100","allocations":"100","churn":"0","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"RingFanOut14Xing_c64","score":"90","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"94","latency":"100","allocations":"100","churn":"50","scaling":"72","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"BaselineAsyncFanout_c64","score":"89","verdict":"Strong candidate","baseline":"true","integrity":"verified","throughput":"89","latency":"89","allocations":"100","churn":"17","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"EpochCasterGemini_c64","score":"87","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"83","latency":"78","allocations":"100","churn":"83","scaling":"78","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"EpochTape_c64","score":"85","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"100","latency":"94","allocations":"100","churn":"72","scaling":"28","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"ChanBeacon_c64","score":"83","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"67","latency":"67","allocations":"100","churn":"94","scaling":"83","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"ChanFeed_drop_c64","score":"81","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"78","latency":"83","allocations":"100","churn":"39","scaling":"67","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"Beacon","score":"79","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"56","latency":"44","allocations":"100","churn":"100","scaling":"94","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"Broadcaster58Spark_c64","score":"77","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"72","latency":"72","allocations":"100","churn":"33","scaling":"61","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"ChanFanout_c64","score":"74","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"50","latency":"61","allocations":"100","churn":"44","scaling":"89","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"RingBeacon_c64","score":"74","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"61","latency":"56","allocations":"100","churn":"78","scaling":"56","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"GenCaster","score":"68","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"44","latency":"50","allocations":"100","churn":"89","scaling":"50","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"RingPubSub_c64","score":"62","verdict":"Situational (strengths offset by trade-offs)","baseline":"false","integrity":"verified","throughput":"39","latency":"39","allocations":"100","churn":"67","scaling":"39","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"EpochCaster13Crouton_r64","score":"57","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"33","latency":"33","allocations":"100","churn":"28","scaling":"44","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"ChanLatest","score":"53","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"28","latency":"22","allocations":"100","churn":"61","scaling":"17","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"ChanFeed_block_c64","score":"51","verdict":"Niche use only","baseline":"false","integrity":"verified","throughput":"17","latency":"17","allocations":"100","churn":"56","scaling":"33","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"BaselineFanout_c64","score":"48","verdict":"Niche use only","baseline":"true","integrity":"verified","throughput":"22","latency":"28","allocations":"100","churn":"6","scaling":"22","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"ChanRelay_w16","score":"40","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"11","latency":"11","allocations":"100","churn":"11","scaling":"6","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"ChanRelay_sync","score":"38","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"0","latency":"0","allocations":"100","churn":"22","scaling":"11","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"payload","impl":"ChanHub_c16","score":"37","verdict":"Avoid for most uses","baseline":"false","integrity":"verified","throughput":"6","latency":"6","allocations":"100","churn":"0","scaling":"0","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"scatter","impl":"ChanScatter","score":"100","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"100","latency":"100","allocations":"100","churn":"100","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"scatter","impl":"BaselineScatterQueue","score":"97","verdict":"Strong candidate","baseline":"true","integrity":"verified","throughput":"100","latency":"100","allocations":"100","churn":"67","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"scatter","impl":"BaselineBoundedScatterQueue (baseline)","score":"95","verdict":"Strong candidate","baseline":"true","integrity":"verified","throughput":"100","latency":"100","allocations":"100","churn":"33","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"},{"family":"scatter","impl":"StableRing32Nano (32-Nano)","score":"92","verdict":"Strong candidate","baseline":"false","integrity":"verified","throughput":"100","latency":"100","allocations":"100","churn":"0","scaling":"100","stall_resilience":"100","expected_good_fit":"true","exposure_limited":"false"}];
+  var REPORTS = [{"filename":"report-01-gemini-flash-3.8-high.html","title":"Bigbuff: Evolution \u0026 Empirical Analysis of Go Channel Broadcast \u0026 PubSub","type":"architectural","run":"01","size":86393},{"filename":"results-01-03-report.html","title":"bigbuff · Concurrency Measurement Report","type":"measurement","run":"01","size":2883748},{"filename":"results-02-03-report.html","title":"bigbuff · Concurrency Measurement Report","type":"measurement","run":"02","size":1819191}];
+
+  function esc(s){
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // --- Render Leaderboard Scores Table ---
+  var currentFamily = 'all';
+  var currentVerdict = 'all';
+  var scoreQuery = '';
+
+  function renderScores(){
+    var q = scoreQuery.toLowerCase();
+    var filtered = SCORES.filter(function(r){
+      if (currentFamily !== 'all' && r.family !== currentFamily) return false;
+      if (currentVerdict !== 'all' && r.verdict.toLowerCase().indexOf(currentVerdict.toLowerCase()) === -1) return false;
+      if (q) {
+        var match = (r.impl||'').toLowerCase().indexOf(q) !== -1 ||
+                    (r.family||'').toLowerCase().indexOf(q) !== -1 ||
+                    (r.verdict||'').toLowerCase().indexOf(q) !== -1;
+        if (!match) return false;
+      }
+      return true;
+    });
+
+    var html = '';
+    filtered.forEach(function(r){
+      var s = parseInt(r.score, 10) || 0;
+      var vClass = 'v-avoid';
+      if (r.verdict.indexOf('Strong') !== -1) vClass = 'v-strong';
+      else if (r.verdict.indexOf('Situational') !== -1) vClass = 'v-situational';
+      else if (r.verdict.indexOf('Niche') !== -1) vClass = 'v-niche';
+
+      html += '<tr>' +
+        '<td><span class="tag">' + esc(r.family) + '</span></td>' +
+        '<td style="font-weight:600;font-family:var(--mono);font-size:12px">' + esc(r.impl) + '</td>' +
+        '<td><div class="scorebar"><div class="fill" style="width:' + s + '%"></div><span>' + s + '</span></div></td>' +
+        '<td><span class="verdict ' + vClass + '">' + esc(r.verdict) + '</span></td>' +
+        '<td>' + (r.throughput || '-') + '</td>' +
+        '<td>' + (r.latency || '-') + '</td>' +
+        '<td>' + (r.allocations || '-') + '</td>' +
+        '<td>' + (r.scaling || '-') + '</td>' +
+        '<td>' + (r.churn || '-') + '</td>' +
+        '</tr>';
+    });
+
+    if (!filtered.length) {
+      html = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--ink3)">No implementations matched your filter criteria.</td></tr>';
+    }
+    document.getElementById('scoresBody').innerHTML = html;
+  }
+
+  document.getElementById('scoreSearch').addEventListener('input', function(e){
+    scoreQuery = e.target.value;
+    renderScores();
+  });
+
+  document.getElementById('familyPills').addEventListener('click', function(e){
+    var target = e.target.closest('.pill');
+    if (!target) return;
+    document.querySelectorAll('#familyPills .pill').forEach(function(p){ p.classList.remove('active'); });
+    target.classList.add('active');
+    currentFamily = target.getAttribute('data-family');
+    renderScores();
+  });
+
+  document.getElementById('verdictPills').addEventListener('click', function(e){
+    var target = e.target.closest('.pill');
+    if (!target) return;
+    document.querySelectorAll('#verdictPills .pill').forEach(function(p){ p.classList.remove('active'); });
+    target.classList.add('active');
+    currentVerdict = target.getAttribute('data-verdict');
+    renderScores();
+  });
+
+  // --- Render Model Responses Table ---
+  var currentProv = 'all';
+  var currentPrompt = 'all';
+  var respQuery = '';
+
+  function renderResponses(){
+    var q = respQuery.toLowerCase();
+    var filtered = RESPONSES.filter(function(r){
+      if (currentProv !== 'all' && r.provider !== currentProv) return false;
+      if (currentPrompt !== 'all' && r.prompt_type !== currentPrompt) return false;
+      if (q) {
+        var match = r.num.indexOf(q) !== -1 ||
+                    r.filename.toLowerCase().indexOf(q) !== -1 ||
+                    r.provider.toLowerCase().indexOf(q) !== -1 ||
+                    r.impls.toLowerCase().indexOf(q) !== -1 ||
+                    r.files.toLowerCase().indexOf(q) !== -1 ||
+                    r.state.toLowerCase().indexOf(q) !== -1;
+        if (!match) return false;
+      }
+      return true;
+    });
+
+    var html = '';
+    filtered.forEach(function(r){
+      var chatBtn = r.chat_link ? '<a href="' + esc(r.chat_link) + '" target="_blank" rel="noopener" class="tag" style="color:var(--cyan)">Chat &nearr;</a>' : '<span style="color:var(--ink3)">-</span>';
+      
+      var fileLinks = r.files.split(',').map(function(f){
+        f = f.trim();
+        if (f && f !== '-') {
+          return '<a href="' + esc(f) + '" style="font-family:var(--mono);font-size:11.5px">' + esc(f) + '</a>';
+        }
+        return esc(f);
+      }).join(', ');
+
+      html += '<tr>' +
+        '<td style="font-family:var(--mono);color:var(--cyan);font-weight:700">' + esc(r.num) + '</td>' +
+        '<td><a href="' + esc(r.filename) + '" style="font-weight:600">' + esc(r.filename) + '</a></td>' +
+        '<td><span class="tag tag-prov">' + esc(r.provider) + '</span></td>' +
+        '<td><span class="tag tag-prompt">' + esc(r.prompt_type) + '</span></td>' +
+        '<td style="font-weight:600">' + esc(r.impls) + '</td>' +
+        '<td>' + fileLinks + '</td>' +
+        '<td style="font-size:12px;color:var(--ink2)">' + esc(r.state) + '</td>' +
+        '<td>' + chatBtn + '</td>' +
+        '</tr>';
+    });
+
+    if (!filtered.length) {
+      html = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--ink3)">No model responses matched your search criteria.</td></tr>';
+    }
+    document.getElementById('respBody').innerHTML = html;
+  }
+
+  document.getElementById('respSearch').addEventListener('input', function(e){
+    respQuery = e.target.value;
+    renderResponses();
+  });
+
+  document.getElementById('providerPills').addEventListener('click', function(e){
+    var target = e.target.closest('.pill');
+    if (!target) return;
+    document.querySelectorAll('#providerPills .pill').forEach(function(p){ p.classList.remove('active'); });
+    target.classList.add('active');
+    currentProv = target.getAttribute('data-prov');
+    renderResponses();
+  });
+
+  document.getElementById('promptPills').addEventListener('click', function(e){
+    var target = e.target.closest('.pill');
+    if (!target) return;
+    document.querySelectorAll('#promptPills .pill').forEach(function(p){ p.classList.remove('active'); });
+    target.classList.add('active');
+    currentPrompt = target.getAttribute('data-prompt');
+    renderResponses();
+  });
+
+  // Initial renders
+  renderScores();
+  renderResponses();
+})();
+</script>
+</body>
+</html>
