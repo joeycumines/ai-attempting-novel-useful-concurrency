@@ -112,5 +112,5 @@ payload,ChanRelay_sync,38,Avoid for most uses,false,verified,0,0,100,22,11,100,t
 payload,ChanHub_c16,37,Avoid for most uses,false,verified,6,6,100,0,0,100,true,false
 scatter,ChanScatter,100,Strong candidate,false,verified,100,100,100,100,100,100,true,false
 scatter,BaselineScatterQueue,97,Strong candidate,true,verified,100,100,100,67,100,100,true,false
-scatter,BaselineBoundedScatterQueue (baseline),95,Strong candidate,true,verified,100,100,100,33,100,100,true,false
-scatter,StableRing32Nano (32-Nano),92,Strong candidate,false,verified,100,100,100,0,100,100,true,false
+scatter,BaselineBoundedScatterQueue (baseline),50,Do not adopt (integrity failure),true,failed,100,100,100,33,100,100,true,false
+scatter,StableRing32Nano (32-Nano),50,Do not adopt (integrity failure),false,failed,100,100,100,0,100,100,true,false

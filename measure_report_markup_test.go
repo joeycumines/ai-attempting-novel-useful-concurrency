@@ -213,7 +213,7 @@ const reportHTMLBody = `<body>
   </div></details>
 
   <details class="mdetail"><summary>Adoptability score</summary><div>
-    <p>Percentile rank within family, weighted: throughput .28 · stall resilience .20 · scaling .16 · latency .14 · allocations .14 · churn .08. Stall resilience uses log₁₀(completed ops) vs family peers. Any torn read caps the score at 50; failures cap at “Do not adopt”. A 100 means “best in class on measured axes”, not “use everywhere” — read the radar, not just the number.</p>
+    <p>Percentile rank within family, weighted: throughput .28 · stall resilience .20 · scaling .16 · latency .14 · allocations .14 · churn .08. Stall resilience uses log₁₀(completed ops) vs family peers. Any torn read or exactly-once scatter violation caps the score at 50 and marks the implementation “Do not adopt”. A 100 means “best in class on measured axes”, not “use everywhere” — read the radar, not just the number.</p>
   </div></details>
 
   <details class="mdetail"><summary>Threats to validity</summary><div>

@@ -305,6 +305,21 @@ func integrityOf(metrics []map[string]any, impl, family string) (string, float64
 		}
 		return "insufficient-data", 0
 	}
+	// Exactly-once accounting is an integrity gate, as torn reads are for payload
+	// lanes: a violation summed over every sweep point fails the implementation,
+	// and deriveReport caps its score.
+	var violations float64
+	for _, m := range metrics {
+		if m["impl"] != impl || m["family"] != family {
+			continue
+		}
+		if v, ok := m["exactly_once_violations"].(float64); ok {
+			violations += v
+		}
+	}
+	if violations > 0 {
+		return "failed", violations
+	}
 	return "verified", 0
 }
 
