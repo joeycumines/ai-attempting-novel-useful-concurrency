@@ -109,6 +109,10 @@ In cases where there were individual files attached, they are encoded as a txtar
 - [68-chatgpt-prompt-bait.md](68-chatgpt-prompt-bait.md) ([link](https://chatgpt.com/share/6af2529b-8210-83ec-ad47-033d3be5cc6e))
 - [69-deepseek-flash-chat-prompt-bait.md](69-deepseek-flash-chat-prompt-bait.md)
 - [70-meta-ai-prompt-bait.md](70-meta-ai-prompt-bait.md)
+- [71-claude-fable-5.2-medium.md](71-claude-fable-5.2-medium.md) ([link](https://claude.ai/share/1befca6e-fcdc-464a-8816-164ed8081d85))
+- [72-gemini-argon-high-prompt-apex.md](72-gemini-argon-high-prompt-apex.md)
+- [73-meta-ai-prompt-apex.md](73-meta-ai-prompt-apex.md)
+- [74-deepseek-flash-chat-prompt-apex.md](74-deepseek-flash-chat-prompt-apex.md)
 
 ## Extraction status (integration tracker)
 
