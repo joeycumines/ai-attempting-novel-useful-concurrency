@@ -300,13 +300,12 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 		})
 	}
 
-	// 3. Load scores from results-01-05-scores.csv (or results-02-05-scores.csv)
-	scoresPath := filepath.Join(dir, "results-03-05-scores.csv")
-	if _, err := os.Stat(scoresPath); os.IsNotExist(err) {
-		scoresPath = filepath.Join(dir, "results-02-05-scores.csv")
-	}
-	if _, err := os.Stat(scoresPath); os.IsNotExist(err) {
-		scoresPath = filepath.Join(dir, "results-01-05-scores.csv")
+	// 3. Load scores from the newest run that has a scores CSV. Run numbers
+	// are zero-padded, so the lexically last match is the newest run.
+	scoresPath := filepath.Join(dir, "results-01-05-scores.csv")
+	if matches, _ := filepath.Glob(filepath.Join(dir, "results-[0-9][0-9]-05-scores.csv")); len(matches) > 0 {
+		sort.Strings(matches)
+		scoresPath = matches[len(matches)-1]
 	}
 	if f, err := os.Open(scoresPath); err == nil {
 		defer f.Close()

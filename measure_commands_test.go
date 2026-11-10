@@ -144,6 +144,11 @@ func registryDump() (map[string]any, error) {
 	addAll("gather", gatherAttachments)
 	addAll("payload", payloadAttachments)
 	addAll("fanin", faninAttachments)
+	// Exchange and barrier scenarios have tests, benchmarks and fuzz targets
+	// but no measurement battery; they are dumped so the registry file is
+	// complete, and verify does not expect JSONL records for them.
+	addAll("exchange", exchangeAttachments)
+	addAll("barrier", barrierAttachments)
 	return map[string]any{
 		"type":        "registry",
 		"schema":      measureSchemaVersion,
