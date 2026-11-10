@@ -301,9 +301,12 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 	}
 
 	// 3. Load scores from results-01-05-scores.csv (or results-02-05-scores.csv)
-	scoresPath := filepath.Join(dir, "results-01-05-scores.csv")
+	scoresPath := filepath.Join(dir, "results-03-05-scores.csv")
 	if _, err := os.Stat(scoresPath); os.IsNotExist(err) {
 		scoresPath = filepath.Join(dir, "results-02-05-scores.csv")
+	}
+	if _, err := os.Stat(scoresPath); os.IsNotExist(err) {
+		scoresPath = filepath.Join(dir, "results-01-05-scores.csv")
 	}
 	if f, err := os.Open(scoresPath); err == nil {
 		defer f.Close()

@@ -115,12 +115,12 @@ func BenchmarkBroadcaster_ProducerConsumer(b *testing.B) {
 	defer sub.Close()
 
 	var stop atomic.Bool
-	var read uint64
+	var read atomic.Uint64
 
 	go func() {
 		for !stop.Load() {
 			if _, r := sub.TryNext(); r == ReadOK65Deepseek {
-				atomic.AddUint64(&read, 1)
+				read.Add(1)
 			}
 		}
 	}()
@@ -132,7 +132,7 @@ func BenchmarkBroadcaster_ProducerConsumer(b *testing.B) {
 	}
 	stop.Store(true)
 	b.StopTimer()
-	_ = atomic.LoadUint64(&read)
+	_ = read.Load()
 }
 
 // BenchmarkChanFanout_Consumer measures the per-consumer receive cost of the

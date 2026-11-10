@@ -320,7 +320,9 @@ function downloadBlob(name, content, mime){
     ['payload.throughput / latency', 'publish_ns_op / publish_latency_ns', 'async payload fan-out incl. lossy ring/seqlock designs'],
     ['payload.integrity', 'torn_reads', '[4]uint64 multi-word read integrity under 8-way fan-out'],
     ['payload.stalled_consumer', 'stalled_consumer_ops_completed', 'async lane vs never-ranged subscriber; approximate retained bytes'],
-    ['payload.churn', 'churn_ns_op', 'subscribe-with-context cancellation lifecycle']
+    ['payload.churn', 'churn_ns_op', 'subscribe-with-context cancellation lifecycle'],
+    ['fanin.merge', 'merge_ns_op / exactly_once_violations', 'concurrent 4-lane merge cost per value; per-lane FIFO exactly-once accounting'],
+    ['fanin.batch_drain', 'drain_ns_op / exactly_once_violations', 'Drain(32) against a fixture prefilled to capacity (256 values)']
   ];
   $('batteryGloss').innerHTML = '<thead><tr><td>battery</td><td>metrics</td><td>what it measures</td></tr></thead><tbody>' + batteries.map(function(b){
     return '<tr><td>'+esc(b[0])+'</td><td>'+esc(b[1])+'</td><td>'+esc(b[2])+'</td></tr>';

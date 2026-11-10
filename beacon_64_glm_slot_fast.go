@@ -36,7 +36,9 @@ func loadSlotSeqImpl64GLM[V any](sp *slot64GLM[V]) uint64 {
 func loadSlotValImpl64GLM[V any](sp *slot64GLM[V], dst *V) {
 	src := unsafe.Pointer(&sp.val)
 	n := int(unsafe.Sizeof(sp.val))
-	words := n / wordSize64GLM
+	// this file builds only on amd64 and arm64, where a uint64 copy unit
+	// is exactly 8 bytes and 8-byte copies stay aligned with val's offset
+	words := n / 8
 	for i := 0; i < words; i++ {
 		*(*uint64)(unsafe.Add(unsafe.Pointer(dst), i*8)) = *(*uint64)(unsafe.Add(src, i*8))
 	}
@@ -54,7 +56,9 @@ func loadSlotValImpl64GLM[V any](sp *slot64GLM[V], dst *V) {
 func storeSlotValImpl64GLM[V any](sp *slot64GLM[V], v V) {
 	dst := unsafe.Pointer(&sp.val)
 	n := int(unsafe.Sizeof(v))
-	words := n / wordSize64GLM
+	// this file builds only on amd64 and arm64, where a uint64 copy unit
+	// is exactly 8 bytes and 8-byte copies stay aligned with val's offset
+	words := n / 8
 	for i := 0; i < words; i++ {
 		*(*uint64)(unsafe.Add(dst, i*8)) = *(*uint64)(unsafe.Add(unsafe.Pointer(&v), i*8))
 	}

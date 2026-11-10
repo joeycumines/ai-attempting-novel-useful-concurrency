@@ -23,6 +23,7 @@ import (
 	"math/bits"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 )
 
 // ErrCarillonUnsubscribed is returned by [CarillonSubscription.Recv] when the
@@ -143,6 +144,11 @@ type Carillon[V any] struct {
 	joinHook func()
 }
 
+// slotPadSize carves carillonSlot into exactly one 64-byte cache line on
+// both 32-bit and 64-bit targets. The fixed fields total 26 bytes plus one
+// pointer-sized slot (the bell), so the pad is 38 minus the pointer size.
+const slotPadSize = 38 - unsafe.Sizeof(uintptr(0))
+
 // slot is one subscription's control block. It is exactly one cache line, so
 // an owner updating its cursor does not false-share with its neighbours.
 type carillonSlot struct {
@@ -158,7 +164,7 @@ type carillonSlot struct {
 	armed bool   // the owner's parked bit is currently set
 	bound bool   // the slot belongs to a live subscription
 
-	_ [24]byte
+	_ [slotPadSize]byte
 }
 
 // chunk is 64 slots plus their summary bitmaps. Each bitmap bit corresponds to

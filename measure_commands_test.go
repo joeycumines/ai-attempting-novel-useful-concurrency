@@ -30,7 +30,7 @@ func measureBatteriesByID() map[string]measureBattery {
 
 func cmdMeasureList(args []string) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
-	fam := fs.String("family", "", "only list one family (broadcast|caster|scatter|gather|payload)")
+	fam := fs.String("family", "", "only list one family (broadcast|caster|scatter|gather|payload|fanin)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -67,6 +67,8 @@ func scenarioKindName(k ScenarioKind) string {
 		return "gather"
 	case KindPayload:
 		return "payload"
+	case KindFanin:
+		return "fanin"
 	default:
 		return fmt.Sprintf("unknown(%d)", int(k))
 	}
@@ -137,6 +139,7 @@ func registryDump() (map[string]any, error) {
 	addAll("scatter", scatterAttachments)
 	addAll("gather", gatherAttachments)
 	addAll("payload", payloadAttachments)
+	addAll("fanin", faninAttachments)
 	return map[string]any{
 		"type":        "registry",
 		"schema":      measureSchemaVersion,
@@ -228,6 +231,7 @@ func cmdMeasureRun(args []string) int {
 	runScatterBatteries(ctx)
 	runGatherBatteries(ctx)
 	runPayloadBatteries(ctx)
+	runFaninBatteries(ctx)
 
 	dur := time.Since(ctx.started)
 	ctx.write(map[string]any{
@@ -355,7 +359,7 @@ func verifyResults(path string, out io.Writer) int {
 	if v.badRecords > 0 {
 		fail++
 	}
-	for _, family := range []string{"broadcast", "caster", "scatter", "gather", "payload"} {
+	for _, family := range []string{"broadcast", "caster", "scatter", "gather", "payload", "fanin"} {
 		miss := v.missing[family]
 		meas := len(v.measured[family])
 		skipN := len(v.skipped[family])

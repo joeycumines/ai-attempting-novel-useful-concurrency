@@ -340,6 +340,10 @@ func payloadAttachmentMeta(impl string) ([]string, bool, bool) {
 	return attachmentsOfImpl(payloadAttachments, impl)
 }
 
+func faninAttachmentMeta(impl string) ([]string, bool, bool) {
+	return attachmentsOfImpl(faninAttachments, impl)
+}
+
 // writeMetric emits a metric record. summary is computed from raw rep samples
 // (kept in the record for full re-analysis) unless raw is nil.
 func (c *measureContext) writeMetric(m map[string]any, samples []float64) {
@@ -406,5 +410,10 @@ func expectedImplSets() []expectedImplSet {
 		payloadNames = append(payloadNames, name)
 	}
 	sets = append(sets, expectedImplSet{"payload", payloadNames})
+	faninNames := []string{}
+	for name := range faninLikes() {
+		faninNames = append(faninNames, name)
+	}
+	sets = append(sets, expectedImplSet{"fanin", faninNames})
 	return sets
 }

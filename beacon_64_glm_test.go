@@ -416,16 +416,19 @@ func TestMultiProducerStress(t *testing.T) {
 
 	const producers = 4
 	const perProducer = 20000
-	// each producer publishes values p*1e9 + i; the reader(s) validate:
+	// each producer publishes values p*1e6 + i; the reader(s) validate:
 	//   - each stream is strictly increasing (order within a producer)
-	//   - no torn values (identity: v%1e9 < perProducer and v/1e9 < producers)
+	//   - no torn values (identity: v%1e6 < perProducer and v/1e6 < producers).
+	// The 1e6 multiplier keeps every value small enough to fit a 32-bit int,
+	// so this test is meaningful on GOARCH=386 as well.
+	const streamBase = 1000000
 	var wg sync.WaitGroup
 	for p := 0; p < producers; p++ {
 		wg.Add(1)
 		go func(p int) {
 			defer wg.Done()
 			for i := 0; i < perProducer; i++ {
-				b.Publish(p*1000000000 + i)
+				b.Publish(p*streamBase + i)
 			}
 		}(p)
 	}
@@ -443,7 +446,7 @@ func TestMultiProducerStress(t *testing.T) {
 				if !ok {
 					return
 				}
-				p, i := v/1000000000, v%1000000000
+				p, i := v/streamBase, v%streamBase
 				if p >= producers || i >= perProducer {
 					anomalies.Add(1) // torn / fabricated value
 					continue
