@@ -29,40 +29,23 @@ func loadSlotSeqImpl64GLM[V any](sp *slot64GLM[V]) uint64 {
 	return sp.seq.Load()
 }
 
-// loadSlotValImpl64GLM — plain word copy.
+// loadSlotValImpl64GLM — plain byte copy. The copy builtin is exact: it
+// copies exactly sizeof(V) bytes with no over-read and no alignment or
+// word-size assumption, which matters on 32-bit architectures where the
+// slot64GLM payload is not 8-byte sized or aligned.
 func loadSlotValImpl64GLM[V any](sp *slot64GLM[V], dst *V) {
-	src := unsafe.Pointer(&sp.val)
-	n := int(unsafe.Sizeof(sp.val))
-	words := n / wordSize64GLM
-	for i := 0; i < words; i++ {
-		*(*uint64)(unsafe.Add(unsafe.Pointer(dst), i*8)) = *(*uint64)(unsafe.Add(src, i*8))
-	}
-	if rem := n % 8; rem != 0 {
-		off := words * 8
-		w := *(*uint64)(unsafe.Add(src, off))
-		for j := 0; j < rem; j++ {
-			*(*byte)(unsafe.Add(unsafe.Pointer(dst), off+int(j))) = byte(w >> (8 * j))
-		}
-	}
+	src := unsafe.Slice((*byte)(unsafe.Pointer(&sp.val)), int(unsafe.Sizeof(sp.val)))
+	dstB := unsafe.Slice((*byte)(unsafe.Pointer(dst)), int(unsafe.Sizeof(*dst)))
+	copy(dstB, src)
 }
 
-// storeSlotValImpl64GLM — plain word store; ordered by the following atomic
-// release store of even seq.
+// storeSlotValImpl64GLM — plain byte copy; ordered by the following atomic
+// release store of even seq. See loadSlotValImpl64GLM for why this is a
+// byte copy and not word copies.
 func storeSlotValImpl64GLM[V any](sp *slot64GLM[V], v V) {
-	dst := unsafe.Pointer(&sp.val)
-	n := int(unsafe.Sizeof(v))
-	words := n / wordSize64GLM
-	for i := 0; i < words; i++ {
-		*(*uint64)(unsafe.Add(dst, i*8)) = *(*uint64)(unsafe.Add(unsafe.Pointer(&v), i*8))
-	}
-	if rem := n % 8; rem != 0 {
-		off := words * 8
-		var w uint64
-		for j := 0; j < rem; j++ {
-			w |= uint64(*(*byte)(unsafe.Add(unsafe.Pointer(&v), off+int(j)))) << (8 * j)
-		}
-		*(*uint64)(unsafe.Add(dst, off)) = w
-	}
+	dstB := unsafe.Slice((*byte)(unsafe.Pointer(&sp.val)), int(unsafe.Sizeof(sp.val)))
+	src := unsafe.Slice((*byte)(unsafe.Pointer(&v)), int(unsafe.Sizeof(v)))
+	copy(dstB, src)
 }
 
 // Portable fences: atomic load/store of a scratch word.

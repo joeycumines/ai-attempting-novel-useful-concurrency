@@ -182,8 +182,15 @@ func BenchmarkRingFanout45Publish(b *testing.B) {
 
 func TestChanCaster58Helpers(t *testing.T) {
 	x := NewChanCaster58Spark(make(chan int))
-	if unsafe.Sizeof(*x) != 128 {
-		t.Fatalf("size=%d want 128", unsafe.Sizeof(*x))
+	// The documented 128-byte layout is a 64-bit-target claim (the response
+	// comment itself says no cache-line-size claim is made for other
+	// targets); skip the size assertion elsewhere.
+	if unsafe.Sizeof(uintptr(0)) == 8 {
+		if unsafe.Sizeof(*x) != 128 {
+			t.Fatalf("size=%d want 128", unsafe.Sizeof(*x))
+		}
+	} else if t.Name() == "TestChanCaster58Helpers" {
+		t.Logf("size=%d on a 32-bit target; the 128-byte assertion is 64-bit-only", unsafe.Sizeof(*x))
 	}
 	if v, ok := x.TryRecv(); ok || v != 0 || x.Len() != 0 {
 		t.Fatalf("empty TryRecv=(%d,%v) len=%d", v, ok, x.Len())

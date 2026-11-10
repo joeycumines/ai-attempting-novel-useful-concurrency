@@ -75,12 +75,12 @@ function bindTip(el, htmlFn){
 function containerWidth(el){ return Math.max(el.clientWidth || 900, 320); }
 function clear(el){ while (el.firstChild) el.removeChild(el.firstChild); }
 function familyMetricName(family, kind){
-  if (kind === 'throughput') return family === 'caster' ? 'send_ns_op' : (family === 'scatter' ? 'dispatch_ns_op' : (family === 'gather' ? 'wait_ns_op' : 'publish_ns_op'));
+  if (kind === 'throughput') return family === 'caster' ? 'send_ns_op' : (family === 'scatter' ? 'dispatch_ns_op' : (family === 'gather' ? 'wait_ns_op' : (family === 'fanin' ? 'merge_ns_op' : 'publish_ns_op')));
   if (kind === 'latency') return family === 'caster' ? 'send_latency_ns' : 'publish_latency_ns';
   return null;
 }
-var familyLabel = { broadcast:'Broadcast', caster:'Caster', scatter:'Scatter', gather:'Gather', payload:'Payload' };
-var familyOrder = ['broadcast','caster','scatter','gather','payload'];
+var familyLabel = { broadcast:'Broadcast', caster:'Caster', scatter:'Scatter', gather:'Gather', payload:'Payload', fanin:'FanIn' };
+var familyOrder = ['broadcast','caster','scatter','gather','payload','fanin'];
 var familiesPresent = familyOrder.filter(function(f){ return (derived.scores && derived.scores[f] && Object.keys(derived.scores[f]).length) || metrics.some(function(m){return m.family===f;}); });
 function derivedFamily(f){ return (derived.scores && derived.scores[f]) || {}; }
 function sortedImpls(f, by){

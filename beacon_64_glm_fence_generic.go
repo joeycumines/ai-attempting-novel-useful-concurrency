@@ -4,7 +4,7 @@ package bigbuff
 
 import "sync/atomic"
 
-var fenceWord64GLM uint64
+var fenceWord64GLM atomic.Uint64
 
-func fenceAcquire64GLM() { atomic.LoadUint64(&fenceWord64GLM) }
-func fenceRelease64GLM() { atomic.StoreUint64(&fenceWord64GLM, 1) }
+func fenceAcquire64GLM() { _ = fenceWord64GLM.Load() }
+func fenceRelease64GLM() { fenceWord64GLM.Store(1) }

@@ -10,7 +10,7 @@ function lbRows(family){
   var sc = derivedFamily(family);
   var thrName = familyMetricName(family, 'throughput');
   var latName = familyMetricName(family, 'latency');
-  var thr = metricByImpl(thrName, family, 8);
+  var thr = metricByImpl(thrName, family, family === 'fanin' ? 4 : 8);
   var lat = metricByImpl(latName, family, family === 'caster' ? 8 : 8);
   var allocs = family === 'broadcast' ? metricByImpl('publish_allocs_op', family, 8) : {};
   var stalls = metricByImpl('stalled_consumer_ops_completed', family, null);

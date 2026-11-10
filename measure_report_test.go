@@ -361,9 +361,13 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 
 	for family, implsRaw := range families {
 		impls := unique(implsRaw)
+		thrDims := 8 // dims filter for the headlining throughput metric
+		if family == "fanin" {
+			thrDims = faninSenders
+		}
 		thrAll := metricMeans(data.metrics, map[string]string{ // metric name differs per family
-			"broadcast": "publish_ns_op", "payload": "publish_ns_op", "caster": "send_ns_op",
-		}[family], family, 8)
+			"broadcast": "publish_ns_op", "payload": "publish_ns_op", "caster": "send_ns_op", "fanin": "merge_ns_op",
+		}[family], family, thrDims)
 		latAll := metricMeans(data.metrics, map[string]string{
 			"broadcast": "publish_latency_ns", "payload": "publish_latency_ns", "caster": "send_latency_ns",
 		}[family], family, -1)
@@ -474,7 +478,11 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 
 			metrics := map[string]any{}
 			if hasThr {
-				metrics["publish_ns_op@8"] = thr
+				thrKey := "publish_ns_op@8"
+				if family == "fanin" {
+					thrKey = "merge_ns_op@4"
+				}
+				metrics[thrKey] = thr
 			}
 			if hasLat {
 				metrics["publish_latency_ns@8"] = lat
@@ -529,7 +537,7 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 		}
 	}
 	for fam, set := range map[string][]string{
-		"broadcast": broadcastFactoryNames(), "caster": casterNames(), "scatter": scatterNames(), "gather": gatherNames(), "payload": payloadNames(),
+		"broadcast": broadcastFactoryNames(), "caster": casterNames(), "scatter": scatterNames(), "gather": gatherNames(), "payload": payloadNames(), "fanin": faninNames(),
 	} {
 		m := measured[fam]
 		seen := 0
@@ -582,6 +590,13 @@ func gatherNames() []string {
 func payloadNames() []string {
 	out := []string{}
 	for name := range asyncImpls() {
+		out = append(out, name)
+	}
+	return out
+}
+func faninNames() []string {
+	out := []string{}
+	for name := range faninLikes() {
 		out = append(out, name)
 	}
 	return out

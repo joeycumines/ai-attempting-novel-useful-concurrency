@@ -86,9 +86,10 @@ type seqNode23Meta[V any] struct {
 	dead atomic.Bool
 	sig  chan struct{} // capacity 1, coalescing wake-up only
 
-	// next is also read by workers; head and lost are owner-only.
-	head uint64
-	lost uint64
+	// next is also read by workers; head and lost are owner-only. Typed
+	// atomics keep these 8-byte aligned on 32-bit architectures.
+	head atomic.Uint64
+	lost atomic.Uint64
 }
 
 // SeqSub23Meta is a subscription handle on a [SeqCaster23Meta]. A single handle
@@ -132,7 +133,7 @@ func NewSeqCaster23Meta[V any](ringPow2 int, shards int) *SeqCaster23Meta[V] {
 // allocation occurs for the lifetime of the subscription.
 func (x *SeqCaster23Meta[V]) Subscribe() *SeqSub23Meta[V] {
 	n := &seqNode23Meta[V]{sig: make(chan struct{}, 1)}
-	n.head = x.seq.Load() + 1
+	n.head.Store(x.seq.Load() + 1)
 	for {
 		old := x.list.Load()
 		n.next.Store(old)
@@ -163,7 +164,7 @@ func (s *SeqSub23Meta[V]) Unsubscribe() {
 
 // Lost reports how many values this subscription missed because it fell more
 // than a ring behind.
-func (s *SeqSub23Meta[V]) Lost() uint64 { return atomic.LoadUint64(&s.n.lost) }
+func (s *SeqSub23Meta[V]) Lost() uint64 { return s.n.lost.Load() }
 
 // Send publishes v, returning the sequence it was assigned. It never blocks on
 // subscribers and performs no heap allocation.
@@ -248,26 +249,26 @@ func (s *SeqSub23Meta[V]) Next(ctx context.Context) (v V, ok bool, lost uint64) 
 			return v, false, 0
 		}
 		cur := x.seq.Load()
-		if atomic.LoadUint64(&n.head) <= cur {
+		if n.head.Load() <= cur {
 			x.ringMu.RLock()
 			// Re-read under the read lock: the publisher may have advanced and
 			// overwritten the slot we are about to read.
 			cur = x.seq.Load()
-			head := atomic.LoadUint64(&n.head)
+			head := n.head.Load()
 			oldest := uint64(1) // sequence 1 is the oldest that can exist
 			if cur+2 > x.size {
 				oldest = cur + 2 - x.size
 			}
 			if head < oldest {
 				skipped := oldest - head
-				atomic.StoreUint64(&n.lost, atomic.LoadUint64(&n.lost)+skipped)
+				n.lost.Store(n.lost.Load() + skipped)
 				lost = skipped
 				head = oldest
-				atomic.StoreUint64(&n.head, head)
+				n.head.Store(head)
 			}
 			if head <= cur {
 				v = x.ring[head&x.mask]
-				atomic.StoreUint64(&n.head, head+1)
+				n.head.Store(head + 1)
 				x.ringMu.RUnlock()
 				return v, true, lost
 			}

@@ -706,11 +706,3 @@ func loadSlotVal64GLM[V any](sp *slot64GLM[V], dst *V) { loadSlotValImpl64GLM(sp
 func slotSeqRaw64GLM[V any](sp *slot64GLM[V]) *uint64 {
 	return (*uint64)(unsafe.Pointer(&sp.seq))
 }
-
-// unsafe.go helpers for payload word-copies:
-func unsafeWordsOf64GLM[V any](v *V) (words []uintptr) {
-	n := (int(unsafe.Sizeof(*v)) + wordSize64GLM - 1) / wordSize64GLM
-	return unsafe.Slice((*uintptr)(unsafe.Pointer(v)), n)
-}
-
-const wordSize64GLM = int(unsafe.Sizeof(uintptr(0)))

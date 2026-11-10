@@ -40,6 +40,7 @@ const (
 	KindScatter
 	KindGather
 	KindPayload // multi-word payload integrity, driven via asyncAPI
+	KindFanin   // M producers, one batch-oriented consumer, bounded lossy lanes
 )
 
 type Scenario struct {
@@ -122,6 +123,11 @@ var Scenarios = []Scenario{
 		Tradeoffs: "Wait performs one rendezvous per registered sender; a sender that withdraws without signalling must be compensated or Wait hangs, which is the central correctness hazard of the family.",
 		Kind:      KindGather, Loss: GatherAll, Baseline: "BaselineGatherBarrier",
 		Invariants: []string{"Wait returns after exactly one signal per registered sender", "a withdrawing sender is compensated so Wait cannot hang", "Wait's return equals the number of real (non-compensated) signals"}},
+	{ID: "bounded-fanin-merge", Title: "Bounded fan-in merge (M producers, one batch-oriented consumer)",
+		UseCase:   "Ingestion and telemetry lanes where many independent producers stream into a single batch-oriented consumer (log pipelines, metrics fan-in, agent work completion queues) with bounded memory and overload that must drop, never block",
+		Tradeoffs: "The consumer is a single serialization point, unlike broadcast; producers must never block behind a slow consumer, so each lane is bounded and drops newest values at push time (counted at push), trading completeness for liveness and bounded memory. Ordering is FIFO per producer only; there is deliberately no global order, which removes any temptation for cross-lane coordination.",
+		Kind:      KindFanin, Loss: LossyDetectable, Baseline: "BaselineFanIn (baseline)",
+		Invariants: []string{"every accepted value is observed by the consumer exactly once, in per-producer FIFO order", "TryPush/TryPushBatch report refusal (false/short count) exactly when the value was not accepted — loss is observable at push time", "total buffered values never exceed the sum of lane capacities", "after Close returns, all accepted values are drainable and Next eventually reports closure"}},
 	{ID: "ephemeral-churn-membership", Title: "Broadcast under ephemeral membership (high subscribe/unsubscribe churn)",
 		UseCase:   "Short-lived consumer workloads — per-request subscriptions, websocket sessions, plugin hooks — where subscriptions are created and destroyed continuously while publishing proceeds",
 		Tradeoffs: "Subscribe/unsubscribe cost and its contention with Send dominate; implementations that rebuild or lock the whole registry per membership change degrade, while per-value guarantees may legitimately weaken to 'no corruption, no stall, no duplicate/reordered delivery within a session'.",
@@ -214,6 +220,10 @@ var Cases = []Case{
 	{"gather/test/all-signals", "signal-gather-barrier", CaseTest, "Wait collects one signal per sender; withdrawal compensated", "TestScenarioGather"},
 	{"gather/bench/wait", "signal-gather-barrier", CaseBenchmark, "Gather cost with 8 senders", "BenchmarkScenarioScatterGather"},
 	{"gather/fuzz/op-stream", "signal-gather-barrier", CaseFuzz, "Randomised register/signal/withdraw stream", "FuzzScenarioCasterScatterGather"},
+	{"fanin68/test/bounded-lanes", "bounded-fanin-merge", CaseTest, "Bounded lanes drop-newest with push-time accounting; per-lane FIFO; Close-then-drain contract; exact accepted/refused counts", "TestScenarioFanin"},
+	{"fanin-baseline/test/shared-channel", "bounded-fanin-merge", CaseTest, "Vacuum shared-channel baseline passes the same bounded-loss FIFO contracts", "TestScenarioFanin"},
+	{"fanin/bench/merge", "bounded-fanin-merge", CaseBenchmark, "Merged throughput at producers=4 with a concurrent consumer and exact accepted/drained accounting", "BenchmarkScenarioFaninMerge"},
+	{"fanin/fuzz/model", "bounded-fanin-merge", CaseFuzz, "Bounded-loss per-lane FIFO model against a random push/drain/close op stream", "FuzzScenarioFaninModel"},
 	{"churn/test/membership-churn", "ephemeral-churn-membership", CaseTest, "Continuous subscribe/unsubscribe while publishing; no corruption/stall", "TestScenarioChurn"},
 	{"churn/bench/subscribe-unsubscribe", "ephemeral-churn-membership", CaseBenchmark, "Subscribe/unsubscribe cost (BenchmarkUnified_Churn + scenario bench)", "BenchmarkScenarioBroadcast"},
 	{"fanout/test/32-subscribers", "large-fanout-scalability", CaseTest, "Correct fan-out at 32 subscribers", "TestScenarioLargeFanout"},

@@ -30,7 +30,7 @@ func loadSlotSeqImpl64GLM[V any](sp *slot64GLM[V]) uint64 {
 func loadSlotValImpl64GLM[V any](sp *slot64GLM[V], dst *V) {
 	src := unsafe.Pointer(&sp.val)
 	n := int(unsafe.Sizeof(sp.val))
-	words := n / wordSize64GLM
+	words := n / 8
 	for i := 0; i < words; i++ {
 		w := atomic.LoadUint64((*uint64)(unsafe.Add(src, i*8)))
 		*(*uint64)(unsafe.Add(unsafe.Pointer(dst), i*8)) = w
@@ -53,9 +53,15 @@ func loadSlotValImpl64GLM[V any](sp *slot64GLM[V], dst *V) {
 func storeSlotValImpl64GLM[V any](sp *slot64GLM[V], v V) {
 	dst := unsafe.Pointer(&sp.val)
 	n := int(unsafe.Sizeof(v))
-	words := n / wordSize64GLM
+	words := n / 8
 	for i := 0; i < words; i++ {
-		w := atomic.LoadUint64((*uint64)(unsafe.Add(unsafe.Pointer(&v), i*8)))
+		// &v is a caller-local copy: plain byte assembly, no alignment
+		// requirement (64-bit atomics require 8-byte alignment, which a
+		// local V is not guaranteed to have on 32-bit architectures).
+		var w uint64
+		for j := 0; j < 8; j++ {
+			w |= uint64(*(*byte)(unsafe.Add(unsafe.Pointer(&v), i*8+int(j)))) << (8 * j)
+		}
 		atomic.StoreUint64((*uint64)(unsafe.Add(dst, i*8)), w)
 	}
 	if rem := n % 8; rem != 0 {
@@ -71,7 +77,7 @@ func storeSlotValImpl64GLM[V any](sp *slot64GLM[V], v V) {
 // fenceAcquire64GLM/fenceRelease64GLM under race: full barriers via a dummy atomic —
 // the atomic payload ops already carry the ordering TSan needs, but keep
 // the calls uniform so control code is identical across builds.
-func fenceAcquire64GLM() { _ = atomic.LoadUint64(&fenceWord64GLM) }
-func fenceRelease64GLM() { atomic.StoreUint64(&fenceWord64GLM, 1) }
+func fenceAcquire64GLM() { _ = fenceWord64GLM.Load() }
+func fenceRelease64GLM() { fenceWord64GLM.Store(1) }
 
-var fenceWord64GLM uint64
+var fenceWord64GLM atomic.Uint64

@@ -170,6 +170,7 @@ const landingPageBody = `</head>
           <div class="pill" data-family="caster">Casters (Rendezvous)</div>
           <div class="pill" data-family="scatter">Scatter (Queue)</div>
           <div class="pill" data-family="gather">Gather (Barrier)</div>
+          <div class="pill" data-family="fanin">FanIn (Bounded Merge)</div>
           <div class="pill" data-family="payload">Payload (Async)</div>
         </div>
         <div class="filter-pills" id="verdictPills">

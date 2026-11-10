@@ -221,6 +221,11 @@ var gatherAttachments = []Attachment{
 	att("signal-gather-barrier", "BaselineGatherBarrier", "Vacuum baseline: mutex-guarded count + one unbuffered channel + compensating sends.", true),
 }
 
+var faninAttachments = []Attachment{
+	att("bounded-fanin-merge", "EdgeFanIn68Chatgpt (68-ChatGPT)", "Per-producer bounded SPSC lanes with an MPSC ready-stack and amortised batch drain; drop-newest with push-time accounting (TryPush false / TryPushBatch short count); FIFO per lane, no global ordering; Close drains accepted values before reporting closure. The scenario's intended design.", true),
+	att("bounded-fanin-merge", "BaselineFanIn (baseline)", "Vacuum baseline: one shared buffered channel behind one mutex (push path), select-default drops counted in Drops(); single lock domain, no lane isolation or batching — the ordinary design the port must beat.", true),
+}
+
 // payloadAttachments bind asyncAPI (pv) factories to the payload scenario.
 var payloadAttachments = []Attachment{
 	att("wide-payload-integrity", "BaselineFanout_c64", "Vacuum async baseline (BaselineFanout) carrying multi-word payloads.", true),
@@ -245,11 +250,12 @@ var payloadAttachments = []Attachment{
 }
 
 func allAttachments() []Attachment {
-	out := make([]Attachment, 0, len(broadcastAttachments)+len(casterAttachments)+len(scatterAttachments)+len(gatherAttachments))
+	out := make([]Attachment, 0, len(broadcastAttachments)+len(casterAttachments)+len(scatterAttachments)+len(gatherAttachments)+len(faninAttachments))
 	out = append(out, broadcastAttachments...)
 	out = append(out, casterAttachments...)
 	out = append(out, scatterAttachments...)
 	out = append(out, gatherAttachments...)
+	out = append(out, faninAttachments...)
 	out = append(out, payloadAttachments...)
 	return out
 }

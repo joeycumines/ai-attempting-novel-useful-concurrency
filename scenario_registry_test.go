@@ -93,6 +93,22 @@ func TestScenarioRegistryComplete(t *testing.T) {
 			t.Errorf("gather attachment in non-gather scenario %q", a.Scenario)
 		}
 	}
+	fanins := faninLikes()
+	faninAttached := map[string]bool{}
+	for _, a := range faninAttachments {
+		faninAttached[a.Impl] = true
+		if _, ok := fanins[a.Impl]; !ok {
+			t.Errorf("fanin attachment %q does not resolve to a factory", a.Impl)
+		}
+		if scenarioByID[a.Scenario].Kind != KindFanin {
+			t.Errorf("fanin attachment in non-fanin scenario %q", a.Scenario)
+		}
+	}
+	for name := range fanins {
+		if !faninAttached[name] {
+			t.Errorf("fanin %q is not attached to any scenario", name)
+		}
+	}
 }
 
 func TestScenarioCaseRunnablesExist(t *testing.T) {

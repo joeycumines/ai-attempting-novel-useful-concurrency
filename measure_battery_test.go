@@ -48,6 +48,8 @@ var measureBatteries = []measureBattery{
 	{"payload.integrity", "payload", "Torn multi-word payload reads under concurrent 8-subscriber load (violations counted, not asserted)"},
 	{"payload.stalled_consumer", "payload", "Behaviour with one stalled subscriber: ops completed, fast-subscriber torn reads, retained backlog"},
 	{"payload.churn", "payload", "SubscribeContext+cancel pair cost"},
+	{"fanin.merge", "fanin", "End-to-end concurrent merge cost per value at 4 producers draining into one consumer (blocking Next, per-lane FIFO exactly-once accounting)"},
+	{"fanin.batch_drain", "fanin", "Drain(32) cost against a fixture prefilled to capacity (256 values); producer-side cost excluded"},
 }
 
 func batteryIDs() []string {
