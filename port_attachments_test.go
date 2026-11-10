@@ -11,9 +11,20 @@ package bigbuff
 
 import (
 	"context"
-	"runtime"
+	"sync"
 	"time"
 )
+
+// nextBackoff doubles the parked backoff, capped at 500µs. Backoffs are used
+// where the primitive offers no wake path wired to a subscription; the
+// goroutine sleeps on a timer instead of spinning.
+func nextBackoff(d time.Duration) time.Duration {
+	d *= 2
+	if d > 500*time.Microsecond {
+		return 500 * time.Microsecond
+	}
+	return d
+}
 
 // --- HorizonRing59Gemini (59-Gemini) ---
 
@@ -95,7 +106,10 @@ func (s *latest3260TerraSub) Receive(ctx context.Context) (int, bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// No wake primitive exists by design; wait by re-loading the atomic word.
+	// No wake primitive exists by design (this candidate is a polling
+	// register), so park on a bounded exponential backoff instead of
+	// spinning: the goroutine sleeps between polls.
+	backoff := 10 * time.Microsecond
 	for {
 		snap := s.x.Load()
 		if snap.Closed {
@@ -108,9 +122,9 @@ func (s *latest3260TerraSub) Receive(ctx context.Context) (int, bool) {
 		select {
 		case <-ctx.Done():
 			return 0, false
-		default:
-			runtime.Gosched()
+		case <-time.After(backoff):
 		}
+		backoff = nextBackoff(backoff)
 	}
 }
 func (s *latest3260TerraSub) TryReceive() (int, bool) {
@@ -258,8 +272,15 @@ func (s *broadcaster65DeepseekSub) Receive(ctx context.Context) (int, bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// Next() only wakes on the subscription's own context, so honour the
-	// caller's context with a brief poll instead.
+	// Next() blocks on the subscription's own context (set when the
+	// subscription was created), not on this call's context. Use it for the
+	// fully-blocking case; for a caller context that can expire, park on a
+	// bounded exponential backoff so the cancellation is honoured without a
+	// busy loop.
+	if ctx.Done() == nil {
+		return s.sub.Next()
+	}
+	backoff := 10 * time.Microsecond
 	for {
 		v, r := s.sub.TryNext()
 		switch r {
@@ -271,8 +292,9 @@ func (s *broadcaster65DeepseekSub) Receive(ctx context.Context) (int, bool) {
 		select {
 		case <-ctx.Done():
 			return 0, false
-		case <-time.After(100 * time.Microsecond):
+		case <-time.After(backoff):
 		}
+		backoff = nextBackoff(backoff)
 	}
 }
 func (s *broadcaster65DeepseekSub) TryReceive() (int, bool) {
@@ -377,46 +399,89 @@ func (a *watchCell69DeepseekAdapter) Publish(v int) int  { a.x.Store(v); return 
 func (a *watchCell69DeepseekAdapter) Close()             { a.x.Close() }
 func (a *watchCell69DeepseekAdapter) IsCoalescing() bool { return true }
 func (a *watchCell69DeepseekAdapter) Subscribe() BroadcastSubscriber {
-	// Tail-attach: the subscription observes values published AFTER this
-	// call (Watch's documented initial catch-up yield is intentionally
-	// dropped — the epoch is captured synchronously here so no publication
-	// can be missed). The cell has no public wait primitive, so Receive
-	// polls the epoch with Gosched; conflation is by design.
-	return &watchCell69DeepseekSub{x: a.x, ep: a.x.Epoch()}
+	// Tail-attach anchored synchronously at subscribe time: the watcher
+	// goroutine only delivers observations whose epoch is strictly newer
+	// than the captured one, so nothing published before the subscribe is
+	// ever delivered. Delivery re-anchors to the latest Load (the cell is
+	// conflating by design), which keeps the Watch catch-up yield safe to
+	// consume without ever dropping a post-subscribe publication.
+	s := &watchCell69DeepseekSub{
+		x:    a.x,
+		ch:   make(chan int, 1),
+		done: make(chan struct{}),
+	}
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+	go s.watch(a.x.Epoch())
+	return s
 }
 
 type watchCell69DeepseekSub struct {
-	x  *WatchCell69Deepseek[int]
-	ep uint64
+	x      *WatchCell69Deepseek[int]
+	ch     chan int
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
+	once   sync.Once
+}
+
+func (s *watchCell69DeepseekSub) watch(anchor uint64) {
+	defer close(s.done)
+	for range s.x.Watch(s.ctx) {
+		// The yielded value is deliberately ignored: re-anchor to the
+		// latest observation so a coalesced publication can never leave
+		// the subscriber stranded on a superseded value.
+		v, ep := s.x.Load()
+		if ep <= anchor {
+			continue // pre-subscribe boundary, nothing new yet
+		}
+		anchor = ep
+		// Conflate into the single-slot channel: replace a pending
+		// (undelivered) value with the newest.
+		select {
+		case s.ch <- v:
+		default:
+			select {
+			case <-s.ch:
+			default:
+			}
+			s.ch <- v
+		}
+	}
 }
 
 func (s *watchCell69DeepseekSub) Receive(ctx context.Context) (int, bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	for {
-		v, ep := s.x.Load()
-		if ep != s.ep {
-			s.ep = ep
-			return v, true
-		}
+	select {
+	case v := <-s.ch:
+		return v, true
+	case <-s.done:
+		// The cell was closed: drain any pending observation first.
 		select {
-		case <-ctx.Done():
-			return 0, false
+		case v := <-s.ch:
+			return v, true
 		default:
-			runtime.Gosched()
+			return 0, false
 		}
+	case <-ctx.Done():
+		return 0, false
+	case <-s.ctx.Done():
+		return 0, false
 	}
 }
 func (s *watchCell69DeepseekSub) TryReceive() (int, bool) {
-	v, ep := s.x.Load()
-	if ep == s.ep {
+	select {
+	case v := <-s.ch:
+		return v, true
+	default:
 		return 0, false
 	}
-	s.ep = ep
-	return v, true
 }
-func (s *watchCell69DeepseekSub) Unsubscribe() {}
+func (s *watchCell69DeepseekSub) Unsubscribe() {
+	s.once.Do(func() { s.cancel() })
+	<-s.done
+}
 
 // --- Horizon70Meta (70-Meta) ---
 
@@ -445,9 +510,9 @@ func portBroadcastAttachments() []Attachment {
 	return []Attachment{
 		att("bounded-ring-lossy-detectable", "HorizonRing59Gemini (59-Gemini)", "Overwritable seqlock ring with independent cursors; overwritten values are reported as dropped counts per cursor (TryRead/ReadContext). Attached ahead of 59's combiner front-end.", true),
 		att("bounded-ring-lossy-detectable", "StripedCombiner59Gemini (59-Gemini)", "Flat-combining publish front-end over HorizonRing59Gemini; delivery semantics are the ring's (lossy overwrite, drop accounting at the cursor). Single publisher only, like the ring.", true),
-		att("latest-value-conflating-watch", "Latest3260Terra (60-Terra)", "Atomic packed value+revision word; watch semantics by re-reading the word. No wake primitive exists by design, so the adapter polls with Gosched; conflation is the whole point of the cell.", true),
+		att("latest-value-conflating-watch", "Latest3260Terra (60-Terra)", "Atomic packed value+revision word; watch semantics by re-reading the word. No wake primitive exists by design (the candidate is a non-parking polling register), so the adapter parks on a bounded exponential backoff rather than spinning; conflation is the whole point of the cell.", true),
 		att("latest-value-conflating-watch", "Pulse61Deepseek (61-DeepSeek)", "Latest-value cell with version-gated WaitFor wakeups; watchers coalesce arbitrarily many sets into one read. Exactly the conflating-watch envelope.", true),
-		att("latest-value-conflating-watch", "WatchCell69Deepseek (69-DeepSeek)", "Latest-value cell with coalesced generation-gated wakeups; this adapter tail-attaches by epoch and busy-polls with Gosched (Watch's initial catch-up yield is dropped), so delivery is conflated under load.", true),
+		att("latest-value-conflating-watch", "WatchCell69Deepseek (69-DeepSeek)", "Latest-value cell with coalesced generation-gated wakeups; this adapter tail-attaches by a subscribe-time epoch anchor and blocks on the cell's condvar-gated Watch path (no polling). Delivery is conflated under load: only the newest pending value is retained.", true),
 		att("bounded-ring-lossy-detectable", "TelemetryRing63Qwen (63-Qwen)", "SPSC seqlock telemetry ring; publishers overwrite the oldest entry and readers observe seqlock-validated values with lag detectable via advertised head. Not attachable to zero-subscriber facets (no published-count accessor); single publisher only.", true),
 		att("bounded-ring-lossy-detectable", "Beacon64GLM (64-GLM)", "Epoch-gated seqlock broadcast ring with self-serve cursors; lapped cursors skip to the oldest retained value and report Skip counts (the scenario's detectable-loss criterion).", true),
 		att("bounded-ring-lossy-detectable", "Broadcaster65Deepseek (65-DeepSeek)", "Bounded ring with per-subscription skip accounting (Subscription65Deepseek.Skipped); overwritten generations are counted, never delivered torn.", true),
@@ -485,7 +550,7 @@ func portBroadcastAttachments() []Attachment {
 		att("cancellation-and-close-lifecycle", "WatchCell69Deepseek (69-DeepSeek)", "Watch iterators end on ctx cancellation; Close is idempotent and wakes parked watchers.", true),
 		att("cancellation-and-close-lifecycle", "TelemetryRing63Qwen (63-Qwen)", "Receive exits on ctx cancellation; no global Close exists by design (the notifier never closes), so adapter Close is a no-op.", true),
 		att("cancellation-and-close-lifecycle", "Beacon64GLM (64-GLM)", "Next honours ctx; Close is idempotent and releases every parked watcher.", true),
-		att("cancellation-and-close-lifecycle", "Broadcaster65Deepseek (65-DeepSeek)", "Receive polls TryNext and honours ctx; Close is idempotent.", true),
+		att("cancellation-and-close-lifecycle", "Broadcaster65Deepseek (65-DeepSeek)", "Receive blocks on the subscription's own wakeups for the background context and parks on a bounded backoff when the caller's context can expire (the candidate wakes per subscription, not per Receive); Close is idempotent.", true),
 		att("cancellation-and-close-lifecycle", "Horizon66Gemini (66-Gemini)", "ReadNext returns on ctx; Close is idempotent and wakes parked readers.", true),
 		att("cancellation-and-close-lifecycle", "Ring67Haiku (67-Haiku)", "Next returns on ctx; Close releases parked cursors.", true),
 		att("cancellation-and-close-lifecycle", "Horizon70Meta (70-Meta)", "WaitNextContext returns on ctx; Close wakes every parked waiter; idempotent.", true),
