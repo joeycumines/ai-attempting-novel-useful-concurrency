@@ -51,21 +51,33 @@ implements exactly this walk to (re)write the manifests.
 |---|---|---|---|---|---|
 | `01` | standard | full artifact set (`01`–`05`): JSONL, registry dump, interactive report, CSVs | 2013 | **PASS at the revision it was produced from**; re-verification against the current registry fails (see note) | 2026-11-09 |
 | `02` | quick | JSONL, interactive report and CSVs (no registry dump) | 1479 | **PASS at the revision it was produced from**; re-verification against the current registry fails (see note) | 2026-11-09 |
-| `03` | quick | full artifact set (`01`–`05`): JSONL, registry dump, interactive report, CSVs | 1659 | **PASS** (run 9581dec, the revision that added the fan-in family) | 2026-11-10 |
+| `03` | quick | full artifact set (`01`–`05`): JSONL, registry dump, interactive report, CSVs | 1659 | **PASS at the revision it was produced from** (9581dec, which added the fan-in family); re-verification against the current registry fails (see note) | 2026-11-10 |
+| `04` | quick | full artifact set (`01`–`05`): JSONL, registry dump, interactive report, CSVs | 1755 | **PASS** (run 2723ed4; responses 62 and 71–74 integrated) | 2026-11-10 |
 
 Machine (all runs): 2-core Intel Xeon @ 2.60 GHz, linux/amd64, go1.27.3,
 GOMAXPROCS=2 — see each manifest's fingerprint block for the exact values and
 the git commit each run was produced from.
 
 **Re-verification note.** `make measure-index` re-verifies every committed run
-against the *current* registry. Runs `01` and `02` predate the fan-in family
-and its batteries, so after the fan-in work landed their manifests flip to
-`verified: false` — they lack the fan-in coverage the current contract demands.
-That is the honest verdict for them *today*; it does not invalidate them at
-their own revisions. Run `03` (produced from the revision that added the fan-in
-family) verifies clean and is the current committed artifact. The flipped
-manifests are committed as the index tool rewrites them; run `03` supersedes
-`01`/`02` for any decision-making.
+against the *current* registry, and exits non-zero if any run fails. A run
+fails as soon as the registry gains an implementation or a family the run did
+not measure: runs `01` and `02` lack the fan-in family, and run `03` lacks the
+six broadcast attachments added with responses 62 and 71–74. All three
+manifests therefore say `verified: false`. That is the honest verdict for them
+*today*; it does not invalidate them at their own revisions. Run `04` verifies
+clean and is the current committed artifact.
+
+Two consequences worth knowing before relying on the tooling:
+
+- `make measure` (`measure.pipeline`) runs the index step before the site
+  step, so with any stale run committed it stops with an error *after* writing
+  the new run's artifacts and manifests but *before* `site.build`. Run
+  `make site` afterwards, then `make measure-index` once more so the manifests
+  record the report files as the site step leaves them. Run `04` was produced
+  that way.
+- Quick-profile runs are not decision-grade. See
+  `report-02-completion-evaluation.md` for how far two quick runs of the same
+  code disagree.
 
 **Provenance note (honest fingerprint).** Run 01 predates the commit that
 landed the harness: when it executed, the harness existed only in the working

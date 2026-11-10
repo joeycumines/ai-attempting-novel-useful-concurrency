@@ -57,7 +57,7 @@ results-<rr>-<ss>-<slug>.<ext>
 ```
 
 - `rr` — run sequence, two digits: `00` is the documentation group, `01..` are
-  measurement runs in commit order (run 01 = standard profile, run 02 = quick, run 03 = quick).
+  measurement runs in commit order (run 01 = standard profile, runs 02, 03 and 04 = quick).
 - `ss` — slot within the run, two digits:
   - `00` — `results-NN-00-manifest.json` (the run's manifest; **first file of the group**)
   - `01` — `results-NN-01-results.jsonl` (the JSONL results)
