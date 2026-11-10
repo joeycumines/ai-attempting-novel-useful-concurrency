@@ -34,7 +34,8 @@
         "skipped": 5
       },
       "timestamp": "2026-11-10T09:26:14.363112128Z",
-      "verified": false
+      "verified": true,
+      "verified_against": "results-03-02-registry.json"
     },
     {
       "bytes": 171558,
@@ -69,7 +70,7 @@
       "slot": "05"
     }
   ],
-  "generated": "2026-11-10T22:03:50.079131551Z",
+  "generated": "2026-11-10T22:19:50.951628556Z",
   "generator": "bigbuff-measure",
   "generator_version": "1.0.0",
   "go": "go1.27.3",
@@ -86,5 +87,6 @@
   "skipped": 5,
   "timestamp": "2026-11-10T09:26:14.363112128Z",
   "type": "manifest",
-  "verified": false
+  "verified": true,
+  "verified_against": "results-03-02-registry.json"
 }

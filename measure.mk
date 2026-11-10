@@ -99,15 +99,14 @@ measure.report: ## Build/refresh the report (+ CSVs) for the newest results JSON
 	$(MAKE) site.build
 
 .PHONY: measure.index
-measure.index: ## Rebuild every results-NN-00-manifest.json (verifies JSONL files; exits non-zero on failure).
+measure.index: ## Rebuild every results-NN-00-manifest.json; verifies each run against its own registry dump (non-zero if one is incomplete).
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) index --dir .
 
 .PHONY: measure.pipeline
-measure.pipeline: ## New run in group $(MEASURE_NN): measure -> registry -> report -> index (uses MEASURE_PROFILE).
+measure.pipeline: ## New run in group $(MEASURE_NN): measure -> registry -> report -> site -> index (uses MEASURE_PROFILE).
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) run --profile $(MEASURE_PROFILE) --out $(MEASURE_JSONL) $(MEASURE_SEED_ARG) $(MEASURE_EXTRA_FLAGS)
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) dump-registry --out $(MEASURE_REGISTRY)
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) report --in $(MEASURE_JSONL) --csv-metrics $(MEASURE_PREFIX)-04-metrics_wide.csv --csv-scores $(MEASURE_PREFIX)-05-scores.csv
-	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) index --dir .
 	$(MAKE) site.build
 
 .PHONY: measure.ci

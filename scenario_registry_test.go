@@ -215,13 +215,17 @@ var harnessRunnables = map[string]string{
 	"TestBaselineScatterQueueWithdrawalReleasesAdmission": "unit test of the scatter baselines (its file name matches no single source file)",
 
 	// The registry and the measurement tooling test themselves.
-	"TestScenarioRegistryComplete":                "registry self-check",
-	"TestScenarioCaseRunnablesExist":              "registry self-check",
-	"TestScenarioCaseRunnablesExhaustive":         "registry self-check",
-	"TestMain":                                    "test binary entry point (hosts the bigbuff-measure CLI)",
-	"TestIntegrityOfGates":                        "measurement report tooling",
-	"TestSiteWiringIsIdempotent":                  "site tooling",
-	"TestPagesMarkdownLiquidDelimitersAreEscaped": "site tooling",
+	"TestScenarioRegistryComplete":                  "registry self-check",
+	"TestScenarioCaseRunnablesExist":                "registry self-check",
+	"TestScenarioCaseRunnablesExhaustive":           "registry self-check",
+	"TestMain":                                      "test binary entry point (hosts the bigbuff-measure CLI)",
+	"TestIntegrityOfGates":                          "measurement report tooling",
+	"TestMeasuredSetsOfRecordedContract":            "measurement index tooling",
+	"TestMeasuredSetsOfLegacyDump":                  "measurement index tooling",
+	"TestIndexVerifiesEachRunAgainstItsOwnRegistry": "measurement index tooling",
+	"TestCommittedRunsAreIndexed":                   "measurement index tooling",
+	"TestSiteWiringIsIdempotent":                    "site tooling",
+	"TestPagesMarkdownLiquidDelimitersAreEscaped":   "site tooling",
 }
 
 // implementationSource returns the non-test source file a test file belongs
