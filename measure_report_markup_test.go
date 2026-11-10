@@ -242,7 +242,8 @@ const reportHTMLBody = `<body>
       <tr><td>p50 / p90 / p99 / max</td><td>reservoir-sampled latencies (ADR-004 HDR-ish reservoir, per-run)</td></tr>
       <tr><td>ci95_low / ci95_high</td><td>Welch-adjusted 95% half-width on the per-op mean (t-distribution, df = n−1)</td></tr>
       <tr><td>approx_retained_bytes</td><td>post-GC heap growth attributable to a permanently stalled subscriber</td></tr>
-      <tr><td>exactly_once_violations</td><td>scatter messages received ≠ 1 time, summed over all receivers incl. warmup</td></tr>
+      <tr><td>exactly_once_violations</td><td>scatter items neither delivered exactly once nor counted as evicted, summed over all receivers incl. warmup; non-zero fails the integrity gate</td></tr>
+      <tr><td>evicted / delivered_fraction</td><td>scatter items a bounded queue evicted by contract, and the fraction of sent items delivered; dispatch_ns_op is per delivered item</td></tr>
       <tr><td>torn_reads / checked</td><td>payload lanes caught serving mismatched [4]uint64 halves vs loads checked</td></tr>
       <tr><td>withdrawal_compensation_success</td><td>fraction of rounds where Add(-1) unstuck a Send parked on a never-receiving intent</td></tr>
       <tr><td>exposure_limited</td><td>true when the implementation is excluded from batteries it would fail by construction (policy: limit exposure, never mis-measure)</td></tr>

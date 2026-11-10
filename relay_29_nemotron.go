@@ -51,6 +51,10 @@ type Relay29Nemotron[V any] struct {
 	// so at most one wakeup is pending at a time and concurrent publishes
 	// coalesce into a single notification.
 	bell chan struct{}
+
+	// wake is the broadcast channel WaitNext parks on: nil while no link is
+	// parked, otherwise a channel that the next Publish closes. See WaitNext.
+	wake atomic.Pointer[chan struct{}]
 }
 
 type relay29NemotronSlot[V any] struct {
@@ -99,24 +103,68 @@ func (r *Relay29Nemotron[V]) Publish(value V) uint64 {
 		panic("bigbuff: relay: sequence overflow")
 	}
 
+	r.store(seq, value)
+	r.ring()
+	r.wakeAll()
+	return seq
+}
+
+// store writes one reserved sequence into its slot.
+func (r *Relay29Nemotron[V]) store(seq uint64, value V) {
 	idx := (seq - 1) & r.mask
 	slot := &r.slots[idx]
 
 	// Acquire the write lock.  Because the critical section is tiny (two
 	// stores), a brief spin is cheaper than a kernel-level park/unpark.
+	var old uint64
 	for {
-		old := slot.seqLock.Load()
+		old = slot.seqLock.Load()
 		if old&relay29NemotronLockBit == 0 && slot.seqLock.CompareAndSwap(old, old|relay29NemotronLockBit) {
 			break
 		}
 	}
 
+	// Integration repair: a slot never goes back to an older sequence.
+	// Sequences are reserved before the slot is locked, so with concurrent
+	// publishers a later sequence that maps to the same slot (one or more
+	// laps ahead) can be written first. As delivered, the earlier sequence
+	// then overwrote it; a link waiting for the later one found the slot
+	// "not yet published" and stalled until some further Publish. The older
+	// value is one a full lap has already superseded, so it is dropped, as
+	// it would have been had the two writes happened in order.
+	if old >= seq {
+		slot.seqLock.Store(old)
+		return
+	}
+
 	// Payload first, then release the sequence with the write lock cleared.
 	slot.val.Store(&value)
 	slot.seqLock.Store(seq)
+}
 
-	r.ring()
-	return seq
+// wakeAll releases every link parked in WaitNext. It costs one atomic load
+// when no link is parked.
+func (r *Relay29Nemotron[V]) wakeAll() {
+	if r.wake.Load() == nil {
+		return
+	}
+	if ch := r.wake.Swap(nil); ch != nil {
+		close(*ch)
+	}
+}
+
+// parked returns the channel the next Publish will close, installing one if
+// no link is parked yet.
+func (r *Relay29Nemotron[V]) parked() <-chan struct{} {
+	for {
+		if ch := r.wake.Load(); ch != nil {
+			return *ch
+		}
+		ch := make(chan struct{})
+		if r.wake.CompareAndSwap(nil, &ch) {
+			return ch
+		}
+	}
 }
 
 // ring performs a non-blocking send on the shared doorbell.  Multiple rapid
@@ -129,6 +177,9 @@ func (r *Relay29Nemotron[V]) ring() {
 }
 
 // Notify returns a channel that is signalled whenever Publish is called.
+// The signal is a single coalesced token: it wakes exactly one receiver, so
+// Notify serves one selecting goroutine per Relay. Any number of links may
+// block in WaitNext (or Iter) instead, which does not use this channel.
 // It is safe to use directly in a select statement:
 //
 //	select {
@@ -151,8 +202,11 @@ func (r *Relay29Nemotron[V]) Seq() uint64 {
 //
 // Links are not registered with the Relay.  Creating or discarding a Link has
 // no effect on any other subscriber and costs exactly one allocation.  A Link
-// begins consuming at the next unpublished sequence (Subscribe), the latest
-// sequence (SubscribeLatest), or an arbitrary sequence (SubscribeFrom).
+// begins consuming at sequence 1 (Subscribe: whatever the ring still holds of
+// the current lap, then everything after), at the next unpublished sequence
+// (SubscribeLatest), or at an arbitrary sequence (SubscribeFrom). The
+// delivered comment said Subscribe starts at the next unpublished sequence;
+// the delivered code is Subscribe == SubscribeFrom(0), which is kept.
 type Relay29NemotronLink[V any] struct {
 	relay *Relay29Nemotron[V]
 	seq   atomic.Uint64 // last consumed sequence (0-based cursor)
@@ -232,13 +286,25 @@ func (l *Relay29NemotronLink[V]) Lag() uint64 {
 }
 
 // WaitNext blocks until a value is available for this link or ctx is
-// cancelled.  It selects internally on Relay.Notify, so it is suitable as
-// the core of a select-driven consumer loop.
+// cancelled.
 //
-// Because Notify is shared and coalesced, a burst of publishes results in a
-// single wakeup; the consumer then drains all available values with Next.
+// Integration repair. As delivered, WaitNext received from the shared
+// doorbell (Relay.Notify). The doorbell holds one token, so one Publish woke
+// one waiting link; every other link blocked in WaitNext slept through the
+// publication, indefinitely if it was the last. WaitNext now parks on a
+// channel that Publish closes, which wakes every parked link. The channel is
+// created by the first link to park (never by Publish) and replaced only
+// after a Publish has closed it, so the relay still keeps no subscriber
+// registry and Publish still allocates nothing for the wakeup.
 func (l *Relay29NemotronLink[V]) WaitNext(ctx context.Context) (V, bool) {
 	for {
+		if v, ok := l.Next(); ok {
+			return v, true
+		}
+		wake := l.relay.parked()
+		// Re-check now that a Publish is bound to close wake: one that
+		// finished before parked() installed the channel left nothing to
+		// close, but its value is visible to this Next.
 		if v, ok := l.Next(); ok {
 			return v, true
 		}
@@ -246,7 +312,7 @@ func (l *Relay29NemotronLink[V]) WaitNext(ctx context.Context) (V, bool) {
 		case <-ctx.Done():
 			var zero V
 			return zero, false
-		case <-l.relay.Notify():
+		case <-wake:
 		}
 	}
 }

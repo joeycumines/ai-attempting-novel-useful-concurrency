@@ -111,13 +111,25 @@ func (x *EpochPubSub[V]) ackTracked(seq uint64, lastAcked *atomic.Uint64) {
 }
 
 func (x *EpochPubSub[V]) Add(d int) int { return int(x.subs.Add(int32(d))) }
-func (x *EpochPubSub[V]) Subscribe() {
-	// Register between rounds: while a Send is in flight its subscriber
-	// snapshot is already fixed, and taking the read lock here guarantees we
-	// are counted in the next round's pong barrier (and will ack it).
+func (x *EpochPubSub[V]) Subscribe()    { x.SubscribeEpoch() }
+
+// SubscribeEpoch registers a manual subscriber and returns the sequence of
+// the last completed round. The subscriber owes an Ack for every round with
+// a greater sequence, and for no other.
+//
+// Integration repair: the two steps must be one. Send holds the write lock
+// for a whole round, so under the read lock the registration lands between
+// rounds and the captured sequence is that of a round this subscriber was
+// not counted in. A manual subscriber that called Subscribe and then read
+// Current could have a round begin in between: it was counted in that round,
+// took the round's sequence for one that predated it, never acknowledged it,
+// and Send blocked forever. (SubscribeContext always did this atomically.)
+func (x *EpochPubSub[V]) SubscribeEpoch() uint64 {
 	x.sendMu.RLock()
 	x.subs.Add(1)
+	seq := x.cur.Load().seq
 	x.sendMu.RUnlock()
+	return seq
 }
 
 // unsubscribe withdraws a subscription. If a send is in flight and the
@@ -125,6 +137,13 @@ func (x *EpochPubSub[V]) Subscribe() {
 // in that round's pong barrier and will never ack - so the barrier is
 // compensated atomically with the decrement.
 func (x *EpochPubSub[V]) unsubscribe(lastAcked *atomic.Uint64) {
+	x.unsubscribeAcked(lastAcked, 0)
+}
+
+// unsubscribeAcked is unsubscribe with the last acked round given either by
+// reference (read under pongMu, for the iterator, whose AfterFunc may run
+// concurrently with an ack) or by value.
+func (x *EpochPubSub[V]) unsubscribeAcked(lastAcked *atomic.Uint64, acked uint64) {
 	ok := x.sendMu.TryRLock()
 	// Spin without touching pongMu (atomic load only) so a departing
 	// subscriber never starves the sender's barrier lock.
@@ -135,7 +154,6 @@ func (x *EpochPubSub[V]) unsubscribe(lastAcked *atomic.Uint64) {
 	x.pongMu.Lock()
 	// lastAcked is written by ackTracked under pongMu, so reading it here
 	// makes the "already acked the armed round" check race-free.
-	acked := uint64(0)
 	if lastAcked != nil {
 		acked = lastAcked.Load()
 	}
@@ -150,8 +168,26 @@ func (x *EpochPubSub[V]) unsubscribe(lastAcked *atomic.Uint64) {
 		x.sendMu.RUnlock()
 	}
 }
+
+// Unsubscribe withdraws a manual subscriber that has not acknowledged the
+// round in flight, if there is one: the round's barrier is compensated on
+// its behalf. A subscriber that may already have acknowledged it must use
+// [EpochPubSub.UnsubscribeAcked] instead.
 func (x *EpochPubSub[V]) Unsubscribe() {
 	x.unsubscribe(nil)
+}
+
+// UnsubscribeAcked withdraws a manual subscriber whose most recent Ack was
+// for round lastAcked (or, if it has acknowledged nothing, the value
+// SubscribeEpoch returned).
+//
+// Integration repair: Unsubscribe cannot tell whether its caller has already
+// acknowledged the round in flight, and compensates the barrier regardless.
+// A subscriber that acknowledged and then left while the round was still
+// waiting on others was therefore counted twice, and Send returned before
+// every remaining subscriber had acknowledged.
+func (x *EpochPubSub[V]) UnsubscribeAcked(lastAcked uint64) {
+	x.unsubscribeAcked(nil, lastAcked)
 }
 
 func (x *EpochPubSub[V]) pongNLoad() int32 {

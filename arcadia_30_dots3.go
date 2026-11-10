@@ -36,6 +36,35 @@ package bigbuff
 //  4. Receive could return ok=false for a live subscriber whose ring had been
 //     overtaken; the implementation now reports ok=false only when the
 //     subscriber is detached, matching the documented contract.
+//
+// Repairs made in the completion phase, after a dedicated review (the first
+// integration had only run the shared harness, which never overran the ring):
+//
+//  5. Every slot now records the position it was written for. As delivered
+//     (and after repair 3) a slot held only a value, so a reader could not
+//     tell which lap it was looking at. Two failures followed. A subscriber
+//     more than one ring behind read the newer values in slot order and then
+//     read them again: a 4-slot ring sent 0..9 was received as
+//     8 9 6 7 8 9 6 7 8 9. And once the ring had wrapped, a reader that saw
+//     the cursor advance before the payload store read the previous lap's
+//     value from that slot and returned it as the new one (repair 3's note
+//     said the payload was stored before the cursor increment; the code
+//     reserved the position first, as it must with concurrent senders). A
+//     reader now takes a slot only if it holds exactly the reader's
+//     position; an overrun reader skips to the oldest retained position, and
+//     a slot whose store has not landed yet is waited for.
+//  6. A slot never goes back to an older position: with concurrent senders a
+//     later position can reach a slot first, and the earlier one used to
+//     overwrite it.
+//  7. The waiter's generation snapshot is taken before the emptiness check,
+//     not after. Taken after, a Send that completed in between was already
+//     included in the snapshot, and the subscriber parked with a value
+//     available until some later Send.
+//  8. Len is capped at the capacity (an overrun subscriber's lag is not a
+//     count of buffered values).
+//
+// The "Hot-Path Allocations" table below is the response's claim. Send
+// allocates once per call (the slot entry); see the tests.
 
 import (
 	"context"
@@ -97,9 +126,9 @@ import (
 //   - subscriber list is immutable once published via CAS
 //   - waiter count is balanced (Add(1) before park, Add(-1) after unpark)
 type Arcadia[V any] struct {
-	buffer []atomic.Pointer[V] // pre-allocated ring buffer (power of 2)
-	mask   uint64              // buffer size - 1
-	write  atomic.Uint64       // global write cursor (monotonically increasing)
+	buffer []atomic.Pointer[arcadiaEntry[V]] // pre-allocated ring buffer (power of 2)
+	mask   uint64                            // buffer size - 1
+	write  atomic.Uint64                     // global write cursor (monotonically increasing)
 
 	// Subscriber management.
 	// The subscriber list is an immutable slice. Subscribe/Unsubscribe
@@ -121,6 +150,13 @@ type Arcadia[V any] struct {
 
 	// Configuration.
 	maxSpin int // number of spin iterations before parking
+}
+
+// arcadiaEntry is one published value together with the write position it
+// was published at, so that a reader can tell the lap a slot belongs to.
+type arcadiaEntry[V any] struct {
+	pos uint64
+	val V
 }
 
 // arcadiaSubList is an immutable snapshot of subscribers.
@@ -167,7 +203,7 @@ func NewArcadia[V any](capacity int) *Arcadia[V] {
 	}
 
 	a := &Arcadia[V]{
-		buffer:  make([]atomic.Pointer[V], size),
+		buffer:  make([]atomic.Pointer[arcadiaEntry[V]], size),
 		mask:    size - 1,
 		maxSpin: 100,
 	}
@@ -197,18 +233,10 @@ func NewArcadia[V any](capacity int) *Arcadia[V] {
 // slow subscribers see a "lagging" view. Use a larger buffer if this
 // is unacceptable.
 func (a *Arcadia[V]) Send(value V) int {
-	// Reserve a slot in the ring buffer.
-	// This increment acts as a release fence: the value write below
-	// happens-before any subscriber observing this cursor value.
+	// Reserve a position in the ring buffer.
 	pos := a.write.Add(1) - 1
 
-	// Publish the payload through an atomic pointer. The original wrote the
-	// slot directly and relied on the cursor increment as a release fence;
-	// that is not a valid happens-before edge on its own (the increment is
-	// released before the payload store, not after), and it races with any
-	// reader that observes the new cursor and reads the slot it points at.
-	// Payload-store-then-cursor-increment is the ordering the design intends.
-	a.buffer[pos&a.mask].Store(&value)
+	a.store(pos, value)
 
 	// Count current subscribers (for the return value).
 	// This is a load, not a CAS, so it's fast. The count may be
@@ -231,6 +259,24 @@ func (a *Arcadia[V]) Send(value V) int {
 	}
 
 	return count
+}
+
+// store publishes the payload for a reserved position, tagged with that
+// position, through an atomic pointer. Readers take a slot only when its tag
+// matches their cursor (repair 5), so it does not matter that the write
+// cursor is visible before the store. A slot is never replaced by an older
+// position (repair 6).
+func (a *Arcadia[V]) store(pos uint64, value V) {
+	entry := &arcadiaEntry[V]{pos: pos, val: value}
+	for slot := &a.buffer[pos&a.mask]; ; {
+		old := slot.Load()
+		if old != nil && old.pos > pos {
+			return // a later lap got here first; this value is already overrun
+		}
+		if slot.CompareAndSwap(old, entry) {
+			return
+		}
+	}
 }
 
 // TrySend broadcasts a value without blocking. Currently always
@@ -344,63 +390,73 @@ func (a *Arcadia[V]) Subscribers() int {
 func (s *ArcadiaSub[V]) Receive() (V, bool) {
 	var zero V
 	for {
-		writePos := s.a.write.Load()
-		readPos := s.sub.read.Load()
-
-		// No new data available.
-		if readPos >= writePos {
+		// Snapshot the generation before looking: a Send that completes
+		// after this point changes it, so wait cannot sleep through it.
+		gen := s.a.gen.Load()
+		v, state := s.take()
+		switch state {
+		case arcadiaTaken:
+			return v, true
+		case arcadiaEmpty:
 			if s.sub.done.Load() {
 				return zero, false
 			}
-			s.wait()
-			continue
-		}
-
-		// Try to advance our read cursor.
-		// CAS ensures only one goroutine (per subscriber) consumes
-		// each slot. If multiple goroutines call Receive on the same
-		// ArcadiaSub, they will contend here.
-		if !s.sub.read.CompareAndSwap(readPos, readPos+1) {
-			// CAS failed — another goroutine consumed this slot.
-			// Retry from the new cursor position.
-			continue
-		}
-
-		// Read the value from the ring buffer. A nil slot means the publisher
-		// observed the cursor but has not finished publishing the payload; the
-		// value is not lost, so rewind the cursor and retry.
-		vp := s.a.buffer[readPos&s.a.mask].Load()
-		if vp == nil {
-			s.sub.read.CompareAndSwap(readPos+1, readPos)
+			s.wait(gen)
+		case arcadiaPending:
+			// The position is reserved and its store is imminent.
 			runtime.Gosched()
-			continue
 		}
-		return *vp, true
 	}
+}
+
+// States returned by take.
+const (
+	arcadiaTaken   = iota // a value was consumed
+	arcadiaEmpty          // the cursor has caught up with the write cursor
+	arcadiaPending        // the next position is reserved but not stored yet
+	arcadiaRetry          // the cursor moved (overrun or contention); look again
+)
+
+// take makes one attempt to consume the value at the subscriber's cursor.
+func (s *ArcadiaSub[V]) take() (v V, state int) {
+	a := s.a
+	writePos := a.write.Load()
+	readPos := s.sub.read.Load()
+	if readPos >= writePos {
+		return v, arcadiaEmpty
+	}
+	if size := uint64(len(a.buffer)); writePos-readPos > size {
+		// Overrun: everything before writePos-size has been overwritten.
+		s.sub.read.CompareAndSwap(readPos, writePos-size)
+		return v, arcadiaRetry
+	}
+	entry := a.buffer[readPos&a.mask].Load()
+	switch {
+	case entry == nil || entry.pos < readPos:
+		return v, arcadiaPending
+	case entry.pos > readPos:
+		// Overwritten since the check above; the next look skips forward.
+		return v, arcadiaRetry
+	}
+	if !s.sub.read.CompareAndSwap(readPos, readPos+1) {
+		return v, arcadiaRetry
+	}
+	return entry.val, arcadiaTaken
 }
 
 // TryReceive reads the next value without blocking.
 // Returns the value and true if available, or the zero value and false.
 func (s *ArcadiaSub[V]) TryReceive() (V, bool) {
-	var zero V
-
-	writePos := s.a.write.Load()
-	readPos := s.sub.read.Load()
-
-	if readPos >= writePos {
-		return zero, false
+	for {
+		v, state := s.take()
+		switch state {
+		case arcadiaTaken:
+			return v, true
+		case arcadiaEmpty, arcadiaPending:
+			var zero V
+			return zero, false
+		}
 	}
-
-	if !s.sub.read.CompareAndSwap(readPos, readPos+1) {
-		return zero, false
-	}
-
-	vp := s.a.buffer[readPos&s.a.mask].Load()
-	if vp == nil {
-		s.sub.read.CompareAndSwap(readPos+1, readPos)
-		return zero, false
-	}
-	return *vp, true
 }
 
 // ReceiveBatch reads up to n values into dst, blocking until at least
@@ -413,48 +469,28 @@ func (s *ArcadiaSub[V]) ReceiveBatch(dst []V, n int) int {
 	if n <= 0 || len(dst) == 0 {
 		return 0
 	}
-
 	maxRead := n
 	if maxRead > len(dst) {
 		maxRead = len(dst)
 	}
 
-	// Ensure at least one value is available.
-	for {
-		writePos := s.a.write.Load()
-		readPos := s.sub.read.Load()
-		if readPos < writePos {
-			break
-		}
-		if s.sub.done.Load() {
-			return 0
-		}
-		s.wait()
+	// Block for the first value, then take whatever else is ready.
+	first, ok := s.Receive()
+	if !ok {
+		return 0
 	}
-
-	// Read as many as we can without blocking.
-	count := 0
+	dst[0] = first
+	count := 1
 	for count < maxRead {
-		writePos := s.a.write.Load()
-		readPos := s.sub.read.Load()
-
-		if readPos >= writePos {
+		v, state := s.take()
+		if state == arcadiaEmpty || state == arcadiaPending {
 			break
 		}
-
-		if !s.sub.read.CompareAndSwap(readPos, readPos+1) {
-			continue
+		if state == arcadiaTaken {
+			dst[count] = v
+			count++
 		}
-
-		vp := s.a.buffer[readPos&s.a.mask].Load()
-		if vp == nil {
-			s.sub.read.CompareAndSwap(readPos+1, readPos)
-			continue
-		}
-		dst[count] = *vp
-		count++
 	}
-
 	return count
 }
 
@@ -466,7 +502,8 @@ func (s *ArcadiaSub[V]) ReceiveBatch(dst []V, n int) int {
 // spin-then-park strategy.
 //
 // The algorithm:
-//  1. Record the current generation.
+//  1. Take the generation the caller recorded before it found the ring
+//     empty (repair 7).
 //  2. Spin for maxSpin iterations, checking the generation counter
 //     after each iteration. If it changed, new data has been sent.
 //  3. If still no change, increment the waiter count and double-check
@@ -478,8 +515,7 @@ func (s *ArcadiaSub[V]) ReceiveBatch(dst []V, n int) int {
 // This avoids the thundering herd problem: only subscribers that have
 // actually parked are woken by Broadcast. Subscribers that are still
 // spinning will see the generation change and exit their spin loop.
-func (s *ArcadiaSub[V]) wait() {
-	currentGen := s.a.gen.Load()
+func (s *ArcadiaSub[V]) wait(currentGen uint64) {
 	s.sub.gen.Store(currentGen)
 
 	// Phase 1: Spin.
@@ -619,5 +655,5 @@ func (a *Arcadia[V]) Len() int {
 		}
 	}
 
-	return int(w - oldest)
+	return int(min(w-oldest, uint64(len(a.buffer))))
 }

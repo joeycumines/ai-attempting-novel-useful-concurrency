@@ -333,6 +333,12 @@ func (x *BaselineBarrierPubSub[V]) SubscribeContext(ctx context.Context) iter.Se
 	x.mu.Lock()
 	x.next++
 	id := x.next
+	// A subscriber is owed nothing for rounds that started before it
+	// joined. Without this, one that joined while a round was in flight and
+	// then left counted against that round's WaitGroup without being in it:
+	// the Send was released before its real subscribers had acknowledged,
+	// or the WaitGroup went negative and panicked.
+	sub.ackedRound = x.round
 	x.subs[id] = sub
 	x.mu.Unlock()
 	return func(yield func(V) bool) {

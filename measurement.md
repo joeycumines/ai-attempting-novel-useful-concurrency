@@ -124,7 +124,8 @@ One JSON object per line. The committed files are `results-01-01-results.jsonl`
 | `scenarios`, `expected_good_fit`, `exposure_limited` | attachment-registry metadata (authored, not measured) |
 | `ops_completed`, `ops_planned`, `outcome` | pathology probes (see below); `outcome` ∈ `completed`, `publisher_blocked`, `publisher_panicked`, `sender_blocked`, `sender_panicked` |
 | `approx_retained_bytes` | post-GC heap attributed to one permanently stalled subscriber |
-| `exactly_once_violations` | scatter: messages received ≠ 1 times (all receivers, warmup included) |
+| `exactly_once_violations` | scatter: items neither delivered exactly once nor counted as evicted, i.e. `|sent − (received + evicted)|` (all receivers, warmup included). Any non-zero value fails the implementation's integrity gate |
+| `evicted`, `delivered_fraction` | scatter: items a bounded queue evicted by contract (its own eviction counter), and the fraction of sent items that were delivered. `dispatch_ns_op` is wall time per **delivered** item, so an evicting queue is not credited with the items it dropped. Always `0` and `1` for implementations without an eviction counter |
 | `torn_reads`, `checked` | payload: multi-word ([4]uint64) read integrity vs loads checked |
 | `withdrawal_compensation_success` | caster: fraction of rounds where `Add(-1)` unstuck a parked `Send` |
 | `median_round_ns` | withdrawal round latency |

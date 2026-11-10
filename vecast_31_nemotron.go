@@ -42,6 +42,48 @@ package bigbuff
 //     and Close closed channels while senders could still reach them and then
 //     put *closed* channels back in the pool. Both are fixed.
 //  6. Close is idempotent and releases any blocked phase-2 publisher.
+//
+// Repairs made in the completion phase, after a dedicated review (the first
+// integration ran the shared harness only, which subscribes from one
+// goroutine and never grows a shard):
+//
+//  7. Subscribe, Unsubscribe and shard growth are serialised per shard by a
+//     mutex. The "lock-free" slot management did not claim a slot before
+//     writing to it: two concurrent Subscribe calls took the same slot and
+//     the first subscriber silently never received anything (measured: 15 of
+//     200 runs with 8 concurrent subscribers). The free list was a Treiber
+//     stack without ABA protection whose nodes pointed into a vector that
+//     growth then replaced, and growth copied slots while they were being
+//     written. Send still takes its snapshot without any lock.
+//  8. Every subscription carries a "gone" channel that Unsubscribe closes,
+//     and the slow-receiver phase selects on it, so a subscriber that
+//     withdraws while a Send is waiting for it releases that Send without
+//     being counted. Before, Unsubscribe drained the channel "to empty it
+//     for the pool": if a Send was already waiting, the drain took the value
+//     and the Send counted a handoff nobody received (measured: Send
+//     returned 2 with one receiver); if the Send reached the withdrawn
+//     subscriber after the drain, it stayed blocked until Close (the first
+//     integration recorded that as an exposure limitation and kept the
+//     churn facets away from it).
+//  9. Subscriber channels are no longer recycled through a pool. A sender
+//     can still hold a withdrawn subscriber's channel, so handing that
+//     channel to the next subscriber let one Send reach it twice, or reach
+//     it with a value published before it subscribed.
+//  10. Send and Close exclude each other (a read/write lock around the whole
+//     Send). Close used to close subscriber channels a concurrent Send had
+//     already loaded, which is a send on a closed channel. Close now does
+//     what its comment always said: releases blocked senders, waits for
+//     in-flight sends, then closes the channels.
+//  11. Shard affinity mixes the stack address before reducing it. Taken
+//     modulo 64 directly, the address has the same low bits in every
+//     goroutine (stacks are aligned far more coarsely), so every subscriber
+//     landed in one shard.
+//
+// The feature list and diagram below are the response's. Subscribe
+// allocates (the handle and two channels), and a Send allocates whenever a
+// subscriber is not ready (the slow list); the tests record both.
+// "Lock-free subscription management" and the channel pool no longer exist
+// (repairs 7 and 9).
 
 import (
 	"runtime"
@@ -117,95 +159,96 @@ const (
 	vecastReclamationEpochs = 2
 )
 
-// Vecast is a wait-free epoch-sharded vectored broadcaster.
+// Vecast is an epoch-sharded vectored broadcaster.
 type Vecast[V any] struct {
-	// Sharded subscriber registry (cache-line aligned)
+	// Shard array - each shard manages a vector of subscriber slots
 	shards [vecastShards]vecastShard[V]
 
-	// Global epoch: even = stable for snapshots, odd = growing
-	// Senders snapshot when even; subscribers transition odd→even
+	// Global epoch: even = stable, odd = Close in progress
 	globalEpoch atomic.Uint64
 
-	// Pooled channels for zero-allocation subscriber channels
-	chanPool sync.Pool
-
-	// Closed state
 	closed   atomic.Bool
 	closedCh chan struct{}
 
-	// No-copy guard
-	_ [0]func() //nolint:unused
+	// sendMu is held shared by every Send for its whole duration, and
+	// exclusively by Close while it closes subscriber channels (repair 10).
+	sendMu sync.RWMutex
 }
 
-// shard holds a grow-only vector of subscriber slots and a free list.
+// vecastShard manages a growable vector of subscriber slots.
 type vecastShard[V any] struct {
-	// Vector pointer (atomic for lock-free reads)
+	// Vector pointer (atomic: Send reads it without the lock)
 	vec atomic.Pointer[vector[V]]
-
-	// Lock-free free list for slot recycling
-	free atomic.Pointer[vecastSlot[V]]
 
 	// Shard-local epoch (odd = mutating, even = stable)
 	localEpoch atomic.Uint64
 
+	// mu serialises Subscribe, Unsubscribe, growth and Close's sweep within
+	// the shard (repair 7). free and fresh are guarded by it.
+	mu    sync.Mutex
+	free  *vecastSlot[V] // slots released by Unsubscribe, most recent first
+	fresh uint32         // slots [fresh:] of the current vector were never used
+
 	// Padding to avoid false sharing (cache line = 64 bytes)
-	_ [64 - 24]byte // vec(8) + free(8) + localEpoch(8) = 24
+	_ [64 - 40]byte // vec(8) + localEpoch(8) + mu(8) + free(8) + fresh(4+4) = 40
 }
 
-// vector is a grow-only array of slots (never shrinks, only expands).
+// vector is an immutable-length array of slots; growth replaces it.
 type vector[V any] struct {
 	slots []vecastSlot[V]
 	mask  uint32 // len - 1 (power of 2)
-	gen   uint64 // generation for ABA protection
+	gen   uint64 // generation, incremented by each growth
 }
 
-// slot represents a subscriber slot in the vector.
+// vecastRec is one live subscription as a sender sees it.
+type vecastRec[V any] struct {
+	ch   chan V
+	gone chan struct{} // closed by Unsubscribe (repair 8)
+}
+
+// vecastSlot is one subscriber position within a shard's vector.
 type vecastSlot[V any] struct {
-	// chPtr is nil when the slot is empty and non-nil while a subscriber is
-	// registered. It is an atomic pointer because senders scan a published
-	// snapshot concurrently with subscription churn.
-	chPtr atomic.Pointer[chan V]
-	epoch uint64                        // registration global epoch (for reclamation)
-	next  atomic.Pointer[vecastSlot[V]] // free list linkage
+	// rec is nil when the slot is empty and non-nil while a subscriber is
+	// registered. It is an atomic pointer because senders scan the vector
+	// concurrently with subscription churn.
+	rec   atomic.Pointer[vecastRec[V]]
+	epoch uint64         // registration global epoch; written under the shard lock
+	idx   uint32         // position of this slot in its vector
+	next  *vecastSlot[V] // free list linkage, guarded by the shard lock
 }
 
-// Subscription represents an active subscription.
-// Holds the channel for select support and metadata for unsubscription.
+// VecastSubscription is a handle to an active subscription.
 type VecastSubscription[V any] struct {
 	ch    chan V
 	shard *vecastShard[V]
 	idx   uint32
 	epoch uint64
-	_     [0]func() //nolint:unused
+	rec   *vecastRec[V] // nil once unsubscribed; guarded by the shard lock
 }
 
 // NewVecast creates a new Vecast broadcaster.
-// The zero value is NOT valid - must use this constructor.
 func NewVecast[V any]() *Vecast[V] {
-	v := &Vecast[V]{
-		closedCh: make(chan struct{}),
-		chanPool: sync.Pool{
-			New: func() any {
-				ch := make(chan V, 0) // unbuffered for select semantics
-				return &ch
-			},
-		},
-	}
-	// Initialize all shards with initial vectors
+	v := &Vecast[V]{closedCh: make(chan struct{})}
 	for i := range v.shards {
 		v.shards[i].init()
 	}
 	return v
 }
 
-// init initializes a shard with an empty vector.
-func (s *vecastShard[V]) init() {
+func newVecastVector[V any](capacity int, gen uint64) *vector[V] {
 	vec := &vector[V]{
-		slots: make([]vecastSlot[V], vecastInitialCap),
-		mask:  vecastInitialCap - 1,
-		gen:   1,
+		slots: make([]vecastSlot[V], capacity),
+		mask:  uint32(capacity - 1),
+		gen:   gen,
 	}
-	s.vec.Store(vec)
+	for i := range vec.slots {
+		vec.slots[i].idx = uint32(i)
+	}
+	return vec
+}
+
+func (s *vecastShard[V]) init() {
+	s.vec.Store(newVecastVector[V](vecastInitialCap, 1))
 	// The shard epoch is odd while a mutation is in flight and even once the
 	// shard is stable. Starting at 0 keeps the very first mutation's +1 from
 	// leaving the shard permanently odd (which would spin acquireSnapshot
@@ -213,214 +256,131 @@ func (s *vecastShard[V]) init() {
 	s.localEpoch.Store(0)
 }
 
-// shardFor returns the shard for a given hash (e.g., goroutine ID).
+// shardFor returns the shard for a given hash.
 func (v *Vecast[V]) shardFor(hash uint64) *vecastShard[V] {
 	return &v.shards[hash&vecastShardMask]
 }
 
-// Subscribe creates a new subscription.
-// Returns a Subscription that can be used with select:
-//
-//	sub := v.Subscribe()
-//	select {
-//	case val := <-sub.C():
-//	    ...
-//	case <-ctx.Done():
-//	    ...
-//	}
-//
-// Zero allocations on hot path.
+// Subscribe adds a new subscriber and returns a subscription handle. The
+// subscriber's channel is unbuffered: Send hands each value to it directly.
+// It panics if the broadcaster is closed.
 func (v *Vecast[V]) Subscribe() *VecastSubscription[V] {
+	sh := v.shardFor(vecastShardKey())
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	// Checked under the shard lock, which Close's sweep also takes: a
+	// subscription is either refused here or swept (its channel closed).
 	if v.closed.Load() {
 		panic("vecast: subscribe on closed broadcaster")
 	}
 
-	// Use goroutine ID as hash for shard affinity
-	hash := vecastShardKey()
-	sh := v.shardFor(hash)
-
-	// Fast path: try to get a slot from free list
-	var sl *vecastSlot[V]
-	for {
-		sl = sh.free.Load()
-		if sl == nil {
-			break
-		}
-		if sh.free.CompareAndSwap(sl, sl.next.Load()) {
-			// Got a recycled slot
-			goto initSlot
-		}
-	}
-
-	// Mutation in progress: make the shard epoch odd so that concurrent
-	// snapshot acquisitions cannot mistake a half-registered slot for a stable
-	// one.
-	sh.localEpoch.Add(1)
-
-	// Slow path: allocate new slot in vector (may grow vector)
-	sl = sh.allocateSlot()
-
-initSlot:
-	// Get channel from pool
-	chPtr := v.chanPool.Get().(*chan V)
-	ch := *chPtr
-
-	// Register slot with current global epoch. The channel pointer is
-	// published atomically: senders load it concurrently while scanning a
-	// snapshot, so a plain store is a data race.
+	rec := &vecastRec[V]{ch: make(chan V), gone: make(chan struct{})}
 	epoch := v.globalEpoch.Load()
+
+	sh.localEpoch.Add(1) // mutation in progress (odd)
+	sl := sh.claimSlot()
 	sl.epoch = epoch
-	sl.chPtr.Store(&ch)
-
-	// Find slot index (for unsubscribe)
-	vec := sh.vec.Load()
-	var idx uint32
-	for i := range vec.slots {
-		if &vec.slots[i] == sl {
-			idx = uint32(i)
-			break
-		}
-	}
-
-	// Mutation complete: return the shard epoch to even (stable).
-	sh.localEpoch.Add(1)
+	sl.rec.Store(rec)
+	sh.localEpoch.Add(1) // stable (even)
 
 	return &VecastSubscription[V]{
-		ch:    ch,
+		ch:    rec.ch,
 		shard: sh,
-		idx:   idx,
+		idx:   sl.idx,
 		epoch: epoch,
+		rec:   rec,
 	}
 }
 
-// allocateSlot allocates a new slot in the shard's vector, growing if necessary.
-// Uses a simple spin-CAS loop for vector growth (rare).
-func (sh *vecastShard[V]) allocateSlot() *vecastSlot[V] {
-	for {
-		vec := sh.vec.Load()
-		// Find first nil slot
-		for i := range vec.slots {
-			if vec.slots[i].chPtr.Load() == nil {
-				return &vec.slots[i]
-			}
-		}
-		// Vector full - grow it (power of 2)
+// claimSlot returns an empty slot of the current vector, growing the vector
+// if it is full. The shard lock must be held.
+func (sh *vecastShard[V]) claimSlot() *vecastSlot[V] {
+	if sl := sh.free; sl != nil {
+		sh.free, sl.next = sl.next, nil
+		return sl
+	}
+	vec := sh.vec.Load()
+	if int(sh.fresh) == len(vec.slots) {
+		// Full, and nothing on the free list, so no free-list node can be
+		// left pointing into the vector being replaced.
 		newCap := len(vec.slots) * 2
 		if newCap > vecastMaxCap {
 			panic("vecast: shard capacity exhausted")
 		}
-		newVec := &vector[V]{
-			slots: make([]vecastSlot[V], newCap),
-			mask:  uint32(newCap - 1),
-			gen:   vec.gen + 1,
+		grown := newVecastVector[V](newCap, vec.gen+1)
+		for i := range vec.slots {
+			grown.slots[i].epoch = vec.slots[i].epoch
+			grown.slots[i].rec.Store(vec.slots[i].rec.Load())
 		}
-		// Copy existing slots
-		copy(newVec.slots, vec.slots)
-		if sh.vec.CompareAndSwap(vec, newVec) {
-			// Successfully grew, return first new slot
-			return &newVec.slots[len(vec.slots)]
-		}
-		// CAS failed, retry
+		sh.vec.Store(grown)
+		vec = grown
 	}
+	sl := &vec.slots[sh.fresh]
+	sh.fresh++
+	return sl
 }
 
-// C returns the subscriber's channel for use in select statements.
+// C returns the subscriber's channel for use in select statements. Close
+// closes it; Unsubscribe does not.
 func (s *VecastSubscription[V]) C() <-chan V {
 	return s.ch
 }
 
-// Unsubscribe cancels the subscription.
-// Zero allocations, lock-free, epoch-based reclamation.
+// Unsubscribe cancels the subscription and releases any Send that is waiting
+// to hand a value to it. It is idempotent and safe to call concurrently, and
+// after Close.
 func (v *Vecast[V]) Unsubscribe(sub *VecastSubscription[V]) {
-	if sub == nil {
+	if sub == nil || sub.shard == nil {
 		return
 	}
-	if v.closed.Load() {
-		// Still need to return channel to pool
-		v.chanPool.Put(&sub.ch)
-		return
-	}
-
 	sh := sub.shard
-	if sh == nil {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	rec := sub.rec
+	if rec == nil {
 		return // already unsubscribed
 	}
-	vec := sh.vec.Load()
-	if sub.idx >= uint32(len(vec.slots)) {
-		return // already unsubscribed or invalid
+	sub.rec = nil
+	sl := &sh.vec.Load().slots[sub.idx]
+	if sl.rec.Load() != rec {
+		return // Close swept the slot first
 	}
-
 	sh.localEpoch.Add(1) // mutation in progress (odd)
-
-	sl := &vec.slots[sub.idx]
-
-	// Detach the slot exactly once. The winner releases the channel and
-	// recycles the slot; the loser simply observes that it was already
-	// unsubscribed.
-	chPtr := sl.chPtr.Swap(nil)
-	if chPtr != nil {
-		// Drain any value left in flight for this subscriber, then return the
-		// channel to the pool. A pooled channel must be empty or a future
-		// subscriber would observe a value published before it subscribed.
-		for {
-			select {
-			case <-*chPtr:
-			default:
-				goto recycle
-			}
-		}
-	recycle:
-		v.chanPool.Put(chPtr)
-		// Push slot to free list (lock-free stack)
-		for {
-			oldHead := sh.free.Load()
-			sl.next.Store(oldHead)
-			if sh.free.CompareAndSwap(oldHead, sl) {
-				break
-			}
-		}
-	}
-
-	// Mutation complete (even).
-	sh.localEpoch.Add(1)
-
-	// Clear subscription for safety: a repeated Unsubscribe must not touch the
-	// slot again (it may already belong to another subscriber).
-	sub.ch = nil
-	sub.shard = nil
-	sub.idx = 0
-	sub.epoch = 0
+	sl.rec.Store(nil)
+	sl.next, sh.free = sh.free, sl
+	sh.localEpoch.Add(1) // stable (even)
+	// A sender that loaded rec before the slot was cleared is released here
+	// instead of waiting for a receive that will never come (repair 8).
+	close(rec.gone)
 }
 
-// Send broadcasts a value to all current subscribers.
-// Returns the number of subscribers that received the value.
-// Wait-free snapshot + two-phase non-blocking delivery.
+// Send broadcasts value to all subscribers.
+// It returns the number of subscribers the value was handed to.
+//
+// Phase 1 offers the value to every subscriber without blocking. Phase 2
+// then waits, in turn, for each subscriber that was not ready, until it
+// receives, unsubscribes, or the broadcaster is closed.
 func (v *Vecast[V]) Send(value V) int {
+	v.sendMu.RLock()
+	defer v.sendMu.RUnlock()
 	if v.closed.Load() {
 		return 0
 	}
 
-	// Phase 0: Wait-free consistent snapshot
 	snapshot := v.acquireSnapshot()
 	if snapshot.totalSubs == 0 {
 		return 0
 	}
 
-	// Phase 1: non-blocking fan-out to every subscriber in the snapshot,
-	// recording exactly which subscribers could not take the value.
-	var slow []vecastSlowRef[V]
-	delivered := v.fastFanOut(snapshot, value, &slow)
-
-	// Phase 2: hand the value to precisely those subscribers, blocking, so the
-	// broadcast stays synchronous without duplicating a delivery.
+	var slow []*vecastRec[V]
+	delivered := v.fastFanOut(&snapshot, value, &slow)
 	if len(slow) != 0 {
 		delivered += v.waitForSlowReceivers(slow, value)
 	}
-
 	return delivered
 }
 
-// snapshot holds a consistent view of all subscribers across shards.
+// snapshot is a consistent view of all shards.
 type snapshot[V any] struct {
 	shards      [vecastShards]vecastShardSnapshot[V]
 	totalSubs   int
@@ -434,38 +394,32 @@ type vecastShardSnapshot[V any] struct {
 	epoch uint64 // shard local epoch at snapshot time
 }
 
-// acquireSnapshot performs a wait-free consistent snapshot of all shards.
-// Uses double-epoch check: reads globalEpoch (must be even), reads all shards,
-// re-reads globalEpoch - if unchanged and even, snapshot is consistent.
-// If globalEpoch is odd (growing), spins briefly until even.
+// acquireSnapshot takes a consistent snapshot of all shards without locking:
+// it re-reads every shard epoch after the scan and retries if any changed.
 func (v *Vecast[V]) acquireSnapshot() snapshot[V] {
 	var snap snapshot[V]
 
 	for {
-		// Load global epoch - must be even for stable snapshot
 		ge := v.globalEpoch.Load()
 		if ge&1 != 0 {
-			// Global epoch is odd (some shard is growing), spin briefly
 			runtime.Gosched()
 			continue
 		}
 		snap.globalEpoch = ge
 
-		// Read all shards
 		total := 0
 		for i := range v.shards {
 			sh := &v.shards[i]
-			vec := sh.vec.Load()
 			le := sh.localEpoch.Load()
-
-			// Count active subscribers in this shard
+			vec := sh.vec.Load()
 			count := 0
-			for i := range vec.slots {
-				if vec.slots[i].chPtr.Load() != nil {
-					count++
+			if le&1 == 0 {
+				for j := range vec.slots {
+					if vec.slots[j].rec.Load() != nil {
+						count++
+					}
 				}
 			}
-
 			snap.shards[i] = vecastShardSnapshot[V]{
 				vec:   vec,
 				slots: vec.slots,
@@ -476,13 +430,12 @@ func (v *Vecast[V]) acquireSnapshot() snapshot[V] {
 		}
 		snap.totalSubs = total
 
-		// Verify global epoch unchanged and still even
 		ge2 := v.globalEpoch.Load()
-		if ge2 == ge && ge2&1 == 0 {
-			// Verify shard epochs unchanged (no concurrent mutations)
+		if ge2 == ge {
 			consistent := true
 			for i := range v.shards {
-				if v.shards[i].localEpoch.Load() != snap.shards[i].epoch {
+				le := snap.shards[i].epoch
+				if le&1 != 0 || v.shards[i].localEpoch.Load() != le {
 					consistent = false
 					break
 				}
@@ -491,66 +444,45 @@ func (v *Vecast[V]) acquireSnapshot() snapshot[V] {
 				return snap
 			}
 		}
-		// Snapshot inconsistent, retry
 		runtime.Gosched()
 	}
 }
 
-// vecastSlowRef identifies one subscriber that phase 1 could not serve.
-type vecastSlowRef[V any] struct {
-	ch *chan V
-}
-
-// fastFanOut performs non-blocking sends to all subscribers in the snapshot,
-// appending the subscribers that could not take the value to slow.
-//
-// Tracking *which* slots failed (rather than only how many succeeded) is what
-// allows the second pass to be exact. The original sketch re-tried every
-// channel, which delivers a duplicate to any subscriber that had already
-// consumed the phase-1 handoff and become ready again.
-func (v *Vecast[V]) fastFanOut(snap snapshot[V], value V, slow *[]vecastSlowRef[V]) int {
-	if snap.totalSubs == 0 {
-		return 0
-	}
-
+// fastFanOut performs the non-blocking first phase. Subscribers that were
+// not ready to receive are appended to slow for the second phase.
+func (v *Vecast[V]) fastFanOut(snap *snapshot[V], value V, slow *[]*vecastRec[V]) int {
 	delivered := 0
-
 	for i := range snap.shards {
 		ss := &snap.shards[i]
 		if ss.count == 0 {
 			continue
 		}
 		for j := range ss.slots {
-			chPtr := ss.slots[j].chPtr.Load()
-			if chPtr == nil {
+			rec := ss.slots[j].rec.Load()
+			if rec == nil {
 				continue
 			}
 			select {
-			case *chPtr <- value:
+			case rec.ch <- value:
 				delivered++
 			default:
-				*slow = append(*slow, vecastSlowRef[V]{ch: chPtr})
+				*slow = append(*slow, rec)
 			}
 		}
 	}
-
 	return delivered
 }
 
-// waitForSlowReceivers performs the second delivery pass for exactly the
-// subscribers that phase 1 identified as slow, and releases them on Close.
-//
-// The original design launched one goroutine per slow receiver with a ten
-// second timeout and counted "completions" that might simply be timeouts; that
-// both allocates per publish and reports deliveries that never happened. This
-// pass blocks in the publisher, so the value reaches each slow subscriber
-// exactly once and the count is exact.
-func (v *Vecast[V]) waitForSlowReceivers(slow []vecastSlowRef[V], value V) int {
+// waitForSlowReceivers is the second phase: a blocking handoff to each
+// subscriber that was not ready in the first. It counts only handoffs that
+// happened. A subscriber that unsubscribes is skipped; Close ends the phase.
+func (v *Vecast[V]) waitForSlowReceivers(slow []*vecastRec[V], value V) int {
 	delivered := 0
-	for _, sr := range slow {
+	for _, rec := range slow {
 		select {
-		case *sr.ch <- value:
+		case rec.ch <- value:
 			delivered++
+		case <-rec.gone:
 		case <-v.closedCh:
 			return delivered
 		}
@@ -559,44 +491,44 @@ func (v *Vecast[V]) waitForSlowReceivers(slow []vecastSlowRef[V], value V) int {
 }
 
 // Close closes the broadcaster and all subscriber channels.
-// No further sends or subscribes allowed.
-// Waits for all in-flight sends to complete.
+// No further sends are delivered and Subscribe panics afterwards.
+// It releases senders blocked in the slow-receiver phase, waits for all
+// in-flight sends to return, and is idempotent.
 func (v *Vecast[V]) Close() error {
 	if !v.closed.CompareAndSwap(false, true) {
 		return nil // already closed
 	}
+	close(v.closedCh) // releases senders blocked in phase 2
 
-	// Release anything blocked in phase 2 and stop accepting snapshots.
-	close(v.closedCh)
+	// No Send is in flight past this point, and none can start: each checks
+	// closed after taking the shared lock. Closing the subscriber channels
+	// is therefore safe (repair 10).
+	v.sendMu.Lock()
+	defer v.sendMu.Unlock()
+
 	v.globalEpoch.Add(1)
-
-	// Close all subscriber channels. The slot pointer is swapped out before the
-	// channel is closed so a concurrent sender can never send on a closed
-	// channel, and a pooled channel is never handed out still closed.
 	for i := range v.shards {
 		sh := &v.shards[i]
+		sh.mu.Lock()
 		vec := sh.vec.Load()
 		for j := range vec.slots {
-			if chPtr := vec.slots[j].chPtr.Swap(nil); chPtr != nil {
-				close(*chPtr)
-				v.chanPool.Put(new(chan V))
+			if rec := vec.slots[j].rec.Swap(nil); rec != nil {
+				close(rec.ch)
 			}
 		}
+		sh.mu.Unlock()
 	}
-
-	// Transition global epoch to even (stable closed state)
 	v.globalEpoch.Add(1)
-
 	return nil
 }
 
-// Len returns the current number of subscribers (approximate, may be stale).
+// Len returns the approximate number of active subscribers.
 func (v *Vecast[V]) Len() int {
 	total := 0
 	for i := range v.shards {
 		vec := v.shards[i].vec.Load()
 		for j := range vec.slots {
-			if vec.slots[j].chPtr.Load() != nil {
+			if vec.slots[j].rec.Load() != nil {
 				total++
 			}
 		}
@@ -609,16 +541,14 @@ func (v *Vecast[V]) Closed() bool {
 	return v.closed.Load()
 }
 
-// vecastShardKey derives a cheap, stable-ish identity for shard affinity.
+// vecastShardKey derives a cheap identity for shard affinity.
 //
 // The original used runtime.goid() through //go:linkname, which does not exist
 // in the runtime; the honest equivalent that does not reach into runtime
-// internals is the address of a fresh stack variable, which varies with the
-// goroutine's stack and therefore spreads subscriptions across shards without
-// any allocation or unsafe runtime hook.
+// internals is the address of a fresh stack variable, which differs between
+// goroutines. The address is mixed before use (repair 11): its low bits are
+// alignment and are the same in every goroutine.
 func vecastShardKey() uint64 {
 	var x byte
-	return uint64(uintptr(unsafe.Pointer(&x)))
+	return (uint64(uintptr(unsafe.Pointer(&x))) * 0x9E3779B97F4A7C15) >> 40
 }
-
-// --- Internal helpers ---
