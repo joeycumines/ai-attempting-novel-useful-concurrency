@@ -34,7 +34,7 @@
         "skipped": 5
       },
       "timestamp": "2026-11-09T02:49:53.410554571Z",
-      "verified": true
+      "verified": false
     },
     {
       "bytes": 1821986,
@@ -61,7 +61,7 @@
       "slot": "05"
     }
   ],
-  "generated": "2026-11-09T21:56:09.147797089Z",
+  "generated": "2026-11-10T09:28:43.8936485Z",
   "generator": "bigbuff-measure",
   "generator_version": "1.0.0",
   "go": "go1.27.3",
@@ -78,5 +78,5 @@
   "skipped": 5,
   "timestamp": "2026-11-09T02:49:53.410554571Z",
   "type": "manifest",
-  "verified": true
+  "verified": false
 }

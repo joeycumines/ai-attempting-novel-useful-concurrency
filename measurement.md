@@ -57,7 +57,7 @@ results-<rr>-<ss>-<slug>.<ext>
 ```
 
 - `rr` — run sequence, two digits: `00` is the documentation group, `01..` are
-  measurement runs in commit order (run 01 = standard profile, run 02 = quick).
+  measurement runs in commit order (run 01 = standard profile, run 02 = quick, run 03 = quick).
 - `ss` — slot within the run, two digits:
   - `00` — `results-NN-00-manifest.json` (the run's manifest; **first file of the group**)
   - `01` — `results-NN-01-results.jsonl` (the JSONL results)
@@ -168,12 +168,12 @@ not killed.
 
 ## Batteries
 
-23 batteries across 5 families (`make measure-list`). Highlights: throughput sweeps,
+25 batteries across 6 families (`make measure-list`). Highlights: throughput sweeps,
 p99-focused latency, allocations (and zero-subscriber cost), retained bytes per idle
 subscriber, subscribe/unsubscribe churn, stalled-consumer pathology (completed ops +
 retained bytes + fast-lane minimum), withdrawal compensation for rendezvous casters,
 exactly-once scatter accounting, torn-read payload integrity, wait-time barriers for
-gathers, and full swimlane traces.
+gathers, merge cost and batch-drain batteries for fan-ins, and full swimlane traces.
 
 ## Measurement discipline (the rules that make this comparable)
 
