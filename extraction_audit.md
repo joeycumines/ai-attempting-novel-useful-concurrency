@@ -53,8 +53,11 @@ Source: `60-arena-gpt-6.1-terra-low-prompt-bait.md`. Files: `latest32_60_terra.g
 `latest32_60_terra_test.go`. Single packed atomic word (value+revision+closed);
 no constructor (zero value ready). Verification: full suite green; `-race` green.
 Benchmark: `BenchmarkLatest32/atomic/writeEvery=1` 64.8 ns/op.
-Attachment: `latest-value-conflating-watch` (adapter polls the word; no wake
-primitive by design), `ephemeral-churn-membership`, `zero-subscriber-and-edge-lifecycle`,
+Attachment: `latest-value-conflating-watch` (adapter parks on a bounded
+exponential backoff between word reads — the candidate is a non-parking
+polling register by design, so there is no wake primitive to block on; the
+backoff is capped and the goroutine sleeps, never spins),
+`ephemeral-churn-membership`, `zero-subscriber-and-edge-lifecycle`,
 `cancellation-and-close-lifecycle`, `large-fanout-scalability`.
 
 ### 61 — Pulse61Deepseek (61-DeepSeek)
@@ -159,10 +162,17 @@ Attachment: `bounded-ring-lossy-detectable`, `ephemeral-churn-membership`,
 Source: `68-chatgpt-prompt-bait.md`. Files: `edgefanin_68_chatgpt.go`,
 `edgefanin_68_chatgpt_test.go`. M:1 fan-in (SPSC producer lanes → one
 batch-oriented consumer) — it is **not** a `Broadcaster` (one shared publish
-path, N subscribers each observing every value), so it is **not attached** to
-the broadcast scenario matrix. Verification: green incl. `-race`; the extracted
-module’s own `go vet` was clean before rename (the stray fenced usage block
-`block_1123.go` in the extract is documentation, not source, and was not ported).
+path, N subscribers each observing every value), so it is not attached to the
+broadcast scenario matrix; per the maintainer’s direction it is attached via the
+**implemented fan-in scenario** `bounded-fanin-merge` (case runnables
+`TestScenarioFanin`, `BenchmarkScenarioFaninMerge`, `FuzzScenarioFaninModel`;
+batteries `fanin.merge` + `fanin.batch_drain`), next to its vacuum baseline
+`BaselineFanIn`. Measured in run 03 (quick profile @ `9581dec`, verify PASS):
+gate score **72 — Situational** (integrity verified, but the throughput
+dimension scores 0 against the baseline: merged cost 165.2 ns/op vs 129.3
+ns/op). Verification: full suite green incl. `-race` and `GOARCH=386`; the
+extracted module’s own `go vet` was clean before rename (the stray fenced usage
+block `block_1123.go` in the extract is documentation, not source, and was not ported).
 Benchmark: `BenchmarkEdgeFanIn/uint64/edge/producers=1` 82.6 ns/op;
 `producers=4` 77.4 ns/op (12.9 Mmsgs/s); `128B/producers=16` 191.6 ns/op.
 
@@ -179,9 +189,10 @@ Attachment: `latest-value-conflating-watch`, `ephemeral-churn-membership`,
 `zero-subscriber-and-edge-lifecycle`, `cancellation-and-close-lifecycle`,
 `large-fanout-scalability`. Note: the candidate's `Watch` iterator always
 replays the current value as its first yield, which is incompatible with the
-zero-subscriber facet's tail-attach contract; the adapter therefore
-re-implements tail-attach by epoch (synchronous epoch capture at subscribe,
-poll `Load` until the epoch advances) and busy-polls with `Gosched`.
+zero-subscriber facet's tail-attach contract; the adapter therefore drops the
+catch-up yield and tail-attaches by a subscribe-time epoch anchor, and blocks
+on the cell's condvar-gated `Watch` path (re-anchored at subscribe) instead of
+polling.
 
 ### 70 — Horizon70Meta (70-Meta)
 Source: `70-meta-ai-prompt-bait.md`. Files: `horizon_70_meta.go`,
@@ -277,12 +288,57 @@ Attachment: `bounded-ring-lossy-detectable`, `ephemeral-churn-membership`,
   closes the Beacon before joining readers (previously a caught-up ModeBlock
   reader could park on a gate nobody would ever close — a latent test deadlock).
 - 61/`TestPulse_Linearizable`: bounded per above (no implementation change).
+- 64/`TestMultiProducerStress` (test-side): the stream encoding `p*1e9 + i`
+  overflows a 32-bit `int` on GOARCH=386 (values wrapped, `v/1e9` indexed the
+  per-lane tracking array out of range and panicked). The multiplier is now
+  `1e6`, which fits every 32-bit int; the cross-producer assertions are
+  unchanged. Verified on `GOARCH=386`.
+- `TestChanCaster58Helpers` (58 batch, tree-wide portability): the 128-byte
+  `ChanCaster58Spark` size assertion is now scoped to 64-bit targets, matching
+  the candidate's own documented claim ("no runtime cache-line-size claim is
+  made for other targets").
+
+## Post-port 32-bit portability batch (GOARCH=386)
+
+A `GOARCH=386` sweep after the port found and fixed four defects — three in
+ported code, one in a test — none of them visible on amd64/arm64:
+
+1. **Beacon64GLM (64-GLM, this batch) — payload copies overran the
+   destination on 32-bit.** The slot load/store helpers derived the word
+   count from `unsafe.Sizeof(uintptr(0))` — 4 on 386 — but copied with 8-byte
+   `uint64` granularity per word, so on 32-bit targets a 4-byte `int` payload
+   was copied as 8 bytes: a deterministic 4-byte stack overwrite of adjacent
+   caller locals (observed indices 3→5→0 and a deterministic wrong `held`).
+   The linux/386 suite hung in `TestBeaconBasics` and corrupted memory whenever
+   it ran on. Fixed by exact byte-count copies: `unsafe.Slice`+`copy` in the
+   plain build, an explicit `n/8` atomic word loop with a byte-assembled
+   source in the `-race` build (an `atomic.LoadUint64(&v)` there was also a
+   latent unaligned-atomic panic on 32-bit), and `n/8` in the amd64/arm64 fast
+   build. `wordSize64GLM` and the dead helper were deleted from the module.
+   amd64/arm64 were never affected (`uintptr` is 8 there) — which is why the
+   race detector never saw it.
+2. **Package-level 64-bit atomics on 4-aligned storage (386/ARM).** Plain
+   `uint64` fields/globals used with the `atomic.LoadUint64`-family panic on
+   strict-alignment targets. Switched to typed `atomic.Uint64` (aligned on
+   every target): `seqcaster_23_meta.go` (`head`, `lost` — the 23 batch, same
+   defect class, surfaced by the same sweep), `beacon_64_glm_fence_generic.go`
+   and `beacon_64_glm_slot_race.go` (`fenceWord64GLM`), and
+   `broadcast_65_deepseek_bench_test.go` (benchmark counter).
+   `ring_62_haiku.go` / `ring_67_haiku_race.go`'s atomic words were audited and
+   are already 8/64-aligned by construction; unchanged.
+3. **Carillon (21 batch, tree-wide portability) — `carillonSlot` was 64
+   bytes only on 64-bit targets** (56 on 32-bit: the `bell` channel field is
+   pointer-sized). The pad is now width-independent
+   (`38 - unsafe.Sizeof(uintptr(0))`); the slot is exactly one cache line on
+   both targets, and `TestCarillonSlotIsOneCacheLine` passes on GOARCH=386.
+
+AMD64 and arm64 builds are unchanged in behaviour; the `-race` suites are
+green. `GOARCH=386` full suite: green (≈29s).
 
 ## Scenario attachments
 
 `port_attachments_test.go` adds adapters for all port candidates **except**
-`EdgeFanIn68Chatgpt` (fan-in is not a broadcast primitive) wired through
-`AllBroadcasters()` (491 standard-harness subtests green) and
+`EdgeFanIn68Chatgpt`, wired through `AllBroadcasters()` and
 `portBroadcastAttachments()` appended in `init()` (registry validation green:
 no duplicate `(scenario, impl)` pairs, all remarks present, all flags
 well-formed). Honest-fit rules: every port candidate is lossy by design, so
@@ -292,24 +348,42 @@ matches the loss semantics (`bounded-ring-lossy-detectable` for rings,
 where semantics allow). `TelemetryRing63Qwen` is deliberately **not** attached
 to `zero-subscriber-and-edge-lifecycle` (no published-count accessor exists to
 tail-attach); `StripedCombiner59Gemini` is attached with the ring’s semantics
-(its publish path is the ring). Two adapters busy-poll their cells with
-`Gosched` because the primitive exposes no wake primitive wired to a
-subscription — `Latest3260Terra` (none by design) and `WatchCell69Deepseek`
-(its `Watch` iterator always replays the current value as a first yield, which
-the zero-subscriber facet forbids for a late attacher; the adapter drops that
-catch-up yield and tail-attaches by epoch instead) — both documented in their
-attachment remarks. No attachment weakens an implementation; facets that do not
-fit a primitive are simply not created.
+(its publish path is the ring). No attachment weakens an implementation;
+facets that do not fit a primitive are simply not created.
+
+`EdgeFanIn68Chatgpt` is a fan-in primitive, not a broadcaster, so it is
+attached via the **implemented fan-in scenario** `bounded-fanin-merge`
+(`scenario_fanin_test.go`: `faninLikes` factories, one shared contract test
+(`TestScenarioFanin`) for the port and its `BaselineFanIn` vacuum baseline,
+a fuzz model (`FuzzScenarioFaninModel`) and `BenchmarkScenarioFaninMerge`). It
+is registered in the fanin family next to the baseline; the registry validates
+it like every other family — the committed registry dump lists 19 scenarios,
+135 cases and 345 attachments (see run 03’s `results-03-02-registry.json`).
+
+No adapter busy-polls. `Latest3260Terra` (no wake primitive by design) parks on
+a bounded exponential backoff that sleeps — never spins — between word reads.
+`WatchCell69Deepseek`'s adapter blocks on the cell’s condvar-gated `Watch` path
+(the candidate's iterator always replays the current value as a first yield,
+which the zero-subscriber facet forbids for a late attacher; the adapter drops
+that catch-up yield and tail-attaches by a subscribe-time epoch anchor, then
+blocks). Both are documented in their attachment remarks.
 
 ## Not done / open items
 
 - #64 ships no candidate benchmarks (see above); #62’s fan-out benchmark not
   re-measured in this pass; both are one-liners if wanted later.
 - #64’s ARM64 fence (`beacon_64_glm_fence_arm64.s`, `DMB ISHLD/ISH`) is
-  compile-verified only; untested on ARM hardware.
+  compile-verified only; untested on ARM hardware. AMD64 fences are covered by
+  the full amd64 suite; GOARCH=386 is green as of the portability batch above.
 - `Build tags`: fast slot paths are `!race`; `-race` swaps in the atomic slot
   protocol (`beacon_64_glm_slot_race.go`) or per-slot mutex
   (`horizon_70_meta_slot_race.go`) so the race detector verifies the same
   algorithm the fast build runs.
-- `measurement.md` / result site were not regenerated for this batch; the
-  benchmark inventory above is the source of truth until then.
+- Measurements **were** regenerated for this batch: run 03 (quick profile,
+  commit `9581dec`, 1659 records, verify **PASS**) is committed and is the
+  current artifact; report and CSVs cover the fan-in family (`EdgeFanIn68Chatgpt`
+  scores 72 — Situational — on the throughput dimension: merged cost 165.2 ns/op
+  vs the baseline's 129.3 ns/op, integrity verified; `BaselineFanIn` scores
+  100). Runs 01/02 predate the fan-in family and re-index to
+  `verified: false` under the current registry; the committed manifests say
+  so, and the honest story is in `results-00-00-readme.md`.
