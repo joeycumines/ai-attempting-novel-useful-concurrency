@@ -258,6 +258,23 @@ func (s *Subscription65Deepseek[V]) TryNext() (V, ReadResult65Deepseek) {
 // Next blocks until a value is available, the context is cancelled, or the
 // broadcaster / subscription is closed. Returns false on termination.
 func (s *Subscription65Deepseek[V]) Next() (V, bool) {
+	return s.NextContext(nil)
+}
+
+// NextContext is Next with an additional per-call context: when ctx is done
+// the call returns false but, unlike cancellation of the subscription's own
+// context, the subscription stays open and may be read again. A nil ctx is
+// equivalent to Next.
+//
+// Integration repair: as generated, Next could only be cancelled through
+// the context fixed at Subscribe time, which forced callers needing per-call
+// cancellation to poll TryNext on a timer. The wait itself is unchanged (arm
+// the waiter bit, re-check, park on the subscription's notify channel).
+func (s *Subscription65Deepseek[V]) NextContext(ctx context.Context) (V, bool) {
+	var callDone <-chan struct{}
+	if ctx != nil {
+		callDone = ctx.Done()
+	}
 	for {
 		v, r := s.read()
 		switch r {
@@ -277,6 +294,9 @@ func (s *Subscription65Deepseek[V]) Next() (V, bool) {
 			s.Close()
 			var zero V
 			return zero, false
+		case <-callDone:
+			var zero V
+			return zero, false
 		default:
 		}
 
@@ -293,6 +313,10 @@ func (s *Subscription65Deepseek[V]) Next() (V, bool) {
 		case <-s.ctx.Done():
 			s.waiting.Store(false)
 			s.Close()
+			var zero V
+			return zero, false
+		case <-callDone:
+			s.waiting.Store(false)
 			var zero V
 			return zero, false
 		}

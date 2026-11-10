@@ -1,4 +1,9 @@
-# Extraction audit — rawLLM prompt-bait responses 59–70
+# Extraction audit — responses 59–74
+
+> Responses 59–70 (prompt-bait) are recorded first, as originally written.
+> Responses 71–74, the late adapter for 62, and the repairs made to earlier
+> ports during the completion phase are recorded in
+> [Completion phase](#completion-phase-7174-62-and-repairs-to-earlier-ports) at the end.
 
 Status of the port of responses 59–70 (`59-gemini-argo-high-prompt-bait.md` …
 `70-meta-ai-prompt-bait.md`) into package `bigbuff`. This file was referenced
@@ -387,3 +392,152 @@ blocks). Both are documented in their attachment remarks.
   100). Runs 01/02 predate the fan-in family and re-index to
   `verified: false` under the current registry; the committed manifests say
   so, and the honest story is in `results-00-00-readme.md`.
+
+## Completion phase: 71–74, 62, and repairs to earlier ports
+
+Method as above, with three additions that each caught something the earlier
+method did not:
+
+- every stress run is repeated at `-cpu 1,2,4` (GOMAXPROCS=1 exposed the #58
+  livelock below, which a 2-CPU default run never shows);
+- `go vet -race` is run after touching any `_race.go`/`_fast.go` pair (a
+  race-only file of #63 was left uncompilable by the first version of the
+  repair below, and plain `go vet` did not see it);
+- new tests order events through blocking operations (`apex_helpers_test.go`)
+  and never sleep or poll internal state to detect progress.
+
+`make verify` (`verify.mk`) packages those legs.
+
+### As delivered
+
+| Response | Builds | Vet | Own tests |
+|---|---|---|---|
+| 71 | yes | clean | pass |
+| 72 | **no** — `phasecaster.go` passes `*atomic.Uint64` where `*uint64` is required; `bitmap_arm64.s` uses `UADDLV`, which the Go assembler does not accept | n/a | with the compile error fixed: `TestSeqAndSeqPhasedEarlyBreakCompensation` deadlocks; `TestSymExchangerSelectTicketComposability` panics by construction |
+| 73 | yes | clean | **test file does not compile** (`cohort_test.go:634:2: declared and not used: v`) |
+| 74 | yes | clean | pass |
+
+### 71 — ChanRing71Fable (no repairs)
+
+Lossy multi-sender ring; cursors are plain values; readers park and are woken
+by a cascading token. Ported with renames only. Recorded behaviour, not
+defects: starting a round is one blocking send; `Close` waits for the whole
+round in progress; `Send` on a closed ring panics; a sender spins while a
+lapped reader is mid-copy.
+
+### 72 — PhaseCaster72Gemini (six repairs)
+
+1. `Ack` racing the broadcaster's transition from sending to awaiting-ack
+   poisoned the caster. `Ack` now yields and retries.
+2. The "late acknowledgement owed" marker was a status value, erased when the
+   next broadcast claimed the slot; the late `Ack` then found the slot in a
+   sending state and poisoned the caster. It is now a flag bit that survives
+   claims.
+3. `Close` during the acknowledgement wait returned `(n, nil)`. It now returns
+   `ErrClosed72Gemini`: the barrier was not reached.
+4. A subscriber iterating with `Seq()` (which never acknowledges) hung every
+   `BroadcastPhased`. Plain subscribers are now delivered to in one phase.
+5. Each broadcast allocated its bank mask above four banks; replaced by a
+   per-caster scratch mask.
+6. Every broadcast heap-allocated the phase gate. It is now allocated only on
+   the acknowledged path, so one-phase `Broadcast` is allocation-free in the
+   default build (asserted). `BroadcastPhased` still allocates the gate; the
+   race build allocates one snapshot cell per broadcast by design.
+
+Left as designed and recorded: fixed capacity (`ErrCapacity72Gemini`); an
+`Ack` that is not owed poisons the subscription; one late acknowledgement per
+slot is absorbed; `Close` waits for a blocked send rather than interrupting
+it; delivery is sequential, so one slow subscriber delays the rest; a
+compensated delivery may be counted as zero; break-compensation is slow at
+GOMAXPROCS=1 (about 20 ms per iteration here).
+
+### 72 — bitmap scan kernels (six repairs, not wired)
+
+The response describes hoisting the scan into assembly but its wiring sketch
+does not compile, so the kernels stand alone: parity-tested against a
+reference implementation and fuzzed, **excluded from every measurement**.
+Repairs: the compile error; a POPCNT feature guard; a destination bounds
+check; normalisation of the start index; a dead `CMOVQGE`; `VUADDLV` on arm64.
+The arm64 file assembles and vets (`GOARCH=arm64`); **it has never been
+executed** — no arm64 hardware or emulator was available.
+
+### 72 — SymExchanger72Gemini (three repairs)
+
+1. Lost pairing: two parties could each publish an offer after the other's
+   scan and both park. Each party now rescans once after publishing.
+2. Stale wake token: the token was sent after the fulfilment was published
+   and could land in a slot that had already been recycled.
+3. A ticket matched inside `BeginExchange` busy-looped for a second free slot;
+   such a ticket now carries its partner's value itself.
+
+`Done()` was added so ticket holders can select on closure (closing does not
+fire `Ready`). Recorded: a ticket is a heap allocation (`Exchange` itself is
+not — asserted); progress of the rescan under contention is probabilistic; a
+full arena spins with `Gosched`. The response's ticket-composability test
+cannot pass as written and was replaced (`symexchanger_72_gemini_test.go`).
+
+### 73 — Cohort73Meta (two repairs)
+
+1. The epoch was bumped after the value lock was released, so `Snapshot`
+   could pair a new value with the old epoch.
+2. `Close` during a barrier returned `(n, nil)`; it now returns
+   `(0, ErrClosed73Meta)`.
+
+Recorded: a context cancellation racing completion may report the context
+error for a broadcast that completed; a stalled member conflates (it sees
+only the latest value); a stale `Ack` returns false; `Wait` returns the
+latest *unacknowledged* epoch again immediately. The response's tests were
+sleep-based and one did not compile; they were rewritten.
+
+### 74 — Fanout74Deepseek (no repairs)
+
+Synchronous hand-off through per-subscriber mailboxes; reading is the
+acknowledgement. Recorded: when the sender's context is cancelled the value
+stays readable in the mailbox until overwritten; the response's claim that
+abandoning `Next` releases the broadcaster is false (pinned by
+`TestFanout74Deepseek_AbandonedNextDoesNotReleaseSend` in
+`fanout_74_deepseek_test.go`). The response's tests were sleep-based and were
+replaced.
+
+### 62 — Ring62Haiku (adapter only)
+
+The source was extracted earlier but had no adapter, so it ran in nothing but
+its own tests. It is now attached to the lossy-ring, churn, lifecycle and
+fan-out scenarios. The candidate panics on overlapping `Publish` calls by
+contract, and several shared tests publish from more than one goroutine; the
+adapter declares `SinglePublisher` and those tests serialise publishes for it
+(`harnessPublish` in `harness_test.go`). The lock is in the test driver, not
+in the adapter, so it is not part of any measured publish cost. #63 uses the
+same mechanism.
+
+### Repairs to earlier ports
+
+- **#58 `Broadcaster58Spark.Next` — livelock, present on `main` before this
+  work.** A cursor that had been lapped re-aimed at `head - size`, which is the
+  cell an in-flight `Send` is overwriting; the reader then spun on that cell's
+  sequence lock. With one P the sender never ran again:
+  `TestStandardHarness_ConcurrentChurn/Broadcaster58Spark` hung
+  deterministically at `-cpu 1`. The lap target is now derived from the
+  published count (`next`), and a single-cell ring with a send in flight
+  reports "nothing yet" instead of waiting on the cell. `Next` never returns an
+  unpublished sequence. Regression tests: `broadcaster_58_spark_test.go`.
+- **#63 `TelemetryRing63Qwen` — lost wakeups, present on `main` before this
+  work.** One capacity-1 token for the whole ring woke one parked reader; the
+  others slept until the next publish, or forever if there was none: 3 guard
+  timeouts in 15 000 runs of its scenario test on the untouched tree. Replaced
+  by a count of armed waiters plus a token each woken reader relays
+  (`NextWait`); 60 000 runs afterwards without a failure. Rejected
+  alternatives: re-posting the token unconditionally (two readers ping-pong and
+  spin), closing and replacing a channel per publish (an allocation per wake),
+  a waiter list walked by the publisher (publish cost linear in readers).
+- **#65** gained `NextContext`; **#60** and **#67** adapters lost their
+  timing-based waits (see the tracker rows in `01-readme.md`).
+
+### Not done
+
+- No measurement battery for the exchange and barrier scenarios (Go
+  benchmarks only).
+- The #72 bitmap kernels are not wired into the broadcaster.
+- arm64 assembly (#64 fence, #72 bitmap) is assembled, never executed.
+- #28, #29, #30, #31, #33 still have no dedicated unit tests; #52 had no
+  further lifecycle review.

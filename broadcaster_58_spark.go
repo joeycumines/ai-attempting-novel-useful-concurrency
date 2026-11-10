@@ -15,6 +15,13 @@ package bigbuff
 // The ring retains up to capacity values; a new subscription starts live.
 // Next reports exact skipped sequence numbers. SubscribeContext deliberately
 // hides that metadata and is therefore for loss-tolerant consumers only.
+//
+// Completion-phase repair: a lapped cursor aimed for the oldest published
+// cell, which is exactly the cell an in-flight Send is overwriting. With one
+// P this livelocked the cursor against a free-running sender (the standard
+// concurrent-churn harness test hung at GOMAXPROCS=1). Next now laps against
+// the claimed sequence; see the comment there and
+// TestBroadcaster58Spark_LappedCursorSkipsInFlightCell.
 
 import (
 	"context"
@@ -129,8 +136,25 @@ func (s *Broadcaster58Subscription[V]) Next() (v V, ok bool, missed uint64) {
 		if pub-next == ^uint64(0) { // wrap-safe caught-up test
 			return zero, false, 0
 		}
-		if pub-next >= size {
-			next = pub - size + 1
+		// Lap against the claimed sequence, not the published one. A
+		// send in flight has claimed pub+1 and is overwriting the cell
+		// that holds pub-size+1, so that cell is the one a lapped
+		// cursor must not aim for: at GOMAXPROCS=1 the cursor and the
+		// sender hand that cell's lock back and forth indefinitely
+		// (reader parks behind the writer, is granted the read lock but
+		// does not run until the sender has lapped the ring and parked
+		// behind it, finds the cell overwritten, and aims for the
+		// oldest published cell again, which is again the sender's
+		// target). Sends are serialised, so claimed is pub or pub+1 and
+		// the cursor gives up at most the one value being overwritten.
+		if claimed := b.next.Load(); claimed-next >= size {
+			next = claimed - size + 1
+			if size == 1 && b.published.Load() != claimed {
+				// A one-cell ring whose only cell is being
+				// overwritten retains nothing right now. (For
+				// larger rings claimed-size+1 is always published.)
+				return zero, false, 0
+			}
 		}
 		cell := &b.cells[next&b.mask]
 		cell.mu.RLock()

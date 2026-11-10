@@ -47,6 +47,7 @@ func FuzzScenarioBroadcast(f *testing.F) {
 		}
 		for _, a := range uniq {
 			b := scenarioBroadcastFactories()[a.Impl]()
+			publish := harnessPublish(b)
 			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			var subs []BroadcastSubscriber
 			var wg sync.WaitGroup
@@ -61,7 +62,7 @@ func FuzzScenarioBroadcast(f *testing.F) {
 					val++
 					v := val
 					wg.Add(1)
-					go func() { defer wg.Done(); b.Publish(v) }()
+					go func() { defer wg.Done(); publish(v) }()
 				case 2:
 					if len(subs) > 0 {
 						subs[len(subs)-1].Receive(ctx)
