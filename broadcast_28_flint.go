@@ -117,16 +117,28 @@ func (b *Broadcast28Flint[V]) Send(value V) int {
 	}
 
 	sent := 0
+	var prev *subscription28Flint[V] // last node delivered to, if any
 	sub := b.head.Load()
 
 	for sub != nil {
+		next := sub.next.Load()
 		if sub.state.Load() == 0 {
-			// Lazily clean inactive head nodes.
-			if b.head.Load() == sub && b.head.CompareAndSwap(sub, sub.next.Load()) {
-				sub = b.head.Load()
-				continue
+			// Integration repair. As delivered, a retired node that was not
+			// the head made the walk restart from the head: the node was
+			// never unlinked, so every Send looped forever, delivering the
+			// same value again and again to the subscribers in front of it.
+			// The walk now steps past a retired node and unlinks it from
+			// whichever pointer led to it. Either CAS may lose to a
+			// concurrent Subscribe (head) or Send (prev.next); the node is
+			// then simply left for a later Send. Only retired nodes are ever
+			// unlinked and subscribers are only ever added at the head, so
+			// no active subscriber can be dropped from the list.
+			if prev == nil {
+				b.head.CompareAndSwap(sub, next)
+			} else {
+				prev.next.CompareAndSwap(sub, next)
 			}
-			sub = b.head.Load()
+			sub = next
 			continue
 		}
 
@@ -139,7 +151,8 @@ func (b *Broadcast28Flint[V]) Send(value V) int {
 			// visit to this node).
 		}
 
-		sub = sub.next.Load()
+		prev = sub
+		sub = next
 	}
 
 	return sent

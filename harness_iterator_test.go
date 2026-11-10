@@ -210,15 +210,21 @@ func (a *epochPubSubAdapter) Publish(val int) int { return a.x.Send(val) }
 func (a *epochPubSubAdapter) IsCoalescing() bool  { return true }
 func (a *epochPubSubAdapter) Close()              {}
 func (a *epochPubSubAdapter) Subscribe() BroadcastSubscriber {
-	a.x.Subscribe() // registered synchronously
-	_, seq, _ := a.x.Current()
-	next := seq + 1
+	// Registration and the starting sequence are taken in one step: a round
+	// that begins straight after a bare Subscribe counts this subscriber,
+	// and reading Current afterwards would mistake that round for one that
+	// predated the subscription and never acknowledge it.
+	acked := a.x.SubscribeEpoch()
+	next := acked + 1
 	return newPumpSub(func(ctx context.Context, ch chan<- int) {
-		defer a.x.Unsubscribe()
+		// Leaving after acknowledging the round in flight must not
+		// compensate that round a second time.
+		defer func() { a.x.UnsubscribeAcked(acked) }()
 		for {
 			if v, s, ok := a.x.Current(); ok && s >= next {
 				next = s + 1
 				a.x.Ack(s)
+				acked = s
 				select {
 				case ch <- v:
 				case <-ctx.Done():

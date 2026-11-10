@@ -190,7 +190,8 @@ type Case struct {
 var Cases = []Case{
 	{"lockstep/test/ordered-ack-fanout", "lockstep-barrier-lossless", CaseTest, "Ordered fan-out with ack barrier, 4 subscribers x 20 values", "TestScenarioBroadcast"},
 	{"lockstep/bench/fanout", "lockstep-barrier-lossless", CaseBenchmark, "Publish throughput at 8 subscribers", "BenchmarkScenarioBroadcast"},
-	{"lockstep/fuzz/op-stream", "lockstep-barrier-lossless", CaseFuzz, "Randomised subscribe/publish/receive/unsubscribe stream", "FuzzScenarioBroadcast"},
+	{"lockstep/fuzz/op-stream", "lockstep-barrier-lossless", CaseFuzz, "Fuzzed stream of open-consumer / publish / await-publishers / probe / retire-consumer ops against one implementation per input", "FuzzScenarioBroadcast"},
+	{"lockstep/test/op-stream", "lockstep-barrier-lossless", CaseTest, "Fixed-seed op streams (300 per implementation) plus every recorded regression stream, over all broadcast attachments", "TestScenarioBroadcastOpStreams"},
 	{"epochbroadcast/test/fanout-count", "lockstep-barrier-lossless", CaseTest, "Eight cursors receive each value before Send returns", "TestEpochBroadcast54Fanout"},
 	{"epochbroadcast/test/join-withdraw", "lockstep-barrier-lossless", CaseTest, "Join at epoch boundary and release an outstanding obligation by unsubscribe", "TestEpochBroadcast54MembershipAndUnsubscribe"},
 	{"epochbroadcast/bench/send", "lockstep-barrier-lossless", CaseBenchmark, "Eight-subscriber epoch publication and receive acknowledgement", "BenchmarkEpochBroadcast54Send"},

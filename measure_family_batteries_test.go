@@ -336,10 +336,21 @@ func measureScatterDispatch(ctx *measureContext, name string, mk func() scatterL
 	scen, goodFit, expLimit := scatterAttachmentMeta(name)
 	for _, receivers := range ctx.profile.ScatterScaleSubs {
 		samples := make([]float64, 0, ctx.profile.Reps)
-		var violations int64
+		var violations, evicted, sentTotal int64
 		lastOps := 0
 		for r := 0; r < ctx.profile.Reps; r++ {
 			x := mk()
+			// Queues that are bounded by contract evict the oldest pending
+			// item when full and count each eviction. For them "exactly
+			// once" means delivered or evicted, never both and never
+			// neither: received + evicted must equal sent. Implementations
+			// with no eviction counter must deliver every item.
+			droppedNow := func() int64 {
+				if x.dropped == nil {
+					return 0
+				}
+				return int64(x.dropped())
+			}
 			ctx8, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			var received atomic.Int64
@@ -381,10 +392,11 @@ func measureScatterDispatch(ctx *measureContext, name string, mk func() scatterL
 			// returns at handoff, so there is a small window before the count
 			// settles. Bounded wait (not a retry loop) with violation accounting.
 			deadline := time.Now().Add(3 * time.Second)
-			for received.Load() < sent && time.Now().Before(deadline) {
+			for received.Load()+droppedNow() < sent && time.Now().Before(deadline) {
 				time.Sleep(50 * time.Microsecond)
 			}
-			if got := received.Load(); got != sent {
+			dropped := droppedNow()
+			if got := received.Load() + dropped; got != sent {
 				v := sent - got
 				if v < 0 {
 					v = -v
@@ -394,7 +406,20 @@ func measureScatterDispatch(ctx *measureContext, name string, mk func() scatterL
 			cancel()
 			wg.Wait()
 			lastOps = n
-			samples = append(samples, float64(d)/float64(n))
+			evicted += dropped
+			sentTotal += sent
+			// Cost is per delivered item. A queue that admits without
+			// waiting and evicts under a saturating sender would otherwise
+			// be credited with the items it threw away.
+			delivered := sent - dropped
+			if delivered < 1 {
+				delivered = 1
+			}
+			samples = append(samples, float64(d)/float64(delivered))
+		}
+		deliveredFraction := 1.0
+		if sentTotal > 0 {
+			deliveredFraction = float64(sentTotal-evicted) / float64(sentTotal)
 		}
 		ctx.writeMetric(map[string]any{
 			"metric":                  "dispatch_ns_op",
@@ -409,6 +434,8 @@ func measureScatterDispatch(ctx *measureContext, name string, mk func() scatterL
 			"expected_good_fit":       goodFit,
 			"exposure_limited":        expLimit,
 			"exactly_once_violations": violations,
+			"evicted":                 evicted,
+			"delivered_fraction":      deliveredFraction,
 		}, samples)
 	}
 }

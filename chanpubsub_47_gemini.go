@@ -161,14 +161,10 @@ func (x *ChanPubSub47Gemini[C, V]) SubscribeContext(ctx context.Context) iter.Se
 			return
 		}
 
-		acknowledged := false
-		defer func() {
-			if acknowledged {
-				x.unsubscribeAcknowledged()
-			} else {
-				x.Unsubscribe()
-			}
-		}()
+		// Add classifies the departure itself (mid-flight withdrawal or
+		// plain membership change), under the lock that orders it against
+		// Send; see the repair note there.
+		defer x.Unsubscribe()
 
 		for {
 			select {
@@ -190,14 +186,10 @@ func (x *ChanPubSub47Gemini[C, V]) SubscribeContext(ctx context.Context) iter.Se
 				}
 
 				x.Wait()
-				acknowledged = true
 
 				if !yield(v) {
 					return
 				}
-				// A subsequent iteration may be cancelled before its next value;
-				// that withdrawal belongs to that future round, not this one.
-				acknowledged = false
 			}
 		}
 	}
@@ -250,7 +242,14 @@ func (x *ChanPubSub47Gemini[C, V]) Send(value V) (sent int) {
 	}
 	x.waiters.Store(0)
 	x.pongWake.Store(0)
-	x.pongRem.Store(int32(subscribers))
+	// Integration repair: the sender is itself a participant in the pong
+	// barrier (the +1), and takes its place only after the ping phase has
+	// fully ended. Without it, the last subscriber to receive released the
+	// barrier before ping.Send had cleared its sending state; a subscriber
+	// that then unsubscribed straight after Wait was treated as a mid-flight
+	// withdrawal, and parked forever on a channel receive for a send that
+	// was never coming.
+	x.pongRem.Store(int32(subscribers) + 1)
 	x.pongExit.Store(int32(subscribers))
 
 	x.subMu.Lock()
@@ -260,6 +259,19 @@ func (x *ChanPubSub47Gemini[C, V]) Send(value V) (sent int) {
 
 	// Ping: broadcast value to all active subscribers.
 	sent = x.ping.Send(value)
+
+	// The ping phase is over: every registered subscriber has received or
+	// withdrawn, and ping holds no state. Take the sender's place in the
+	// barrier, releasing the parked subscribers if it is the last to arrive.
+	switch rem := x.pongRem.Add(-1); {
+	case rem < 0:
+		panic(chanPubSub47GeminiStateInvariantViolation)
+	case rem == 0:
+		if w := x.waiters.Swap(0); w > 0 {
+			x.pongWake.Store(w)
+			x.propagatePongWake()
+		}
+	}
 
 	// Pong: wait until every subscriber has either completed Wait or
 	// unsubscribed mid-flight via Add(-delta).
@@ -271,19 +283,6 @@ func (x *ChanPubSub47Gemini[C, V]) Send(value V) (sent int) {
 
 	success = true
 	return sent
-}
-
-// unsubscribeAcknowledged removes an iterator subscription after it has
-// completed Wait for the current publication. Its participation is already
-// recorded in pongRem, so only membership changes; it must not be counted as
-// a withdrawal from that same acknowledgement barrier.
-func (x *ChanPubSub47Gemini[C, V]) unsubscribeAcknowledged() {
-	x.checkUsedFactoryFunction()
-	x.checkBroken()
-	x.subMu.Lock()
-	subscribers := x.addSubscribers(-1)
-	x.subMu.Unlock()
-	x.sanityCheckSubscribersDelta(subscribers, -1)
 }
 
 // Add returns the number of subscribers, after adding delta to the count. It
@@ -314,7 +313,17 @@ func (x *ChanPubSub47Gemini[C, V]) Add(delta int) (subscribers int) {
 			x.checkBroken()
 			x.subCond.Wait()
 		}
-		inFlight := x.sending
+		// Integration repair. The caller is a mid-flight withdrawal only if
+		// the armed Send's pong barrier has not been released yet: it then
+		// cannot have completed Wait for that Send, so (the contract being
+		// obeyed) it has not received, its receive intent is still held by
+		// ping, and that Send cannot finish before the withdrawal below. Once
+		// the barrier is released (pongRem == 0) every subscriber has taken
+		// part, and leaving changes membership only. Deciding here, under
+		// subMu, ties the decision to one Send; as delivered it was taken
+		// from ping and pongRem after the unlock, where a following Send
+		// could already have re-armed both.
+		inFlight := x.sending && x.pongRem.Load() > 0
 		subscribers = x.addSubscribers(delta)
 		x.subMu.Unlock()
 
@@ -327,15 +336,13 @@ func (x *ChanPubSub47Gemini[C, V]) Add(delta int) (subscribers int) {
 					x.markBroken()
 				}
 			}()
-			// Drain -delta messages from ping.C and account for those
-			// unsubscribed participants in the pong barrier.
-			x.ping.tryWithdraw(delta)
-			// A completed pong phase may still be visible as sending until
-			// Send receives pongDone and runs its cleanup. A cancellation in
-			// that gap changes membership only; it is not a second participant.
-			if x.pongRem.Load() > 0 {
-				x.completePongParticipants(-delta)
+			// Withdraw -delta receive intents from ping, draining the sends
+			// that would otherwise have no receiver, then account for those
+			// participants in the pong barrier.
+			if !x.ping.tryWithdraw(delta) {
+				panic(chanPubSub47GeminiStateInvariantViolation)
 			}
+			x.completePongParticipants(-delta)
 			success = true
 		}
 
