@@ -259,6 +259,7 @@ func init() {
 	// same strict init-time reference and metadata validation applies to them.
 	broadcastAttachments = append(broadcastAttachments, extractedBroadcastAttachments()...)
 	broadcastAttachments = append(broadcastAttachments, gapBroadcastAttachments()...)
+	broadcastAttachments = append(broadcastAttachments, portBroadcastAttachments()...)
 	scenarioByID = make(map[ScenarioID]Scenario, len(Scenarios))
 	for _, s := range Scenarios {
 		if s.ID == "" || s.Title == "" || s.UseCase == "" || s.Baseline == "" || len(s.Invariants) == 0 {

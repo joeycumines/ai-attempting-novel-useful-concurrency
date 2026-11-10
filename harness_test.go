@@ -107,6 +107,17 @@ func AllBroadcasters() []func() Broadcaster {
 		func() Broadcaster { return newBroadcaster58Adapter() },
 		func() Broadcaster { return newRingFanOut14Adapter() },
 		func() Broadcaster { return newBaselineAsyncAdapter() },
+		func() Broadcaster { return newHorizonRing59Adapter() },
+		func() Broadcaster { return newStripedCombiner59Adapter() },
+		func() Broadcaster { return newLatest3260TerraAdapter() },
+		func() Broadcaster { return newPulse61Adapter() },
+		func() Broadcaster { return newTelemetryRing63QwenAdapter() },
+		func() Broadcaster { return newBeacon64GLMAdapter() },
+		func() Broadcaster { return newBroadcaster65DeepseekAdapter() },
+		func() Broadcaster { return newHorizon66GeminiAdapter() },
+		func() Broadcaster { return newRing67HaikuAdapter() },
+		func() Broadcaster { return newWatchCell69DeepseekAdapter() },
+		func() Broadcaster { return newHorizon70MetaAdapter() },
 	}
 }
 
