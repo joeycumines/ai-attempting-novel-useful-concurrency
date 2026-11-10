@@ -69,6 +69,10 @@ func scenarioKindName(k ScenarioKind) string {
 		return "payload"
 	case KindFanin:
 		return "fanin"
+	case KindExchange:
+		return "exchange"
+	case KindBarrier:
+		return "barrier"
 	default:
 		return fmt.Sprintf("unknown(%d)", int(k))
 	}

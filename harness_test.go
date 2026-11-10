@@ -118,10 +118,35 @@ func AllBroadcasters() []func() Broadcaster {
 		func() Broadcaster { return newRing67HaikuAdapter() },
 		func() Broadcaster { return newWatchCell69DeepseekAdapter() },
 		func() Broadcaster { return newHorizon70MetaAdapter() },
+		func() Broadcaster { return newRing62HaikuAdapter() },
+		func() Broadcaster { return newChanRing71Adapter() },
+		func() Broadcaster { return newPhaseCaster72Adapter() },
+		func() Broadcaster { return newPhaseCaster72PhasedAdapter() },
+		func() Broadcaster { return newCohort73Adapter() },
+		func() Broadcaster { return newFanout74Adapter() },
 	}
 }
 
 // --- Standardized Test Suite verifying all Broadcasters under identical conditions ---
+
+// harnessPublish returns the function concurrent harness drivers publish
+// through. The drivers start each publish on its own goroutine (a blocking
+// implementation's Publish returns only once the value is received), so two
+// publishes can overlap. Implementations whose contract is one publisher
+// declare SinglePublisher on their adapter and are serialised here, in the
+// driver, rather than inside the adapter, where a lock would be charged to
+// their measured publish cost.
+func harnessPublish(b Broadcaster) func(int) int {
+	if sp, ok := b.(interface{ SinglePublisher() bool }); ok && sp.SinglePublisher() {
+		var mu sync.Mutex
+		return func(v int) int {
+			mu.Lock()
+			defer mu.Unlock()
+			return b.Publish(v)
+		}
+	}
+	return b.Publish
+}
 
 func TestStandardHarness_SingleSubscriber(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
@@ -134,10 +159,11 @@ func TestStandardHarness_SingleSubscriber(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
+			publish := harnessPublish(b)
 			const messages = 5
 			for i := 1; i <= messages; i++ {
 				go func(val int) {
-					b.Publish(val)
+					publish(val)
 				}(i)
 
 				val, ok := sub.Receive(ctx)
@@ -244,9 +270,10 @@ func TestStandardHarness_InOrderDelivery(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
+			publish := harnessPublish(b)
 			const total = 20
 			for i := 1; i <= total; i++ {
-				go b.Publish(i)
+				go publish(i)
 				v, ok := sub.Receive(ctx)
 				if !ok {
 					t.Fatalf("receive failed at %d", i)

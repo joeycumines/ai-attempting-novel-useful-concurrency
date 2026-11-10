@@ -257,6 +257,8 @@ func allAttachments() []Attachment {
 	out = append(out, gatherAttachments...)
 	out = append(out, faninAttachments...)
 	out = append(out, payloadAttachments...)
+	out = append(out, exchangeAttachments...)
+	out = append(out, barrierAttachments...)
 	return out
 }
 
@@ -266,6 +268,7 @@ func init() {
 	broadcastAttachments = append(broadcastAttachments, extractedBroadcastAttachments()...)
 	broadcastAttachments = append(broadcastAttachments, gapBroadcastAttachments()...)
 	broadcastAttachments = append(broadcastAttachments, portBroadcastAttachments()...)
+	broadcastAttachments = append(broadcastAttachments, apexBroadcastAttachments()...)
 	scenarioByID = make(map[ScenarioID]Scenario, len(Scenarios))
 	for _, s := range Scenarios {
 		if s.ID == "" || s.Title == "" || s.UseCase == "" || s.Baseline == "" || len(s.Invariants) == 0 {
@@ -325,6 +328,54 @@ func init() {
 		}
 		if !a.ExposureLimited && a.Exposure != "" {
 			panic(fmt.Sprintf("bigbuff: attachment %q/%q has exposure remarks but is not flagged exposure-limited", a.Scenario, a.Impl))
+		}
+	}
+	// Every scenario's declared baseline must itself be attached to it: a
+	// scenario without its yardstick is not a comparison.
+	for _, s := range Scenarios {
+		if !attachmentKeys[string(s.ID)+"\x00"+s.Baseline] {
+			panic(fmt.Sprintf("bigbuff: scenario %q declares baseline %q, which is not attached to it", s.ID, s.Baseline))
+		}
+	}
+	// Every attachment must resolve to a factory of the family that runs its
+	// scenario's kind. The key-indexed families are checked here; broadcast
+	// factories are indexed by Name(), which exists only on a constructed
+	// instance, so that family is resolved by TestScenarioRegistryComplete
+	// rather than by constructing every broadcaster at package init.
+	keySets := map[ScenarioKind]map[string]bool{
+		KindCaster:   {"BaselineRendezvousCaster": true},
+		KindScatter:  {},
+		KindGather:   {},
+		KindPayload:  {},
+		KindFanin:    {},
+		KindExchange: {},
+		KindBarrier:  {},
+	}
+	for name := range casterImpls() {
+		keySets[KindCaster][name] = true
+	}
+	for name := range scatterLikes() {
+		keySets[KindScatter][name] = true
+	}
+	for name := range gatherLikes() {
+		keySets[KindGather][name] = true
+	}
+	for name := range asyncImpls() {
+		keySets[KindPayload][name] = true
+	}
+	for name := range faninLikes() {
+		keySets[KindFanin][name] = true
+	}
+	for name := range exchangeLikes() {
+		keySets[KindExchange][name] = true
+	}
+	for name := range barrierLikes() {
+		keySets[KindBarrier][name] = true
+	}
+	for _, a := range allAttachments() {
+		kind := scenarioByID[a.Scenario].Kind
+		if keys, ok := keySets[kind]; ok && !keys[a.Impl] {
+			panic(fmt.Sprintf("bigbuff: attachment %q/%q does not resolve to a %s factory", a.Scenario, a.Impl, scenarioKindName(kind)))
 		}
 	}
 }

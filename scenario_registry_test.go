@@ -109,6 +109,33 @@ func TestScenarioRegistryComplete(t *testing.T) {
 			t.Errorf("fanin %q is not attached to any scenario", name)
 		}
 	}
+	checkFamily := func(family string, kind ScenarioKind, atts []Attachment, factories map[string]bool) {
+		seen := map[string]bool{}
+		for _, a := range atts {
+			seen[a.Impl] = true
+			if !factories[a.Impl] {
+				t.Errorf("%s attachment %q does not resolve to a factory", family, a.Impl)
+			}
+			if scenarioByID[a.Scenario].Kind != kind {
+				t.Errorf("%s attachment in non-%s scenario %q", family, family, a.Scenario)
+			}
+		}
+		for name := range factories {
+			if !seen[name] {
+				t.Errorf("%s %q is not attached to any scenario", family, name)
+			}
+		}
+	}
+	exchangers := map[string]bool{}
+	for name := range exchangeLikes() {
+		exchangers[name] = true
+	}
+	checkFamily("exchange", KindExchange, exchangeAttachments, exchangers)
+	barriers := map[string]bool{}
+	for name := range barrierLikes() {
+		barriers[name] = true
+	}
+	checkFamily("barrier", KindBarrier, barrierAttachments, barriers)
 }
 
 func TestScenarioCaseRunnablesExist(t *testing.T) {
@@ -156,3 +183,113 @@ func TestScenarioCaseRunnablesExist(t *testing.T) {
 
 // --- Deterministic scenario runners ---
 //
+
+// harnessRunnables lists every top-level runnable that is deliberately not a
+// scenario case and does not live in an implementation's own test file, with
+// the reason. TestScenarioCaseRunnablesExhaustive keeps the list exact in
+// both directions.
+var harnessRunnables = map[string]string{
+	// Adapter conformance: these run every Broadcaster adapter regardless of
+	// scenario. They establish that an adapter honours the harness contract;
+	// the per-scenario facets are what compare implementations.
+	"TestStandardHarness_SingleSubscriber":      "adapter conformance across all scenarios",
+	"TestStandardHarness_MultiSubscriberFanout": "adapter conformance across all scenarios",
+	"TestStandardHarness_InOrderDelivery":       "adapter conformance across all scenarios",
+	"TestStandardHarness_TryReceive":            "adapter conformance across all scenarios",
+	"FuzzUnifiedBroadcaster":                    "adapter conformance across all scenarios (superseded for comparison by FuzzScenarioBroadcast)",
+	"BenchmarkUnified_Select":                   "adapter-level select cost; not tied to one scenario",
+	"TestAsyncFamily":                           "family conformance for the asyncAPI adapters",
+	"TestCasterFamily":                          "family conformance for the caster adapters",
+	"TestPubSubFamily":                          "family conformance for the pubsub adapters",
+	"BenchmarkLockStep":                         "historical lock-step comparison kept for continuity with results-01; superseded by the measure batteries",
+
+	// Regressions for individual implementations that are kept in a shared
+	// file because each needs harness helpers.
+	"TestAsyncCoreVariants":                               "implementation regressions (shared file)",
+	"TestFanoutSubscribeContextCancel":                    "implementation regression (shared file)",
+	"TestChanBeaconSeqAfterClose":                         "implementation regression (shared file)",
+	"TestChanRelayCountDrift":                             "implementation regression (shared file)",
+	"TestChanScatterStealRace":                            "implementation regression (shared file)",
+	"TestGenCasterLaggardRetention":                       "implementation regression (shared file)",
+	"TestCroutonStalledSubscriberSpin":                    "implementation regression (shared file)",
+	"TestBaselineScatterQueueWithdrawalReleasesAdmission": "unit test of the scatter baselines (its file name matches no single source file)",
+
+	// The registry and the measurement tooling test themselves.
+	"TestScenarioRegistryComplete":                "registry self-check",
+	"TestScenarioCaseRunnablesExist":              "registry self-check",
+	"TestScenarioCaseRunnablesExhaustive":         "registry self-check",
+	"TestMain":                                    "test binary entry point (hosts the bigbuff-measure CLI)",
+	"TestIntegrityOfGates":                        "measurement report tooling",
+	"TestSiteWiringIsIdempotent":                  "site tooling",
+	"TestPagesMarkdownLiquidDelimitersAreEscaped": "site tooling",
+}
+
+// implementationSource returns the non-test source file a test file belongs
+// to: the longest name obtained by dropping trailing _words from the test
+// file's stem that exists as a .go file. "ring_62_haiku_bench_test.go"
+// belongs to "ring_62_haiku.go"; "harness_targeted_test.go" belongs to none.
+func implementationSource(testFile string) string {
+	stem := strings.TrimSuffix(testFile, "_test.go")
+	for stem != "" {
+		if _, err := os.Stat(stem + ".go"); err == nil {
+			return stem + ".go"
+		}
+		i := strings.LastIndexByte(stem, '_')
+		if i < 0 {
+			break
+		}
+		stem = stem[:i]
+	}
+	return ""
+}
+
+// TestScenarioCaseRunnablesExhaustive accounts for every top-level Test,
+// Benchmark and Fuzz function in the package. Each must be exactly one of:
+// a registered scenario case; a unit runnable in an implementation's own
+// test file (not comparable across implementations by construction); or an
+// entry in harnessRunnables with a reason. A new cross-implementation
+// runnable therefore cannot be added without either registering it against
+// a scenario or stating why it is not one.
+func TestScenarioCaseRunnablesExhaustive(t *testing.T) {
+	registered := map[string]bool{}
+	for _, c := range Cases {
+		registered[c.Runnable] = true
+	}
+	re := regexp.MustCompile(`(?m)^func\s+((?:Test|Benchmark|Fuzz)[A-Za-z0-9_]*)\s*\(`)
+	files, err := filepath.Glob("*_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	var cases, units, harness int
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		owner := implementationSource(file)
+		for _, m := range re.FindAllSubmatch(data, -1) {
+			name := string(m[1])
+			_, isListed := harnessRunnables[name]
+			switch {
+			case registered[name] && isListed:
+				t.Errorf("%s (%s) is both a registered case and listed in harnessRunnables", name, file)
+			case registered[name]:
+				cases++
+			case isListed:
+				listed[name] = true
+				harness++
+			case owner != "":
+				units++
+			default:
+				t.Errorf("%s (%s) is not a registered case, is not in an implementation's own test file, and is not listed in harnessRunnables", name, file)
+			}
+		}
+	}
+	for name := range harnessRunnables {
+		if !listed[name] {
+			t.Errorf("harnessRunnables lists %s, which no longer exists or is now a registered case", name)
+		}
+	}
+	t.Logf("%d runnables: %d registered cases, %d implementation unit runnables, %d listed harness runnables", cases+units+harness, cases, units, harness)
+}

@@ -39,8 +39,10 @@ const (
 	KindCaster
 	KindScatter
 	KindGather
-	KindPayload // multi-word payload integrity, driven via asyncAPI
-	KindFanin   // M producers, one batch-oriented consumer, bounded lossy lanes
+	KindPayload  // multi-word payload integrity, driven via asyncAPI
+	KindFanin    // M producers, one batch-oriented consumer, bounded lossy lanes
+	KindExchange // two parties swap one value each (symmetric rendezvous)
+	KindBarrier  // broadcast barrier with a sender deadline, departures and late acknowledgements
 )
 
 type Scenario struct {
@@ -128,6 +130,16 @@ var Scenarios = []Scenario{
 		Tradeoffs: "The consumer is a single serialization point, unlike broadcast; producers must never block behind a slow consumer, so each lane is bounded and drops newest values at push time (counted at push), trading completeness for liveness and bounded memory. Ordering is FIFO per producer only; there is deliberately no global order, which removes any temptation for cross-lane coordination.",
 		Kind:      KindFanin, Loss: LossyDetectable, Baseline: "BaselineFanIn (baseline)",
 		Invariants: []string{"every accepted value is observed by the consumer exactly once, in per-producer FIFO order", "TryPush/TryPushBatch report refusal (false/short count) exactly when the value was not accepted — loss is observable at push time", "total buffered values never exceed the sum of lane capacities", "after Close returns, all accepted values are drainable and Next eventually reports closure"}},
+	{ID: "symmetric-pairwise-exchange", Title: "Symmetric pairwise exchange (two parties swap one value each)",
+		UseCase:   "Hand-off points where two goroutines must meet and trade — buffer swapping between a filler and a drainer, pairing a request with a responder, elimination back-off for a contended structure — with cancellation on either side",
+		Tradeoffs: "There is no buffering and no fan-out: a caller waits until exactly one partner arrives. The design question is whether spreading callers over an arena of meeting slots beats a single lock; the correctness hazard is cancellation racing the match, which must either withdraw the offer or complete the exchange, never both and never neither.",
+		Kind:      KindExchange, Loss: ExactlyOne, Baseline: "BaselineExchanger (baseline)",
+		Invariants: []string{"a value offered is received by exactly one partner, or the offering caller is told the exchange failed — never both, never neither", "exchanges are symmetric: if A received B's value then B received A's", "two callers that are both waiting are eventually paired", "a caller released by cancellation or close gets an error and its value is never delivered"}},
+	{ID: "deadline-bounded-barrier-broadcast", Title: "Barrier broadcast with a sender deadline, mid-broadcast departure and late acknowledgement",
+		UseCase:   "Coordinated reconfiguration and epoch changes where the publisher needs every current member to receive and acknowledge a value, but must be able to give up at a deadline and carry on, and where members may leave at any moment",
+		Tradeoffs: "As for the lock-step barrier, publisher latency is bounded by the slowest member — until the deadline, after which the value is abandoned and members may or may not have seen it. The implementation has to keep its accounting exact across an abandoned barrier: an acknowledgement that arrives late must not be credited to the next value, and a departing member must release the publisher.",
+		Kind:      KindBarrier, Loss: Lossless, Baseline: "BaselineDeadlineBarrier (baseline)",
+		Invariants: []string{"a send that returns nil was received (and, where separate, acknowledged) by every member that was joined throughout it", "a member that leaves releases a sender waiting on it", "a send returns its context's error once the context is done, however many members are stalled", "after an abandoned send the next send completes normally: late acknowledgements are not credited to it", "members that keep participating observe every completed value, in order"}},
 	{ID: "ephemeral-churn-membership", Title: "Broadcast under ephemeral membership (high subscribe/unsubscribe churn)",
 		UseCase:   "Short-lived consumer workloads — per-request subscriptions, websocket sessions, plugin hooks — where subscriptions are created and destroyed continuously while publishing proceeds",
 		Tradeoffs: "Subscribe/unsubscribe cost and its contention with Send dominate; implementations that rebuild or lock the whole registry per membership change degrade, while per-value guarantees may legitimately weaken to 'no corruption, no stall, no duplicate/reordered delivery within a session'.",
@@ -224,6 +236,15 @@ var Cases = []Case{
 	{"fanin-baseline/test/shared-channel", "bounded-fanin-merge", CaseTest, "Vacuum shared-channel baseline passes the same bounded-loss FIFO contracts", "TestScenarioFanin"},
 	{"fanin/bench/merge", "bounded-fanin-merge", CaseBenchmark, "Merged throughput at producers=4 with a concurrent consumer and exact accepted/drained accounting", "BenchmarkScenarioFaninMerge"},
 	{"fanin/fuzz/model", "bounded-fanin-merge", CaseFuzz, "Bounded-loss per-lane FIFO model against a random push/drain/close op stream", "FuzzScenarioFaninModel"},
+	{"exchange/test/pairing-and-cancellation", "symmetric-pairwise-exchange", CaseTest, "Pairing, conservation and symmetry for 2/4/16 parties; withdrawn offers; cancellation racing the match; close", "TestScenarioExchange"},
+	{"exchange/bench/contended-pairs", "symmetric-pairwise-exchange", CaseBenchmark, "Completed exchanges per caller with 2/8/64 contending parties", "BenchmarkScenarioExchange"},
+	{"exchange/fuzz/patient-and-cancelling", "symmetric-pairwise-exchange", CaseFuzz, "Fuzzed mix of patient and cancelling callers; conservation and symmetry", "FuzzScenarioExchange"},
+	{"barrier/test/deadline-departure-late-ack", "deadline-bounded-barrier-broadcast", CaseTest, "All-acknowledge ordering; acknowledgement (not receipt) releases the sender; departure releases the sender; sender deadline then normal service", "TestScenarioBarrier"},
+	{"barrier/bench/send-with-acks", "deadline-bounded-barrier-broadcast", CaseBenchmark, "Send cost with 1/8/64 acknowledging members", "BenchmarkScenarioBarrier"},
+	{"barrier/fuzz/op-stream", "deadline-bounded-barrier-broadcast", CaseFuzz, "Fuzzed join/leave/stall/deadline stream against the delivery model", "FuzzScenarioBarrier"},
+	{"edge/test/standard-no-subscribers", "zero-subscriber-and-edge-lifecycle", CaseTest, "Standard harness: publish with no subscribers never blocks or panics, for every Broadcaster adapter", "TestStandardHarness_NoSubscribers"},
+	{"churn/test/standard-concurrent-churn", "ephemeral-churn-membership", CaseTest, "Standard harness: bounded subscribe/receive/unsubscribe cycles against a free-running publisher, for every Broadcaster adapter that does not opt out", "TestStandardHarness_ConcurrentChurn"},
+	{"churn/bench/unified-churn", "ephemeral-churn-membership", CaseBenchmark, "Subscribe/unsubscribe cost for every Broadcaster adapter", "BenchmarkUnified_Churn"},
 	{"churn/test/membership-churn", "ephemeral-churn-membership", CaseTest, "Continuous subscribe/unsubscribe while publishing; no corruption/stall", "TestScenarioChurn"},
 	{"churn/bench/subscribe-unsubscribe", "ephemeral-churn-membership", CaseBenchmark, "Subscribe/unsubscribe cost (BenchmarkUnified_Churn + scenario bench)", "BenchmarkScenarioBroadcast"},
 	{"fanout/test/32-subscribers", "large-fanout-scalability", CaseTest, "Correct fan-out at 32 subscribers", "TestScenarioLargeFanout"},

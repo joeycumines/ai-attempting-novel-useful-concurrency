@@ -5,7 +5,6 @@ package bigbuff
 import (
 	"context"
 	"iter"
-	"runtime"
 	"sync/atomic"
 )
 
@@ -121,39 +120,13 @@ func (r *TelemetryRing63Qwen[V]) NotifyChan() <-chan struct{} {
 func (r *TelemetryRing63Qwen[V]) Subscribe(ctx context.Context, startCursor uint64) iter.Seq[V] {
 	return func(yield func(V) bool) {
 		cursor := startCursor
-		waitChan := r.NotifyChan()
-
 		for {
-			select {
-			case <-ctx.Done():
+			if ctx.Err() != nil {
 				return
-			default:
 			}
-
-			drained := false
-			for {
-				v, ok := r.Next(&cursor)
-				if !ok {
-					break
-				}
-				drained = true
-				if !yield(v) {
-					return
-				}
-			}
-
-			if drained {
-				continue
-			}
-
-			if waitChan == nil {
-				runtime.Gosched()
-			} else {
-				select {
-				case <-ctx.Done():
-					return
-				case <-waitChan:
-				}
+			v, ok := r.NextWait(ctx, &cursor)
+			if !ok || !yield(v) {
+				return
 			}
 		}
 	}

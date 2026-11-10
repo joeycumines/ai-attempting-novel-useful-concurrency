@@ -17,6 +17,8 @@ a module restructure, however tidier they might seem.
 Build and automation tooling must use modular, composable GNU Make (4.0+) following best practices: all module makefiles (such as `go.mk`) must reside directly at the repository root due to the flat-gist constraint, use target prefixes (e.g., `go.`) to avoid collisions, and compose into root standard GNU targets (`all`, `check`, `clean`).
 The root Makefile must establish `PROJECT_ROOT` before any includes to anchor path resolution, tool execution, and recursive makes across modules per the monorepo example.
 User-specific and project configuration must remain cleanly overrideable via `config.mk`, supporting configurable defaults such as test timeouts while preserving easy composition.
+
+`make all` builds, vets and tests the default configuration only. Before a change to any implementation, adapter or shared test is considered done, also run `make verify` (`verify.mk`): vet for the race, arm64 and 386 builds; the suite at GOMAXPROCS 1, 2 and 4; the suite under the race detector; the allocation assertions; every fuzz target. Each leg exists because it caught a defect the default run could not (the reasons are at the top of `verify.mk`). `make verify-bench` runs the Go benchmarks and is not a gate.
 Python scripts and interpreters are disallowed across the repository; all tooling, generators, and automation must be implemented strictly in Go or GNU Make.
 
 ## Terminology: scenarios, cases, attachments, baselines

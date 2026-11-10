@@ -85,6 +85,9 @@ include $(PROJECT_ROOT)/measure.mk
 # Landing page & report wire-up makefile (lives at flat root per gist constraints).
 include $(PROJECT_ROOT)/site.mk
 
+# Race / multi-GOMAXPROCS / fuzz / allocation / benchmark gates (lives at flat root per gist constraints).
+include $(PROJECT_ROOT)/verify.mk
+
 ##@ Standard Targets
 # https://www.gnu.org/software/make/manual/html_node/Standard-Targets.html
 
@@ -166,3 +169,9 @@ measure-index: measure.index ## Rebuild every results-NN-00-manifest.json (SHA-2
 
 .PHONY: measure-ci
 measure-ci: measure.ci ## CI gate: quick profile + verification.
+
+.PHONY: verify
+verify: verify.all ## Correctness gates beyond `make all`: vet (race + cross-arch), tests at several GOMAXPROCS, race detector, allocation assertions, fuzzing.
+
+.PHONY: verify-bench
+verify-bench: verify.bench ## Run the Go benchmarks (VERIFY_BENCH=<regexp>, VERIFY_BENCHTIME=<n>x).
