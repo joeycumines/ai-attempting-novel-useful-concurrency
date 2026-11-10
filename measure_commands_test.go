@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -149,13 +150,98 @@ func registryDump() (map[string]any, error) {
 	// complete, and verify does not expect JSONL records for them.
 	addAll("exchange", exchangeAttachments)
 	addAll("barrier", barrierAttachments)
+	// The coverage contract: which implementations a measurement run made
+	// from this registry must have records (or reasoned skips) for. Recording
+	// it in the dump makes every run group verifiable against the registry
+	// that produced it, however the registry changes afterwards.
+	measured := map[string]any{}
+	for _, set := range expectedImplSets() {
+		names := append([]string{}, set.names...)
+		sort.Strings(names)
+		measured[set.family] = names
+	}
 	return map[string]any{
 		"type":        "registry",
 		"schema":      measureSchemaVersion,
 		"scenarios":   scenarios,
 		"cases":       cases,
 		"attachments": attachments,
+		"measured":    measured,
 	}, nil
+}
+
+// measureFamilyOrder is the order families are reported in.
+var measureFamilyOrder = []string{"broadcast", "caster", "scatter", "gather", "payload", "fanin", "exchange", "barrier"}
+
+// legacyMeasuredFamilies are the families that had measurement batteries
+// before registry dumps recorded their coverage contract.
+var legacyMeasuredFamilies = map[string]bool{"broadcast": true, "caster": true, "scatter": true, "gather": true, "payload": true, "fanin": true}
+
+// measuredSetsOf returns the coverage contract recorded in a registry dump.
+//
+// Dumps written before the contract was recorded (no "measured" key) are read
+// by the rule that held when they were written: only the six families in
+// legacyMeasuredFamilies had batteries, and a family's measured
+// implementations were the implementations attached to it, except the
+// "Caster:"-prefixed broadcast attachments, which are caster-family
+// implementations exercised through the broadcast scenarios and were never
+// subjects of the broadcast batteries.
+func measuredSetsOf(reg map[string]any) []expectedImplSet {
+	byFamily := map[string][]string{}
+	if m, ok := reg["measured"].(map[string]any); ok {
+		for family, v := range m {
+			list, _ := v.([]any)
+			for _, n := range list {
+				if name, ok := n.(string); ok {
+					byFamily[family] = append(byFamily[family], name)
+				}
+			}
+		}
+	} else {
+		seen := map[string]bool{}
+		atts, _ := reg["attachments"].([]any)
+		for _, a := range atts {
+			att, _ := a.(map[string]any)
+			family, _ := att["family"].(string)
+			impl, _ := att["impl"].(string)
+			if !legacyMeasuredFamilies[family] || impl == "" || strings.HasPrefix(impl, "Caster:") || seen[family+"\x00"+impl] {
+				continue
+			}
+			seen[family+"\x00"+impl] = true
+			byFamily[family] = append(byFamily[family], impl)
+		}
+	}
+	sets := []expectedImplSet{}
+	for _, family := range measureFamilyOrder {
+		if names, ok := byFamily[family]; ok {
+			sort.Strings(names)
+			sets = append(sets, expectedImplSet{family, names})
+			delete(byFamily, family)
+		}
+	}
+	rest := make([]string, 0, len(byFamily))
+	for family := range byFamily {
+		rest = append(rest, family)
+	}
+	sort.Strings(rest)
+	for _, family := range rest {
+		sort.Strings(byFamily[family])
+		sets = append(sets, expectedImplSet{family, byFamily[family]})
+	}
+	return sets
+}
+
+// readRegistryDump loads a registry dump file.
+func readRegistryDump(path string) (map[string]any, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var reg map[string]any
+	if err := json.Unmarshal(raw, &reg); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return reg, nil
 }
 
 func cmdDumpRegistry(args []string) int {
@@ -266,9 +352,14 @@ func cmdMeasureRun(args []string) int {
 	return verifyResults(*out, os.Stdout)
 }
 
-// verification scans a results file and checks coverage against the live
-// registry: every expected implementation must have at least one record
-// (metric or trace) or at least one skip with a reason.
+// verification scans a results file and checks coverage against a coverage
+// contract (the measured sets of a registry): every expected implementation
+// must have at least one record (metric or trace) or at least one skip with a
+// reason. The contract is either the live registry's (verifyResults: "does
+// this file cover what the code defines now?") or the one recorded in a
+// registry dump (index: "is this run complete for the registry that produced
+// it?"). The two questions have different answers as soon as the registry
+// grows, and only the second is a property of a committed run.
 type verification struct {
 	perFamily  map[string]int
 	expected   map[string]int
@@ -280,6 +371,10 @@ type verification struct {
 }
 
 func verifyResults(path string, out io.Writer) int {
+	return verifyResultsAgainst(path, expectedImplSets(), "the live registry", out)
+}
+
+func verifyResultsAgainst(path string, sets []expectedImplSet, against string, out io.Writer) int {
 	v := verification{
 		perFamily: map[string]int{},
 		expected:  map[string]int{},
@@ -288,7 +383,7 @@ func verifyResults(path string, out io.Writer) int {
 		missing:   map[string][]string{},
 	}
 	families := map[string]map[string]bool{}
-	for _, set := range expectedImplSets() {
+	for _, set := range sets {
 		v.expected[set.family] = len(set.names)
 		families[set.family] = map[string]bool{}
 		for _, n := range set.names {
@@ -360,7 +455,7 @@ func verifyResults(path string, out io.Writer) int {
 		sort.Strings(v.measured[family])
 		sort.Strings(v.missing[family])
 	}
-	fmt.Fprintf(out, "verification of %s\n", path)
+	fmt.Fprintf(out, "verification of %s against %s\n", path, against)
 	fmt.Fprintf(out, "  meta record present: %v; malformed records: %d\n", v.seenMeta, v.badRecords)
 	if !v.seenMeta {
 		fail++
@@ -368,11 +463,10 @@ func verifyResults(path string, out io.Writer) int {
 	if v.badRecords > 0 {
 		fail++
 	}
-	for _, family := range []string{"broadcast", "caster", "scatter", "gather", "payload", "fanin"} {
+	for _, set := range sets {
+		family := set.family
 		miss := v.missing[family]
 		meas := len(v.measured[family])
-		skipN := len(v.skipped[family])
-		_ = skipN
 		fmt.Fprintf(out, "  %-9s expected=%d measured=%d skipped=%d missing=%d\n",
 			family, v.expected[family], meas, len(v.skipped[family]), len(miss))
 		if len(miss) > 0 {
@@ -391,6 +485,7 @@ func verifyResults(path string, out io.Writer) int {
 func cmdMeasureVerify(args []string) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	in := fs.String("in", "", "results file to verify (default: newest results-*-01-results.jsonl)")
+	registryPath := fs.String("registry", "", "verify against this registry dump instead of the live registry")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -401,6 +496,14 @@ func cmdMeasureVerify(args []string) int {
 			return 2
 		}
 		fmt.Fprintf(os.Stderr, "verify: defaulting to newest results file: %s\n", *in)
+	}
+	if *registryPath != "" {
+		reg, err := readRegistryDump(*registryPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "verify: %v\n", err)
+			return 1
+		}
+		return verifyResultsAgainst(*in, measuredSetsOf(reg), *registryPath, os.Stdout)
 	}
 	return verifyResults(*in, os.Stdout)
 }
@@ -463,9 +566,30 @@ func cmdMeasureIndex(args []string) int {
 	}
 	hostname, _ := os.Hostname()
 	anyFailed := false
+	// A run is verified against the registry that produced it: the dump in its
+	// own slot 02. A run group that carries no dump is verified against the
+	// nearest earlier run's dump, and its manifest says so. Only when no dump
+	// exists at or before a run is the live registry used.
+	snapshotSets := expectedImplSets()
+	snapshotName := "live registry (no registry dump at or before this run)"
 	for _, rr := range runNums {
 		members := runs[rr]
 		sort.Slice(members, func(i, j int) bool { return members[i].name < members[j].name })
+		ownSnapshot := false
+		for _, m := range members {
+			if m.slot != "00" && strings.HasSuffix(m.name, "registry.json") {
+				reg, err := readRegistryDump(m.path)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "bigbuff-measure: index: %v\n", err)
+					return 1
+				}
+				snapshotSets, snapshotName, ownSnapshot = measuredSetsOf(reg), m.name, true
+			}
+		}
+		verifiedAgainst := snapshotName
+		if !ownSnapshot && strings.HasSuffix(snapshotName, "registry.json") {
+			verifiedAgainst = snapshotName + " (nearest earlier registry dump; this run group has none)"
+		}
 		// Guard the reserved slot: anything other than the manifest occupying
 		// slot 00 is a naming error, reported loudly.
 		for _, m := range members {
@@ -532,12 +656,15 @@ func cmdMeasureIndex(args []string) int {
 						}
 					}
 				}
-				if verifyResults(m.path, io.Discard) == 0 {
+				e["verified_against"] = verifiedAgainst
+				if verifyResultsAgainst(m.path, snapshotSets, verifiedAgainst, io.Discard) == 0 {
 					e["verified"] = true
 				} else {
 					e["verified"] = false
 					allVerified = false
 					anyFailed = true
+					fmt.Fprintf(os.Stderr, "bigbuff-measure: index: run %02d: %s FAILS verification:\n", rr, m.name)
+					verifyResultsAgainst(m.path, snapshotSets, verifiedAgainst, os.Stderr)
 				}
 			case strings.HasSuffix(m.name, ".html"):
 				e["generator"] = "bigbuff-measure report"
@@ -576,6 +703,7 @@ func cmdMeasureIndex(args []string) int {
 		}
 		if hasJSONL {
 			manifest["verified"] = allVerified
+			manifest["verified_against"] = verifiedAgainst
 		}
 		data, err := json.MarshalIndent(manifest, "", "  ")
 		if err != nil {
@@ -583,17 +711,51 @@ func cmdMeasureIndex(args []string) int {
 			return 1
 		}
 		outPath := filepath.Join(*dir, fmt.Sprintf("results-%02d-00-manifest.json", rr))
-		if err := os.WriteFile(outPath, data, 0o644); err != nil {
+		// The index is idempotent: a manifest whose content would change only
+		// in when and where it was generated is left untouched, so indexing a
+		// tree that is already indexed never dirties it.
+		action := "wrote"
+		if sameManifest(outPath, data) {
+			action = "unchanged"
+		} else if err := os.WriteFile(outPath, data, 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "bigbuff-measure: index: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: run %02d: wrote %s (%d files, verified=%t)\n", rr, filepath.Base(outPath), len(files), manifest["verified"])
+		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: run %02d: %s %s (%d files, verified=%v against %s)\n", rr, action, filepath.Base(outPath), len(files), manifest["verified"], verifiedAgainst)
+	}
+	// Informational: whether the newest run still covers the live registry.
+	// This is a statement about the working tree, not about any committed
+	// run, so it is reported and never written to a manifest.
+	if newest := latestRunResultsJSONL(*dir); newest != "" {
+		if verifyResults(newest, io.Discard) == 0 {
+			fmt.Fprintf(os.Stderr, "bigbuff-measure: index: %s covers the live registry\n", filepath.Base(newest))
+		} else {
+			fmt.Fprintf(os.Stderr, "bigbuff-measure: index: note: %s does not cover the live registry (implementations or families were added since); 'make measure' produces a run that does\n", filepath.Base(newest))
+		}
 	}
 	if anyFailed {
-		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: WARNING: at least one JSONL results file failed verification\n")
+		fmt.Fprintf(os.Stderr, "bigbuff-measure: index: FAIL: at least one run is incomplete for the registry that produced it\n")
 		return 1
 	}
 	return 0
+}
+
+// sameManifest reports whether the manifest at path equals data once the
+// fields that record when and where indexing happened are ignored.
+func sameManifest(path string, data []byte) bool {
+	old, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var a, b map[string]any
+	if json.Unmarshal(old, &a) != nil || json.Unmarshal(data, &b) != nil {
+		return false
+	}
+	for _, m := range []map[string]any{a, b} {
+		delete(m, "generated")
+		delete(m, "indexed_hostname")
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 // latestRunResultsJSONL returns the newest (highest run sequence) results
