@@ -1,0 +1,4324 @@
+{
+  "attachments": [
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBarrierPubSub (baseline)",
+      "remarks": "Vacuum baseline: mutex + per-subscriber unbuffered channels + WaitGroup barrier.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub (Baseline)",
+      "remarks": "Reference lock-step design (also the historical baseline for this family).",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: facets unsubscribe only between rounds via the adapter; the manual Add(-1) steal panics if exercised mid-Send before all sends complete, so no facet withdraws mid-round.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanPubSubV2_06meta",
+      "remarks": "Attached via its manual Add/C/Wait adapter because it intentionally has no SubscribeContext.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub09Gemini",
+      "remarks": "Lock-step variant with cond-based pong barrier.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub10Gemini",
+      "remarks": "Lock-step variant with semaphore two-phase barrier.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub14Xing",
+      "remarks": "Lock-step variant.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub16DeepSeek",
+      "remarks": "Lock-step variant with WaitGroup pong.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub17Gemini",
+      "remarks": "Lock-step variant.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanGathererPubSub (05-Qwen)",
+      "remarks": "Lock-step pub/sub composed from caster+gatherer primitives.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochPubSub (11-meta)",
+      "remarks": "Epoch-published value with ack barrier; barrier semantics match, dissemination is latest-value so gaps are possible under racing sends — attached as barrier, expected fit only where conflation is acceptable.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReliableBeacon (08-MuseSpark)",
+      "remarks": "Latest-value dissemination with reliable ack barrier; same caveat as EpochPubSub.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanLatest (03-ChatGPT)",
+      "remarks": "Conflating by design: cannot honour a per-value ack barrier. Attached to document the mismatch.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon (01-baseline)",
+      "remarks": "Single latest-value slot: structurally cannot barrier per value. Attached to document the mismatch.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRotor (17-Gemini)",
+      "remarks": "Dual-channel rotor: Send hands off to every subscriber without a post-receive barrier.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "PhasePubSub (19-ChatGPT)",
+      "remarks": "Phase-slot handoff broadcast.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RelayPubSub (19-ChatGPT)",
+      "remarks": "Relayed handoff with configurable credit width (w=4 in the unified factory).",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay (20-Arena)",
+      "remarks": "window=0 ChanRelay is a synchronous handoff.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBarrierPubSub (baseline)",
+      "remarks": "Vacuum baseline also satisfies handoff (it is strictly stronger: it additionally waits for processing acks), at higher latency.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub (Baseline)",
+      "remarks": "Reference design is stronger than handoff (adds the ack barrier); correct but more synchronisation than the scenario needs.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBufferedBroadcast (baseline)",
+      "remarks": "Vacuum baseline: per-subscriber buffered channels, blocking Send.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay (20-Arena)",
+      "remarks": "ChanRelay with the unified (synchronous) factory is lossless; buffered windows are covered by its dedicated tests and the w16 async variant.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: a stalled subscriber makes Send spin (Gosched) with no context escape, so facets keep every subscriber draining and publish at most ring capacity ahead.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "EpochCaster (13-OpenRouter)",
+      "remarks": "Bounded ring with relay blocks: lossless while subscribers drain.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: Close closes subscriber channels while Send/TrySend hold only a read lock after a closed check, and Send blocks indefinitely on a stalled subscriber — facets never Close concurrently with Send and always drain.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanHub (15-Nemotron)",
+      "remarks": "ChanHub.Send is a blocking per-subscriber channel broadcast.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingPubSub (18-ChatGPT)",
+      "remarks": "RingPubSub.Send(ctx) is buffered and lossless until capacity, then backpressures via ctx.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFeed (04-DeepSeek)",
+      "remarks": "ChanFeed in drop-oldest mode (unified factory) is NOT lossless; the blocking mode is covered as ChanFeed_block_c64 in the payload/async families. Attached here to document the mode distinction.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "GenCaster (06-Meta)",
+      "remarks": "Unbounded history is lossless without backpressure; fits delivery-wise but trades away bounded memory (see unbounded-catchup-replay).",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineFanout (standard)",
+      "remarks": "Vacuum baseline for async fan-out (drop-oldest per-subscriber buffers).",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFanout (12-OpenRouter)",
+      "remarks": "Shared ring with per-subscriber skipped counts: the canonical detectable-loss design.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochCasterGemini (09-Gemini)",
+      "remarks": "Seqlock ring reporting skipped counts on overrun.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochTape (10-Gemini)",
+      "remarks": "Epoch tape reporting missed counts on overrun.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "Exposure limited: facets publish no more than ring capacity (64) values ahead of subscribers; concurrent-overrun behaviour is exercised only by its dedicated tests, keeping scenario facets deterministic.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "RingBeacon (08-MuseSpark)",
+      "remarks": "Bounded ring cursor that snaps to latest on overrun (loss is silent, hence LossySnapToLatest behaviour within a Detectable scenario).",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFeed (04-DeepSeek)",
+      "remarks": "Drop-oldest ring feed: subscribers can observe Dropped() counts.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineLatestBroadcast (baseline)",
+      "remarks": "Vacuum baseline: capacity-1 mailboxes with overwrite.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon (01-baseline)",
+      "remarks": "Atomic latest-value slot + signal channel: the minimal watch primitive.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanBeacon (07-Qwen)",
+      "remarks": "Ring-backed beacon with per-subscriber cursors; watch semantics with bounded history.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanLatest (03-ChatGPT)",
+      "remarks": "Slab-registry capacity-1 mailbox broadcast built for exactly this scenario.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay TrySend (20-Arena)",
+      "remarks": "ChanRelay.TrySend with window=1 conflates per subscriber and never blocks.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanHub TrySend (15-Nemotron)",
+      "remarks": "ChanHub.TrySend drops the newest value when a subscriber buffer is full (keeps the oldest pending, so 'latest' lags under sustained load).",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFeed (04-DeepSeek)",
+      "remarks": "Drop-oldest feed always retains the newest values in its ring.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochPubSub (11-meta)",
+      "remarks": "Publishes only the latest epoch value (with an ack barrier the scenario does not need).",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReliableBeacon (08-MuseSpark)",
+      "remarks": "Latest-value beacon dissemination (with an ack barrier the scenario does not need).",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: GenCaster has no Close and retention is pinned by the slowest subscriber; facets never assert close behaviour and bound published volume.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "GenCaster (06-Meta)",
+      "remarks": "Linked-epoch caster: every subscriber can replay full history since subscription.",
+      "scenario": "unbounded-catchup-replay"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBufferedBroadcast (baseline)",
+      "remarks": "Vacuum buffered baseline replays only up to its fixed capacity, then backpressures instead of retaining.",
+      "scenario": "unbounded-catchup-replay"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingPubSub (18-ChatGPT)",
+      "remarks": "Ring retains only capacity values; a further-behind subscriber loses history by design.",
+      "scenario": "unbounded-catchup-replay"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineFanout (standard)",
+      "remarks": "Vacuum baseline under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub (Baseline)",
+      "remarks": "Reference lock-step under churn (dedicated family stress also covers this).",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingPubSub (18-ChatGPT)",
+      "remarks": "Ring pub/sub under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "PhasePubSub (19-ChatGPT)",
+      "remarks": "Phase pub/sub under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RelayPubSub (19-ChatGPT)",
+      "remarks": "Relay pub/sub under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay (20-Arena)",
+      "remarks": "ChanRelay under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanLatest (03-ChatGPT)",
+      "remarks": "ChanLatest under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochTape (10-Gemini)",
+      "remarks": "EpochTape under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: no Close; churn facets only subscribe/consume/cancel, never close.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "GenCaster (06-Meta)",
+      "remarks": "GenCaster under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFanout (12-OpenRouter)",
+      "remarks": "ChanFanout under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: subscribers always drain; a stalled subscriber would spin the publisher (see buffered scenario).",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "EpochCaster (13-OpenRouter)",
+      "remarks": "EpochCaster13 under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanBeacon (07-Qwen)",
+      "remarks": "ChanBeacon under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFeed (04-DeepSeek)",
+      "remarks": "ChanFeed under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRotor (17-Gemini)",
+      "remarks": "ChanRotor under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanGathererPubSub (05-Qwen)",
+      "remarks": "ChanGathererPubSub under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: facets never Close the hub (it has no safe concurrent Close) and always drain subscriber channels.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanHub (15-Nemotron)",
+      "remarks": "ChanHub under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon (01-baseline)",
+      "remarks": "Beacon under churn (no membership at all: watchers are stateless).",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: published volume per session stays within ring capacity (see ring-lossy scenario).",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "RingBeacon (08-MuseSpark)",
+      "remarks": "RingBeacon under churn (stateless cursors).",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochCasterGemini (09-Gemini)",
+      "remarks": "EpochCasterGemini under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochPubSub (11-meta)",
+      "remarks": "EpochPubSub under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReliableBeacon (08-MuseSpark)",
+      "remarks": "ReliableBeacon under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBarrierPubSub (baseline)",
+      "remarks": "Vacuum barrier baseline under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineLatestBroadcast (baseline)",
+      "remarks": "Vacuum latest baseline under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBufferedBroadcast (baseline)",
+      "remarks": "Vacuum buffered baseline under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay TrySend (20-Arena)",
+      "remarks": "ChanRelay TrySend variant under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanHub TrySend (15-Nemotron)",
+      "remarks": "ChanHub TrySend variant under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingPubSub TrySend (18-ChatGPT)",
+      "remarks": "RingPubSub TrySend variant under churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineFanout (standard)",
+      "remarks": "Vacuum baseline at fan-out.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanLatest (03-ChatGPT)",
+      "remarks": "O(N) mailbox sweep, zero-alloc: a strong large-fan-out contender.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFanout (12-OpenRouter)",
+      "remarks": "O(1) send-side wake with shared ring: built for large fan-out.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon (01-baseline)",
+      "remarks": "O(1) publish regardless of watcher count.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub (Baseline)",
+      "remarks": "O(N) rendezvous + barrier: expected to scale worst; attached so the cost is measured, not asserted.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: no Close and unbounded retention; fan-out facets bound volume and never close.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "GenCaster (06-Meta)",
+      "remarks": "O(1) publish (one alloc + one close) at any fan-out.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochTape (10-Gemini)",
+      "remarks": "Shared-tape broadcast at fan-out.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay (20-Arena)",
+      "remarks": "Registry-sweep broadcast at fan-out.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochBroadcast54Terra (54-GPT-6.1-Terra)",
+      "remarks": "Correct lossless handoff, but the per-publication barrier waits for every receiver and is deliberately measured as a poor fit for high-fan-out, nonblocking notification workloads.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineFanout (standard)",
+      "remarks": "Vacuum baseline: Close is idempotent and closes subscriber channels.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanLatest (03-ChatGPT)",
+      "remarks": "Close closes mailboxes; Subscribe after Close returns nil (dedicated tests assert the details).",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay (20-Arena)",
+      "remarks": "Close releases blocked publishers and closes subscriptions.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingPubSub (18-ChatGPT)",
+      "remarks": "Close wakes blocked publishers and caught-up readers.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "Exposure limited: facets exercise context cancellation only; Close is never called (the adapter's Close is a no-op).",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "GenCaster (06-Meta)",
+      "remarks": "No Close exists; only context cancellation of consumers is documented.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "Exposure limited: facets exercise Unsubscribe/context only and never race a hub Close (none exists) with Send.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanHub (15-Nemotron)",
+      "remarks": "No Close method; lifecycle is per-subscription Unsubscribe only.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFeed (04-DeepSeek)",
+      "remarks": "Close terminates subscriptions; SubscribeContext honours ctx.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFanout (12-OpenRouter)",
+      "remarks": "Close/Done lifecycle plus ctx-aware SubscribeContext.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineFanout (standard)",
+      "remarks": "Vacuum baseline edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBarrierPubSub (baseline)",
+      "remarks": "Vacuum barrier baseline edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineLatestBroadcast (baseline)",
+      "remarks": "Vacuum latest baseline edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBufferedBroadcast (baseline)",
+      "remarks": "Vacuum buffered baseline edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub (Baseline)",
+      "remarks": "Reference: Send with no subscribers returns 0 immediately.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingPubSub (18-ChatGPT)",
+      "remarks": "RingPubSub edge behaviour (dedicated tests also cover it).",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "PhasePubSub (19-ChatGPT)",
+      "remarks": "PhasePubSub edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RelayPubSub (19-ChatGPT)",
+      "remarks": "RelayPubSub edge behaviour (dedicated tests also cover it).",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay (20-Arena)",
+      "remarks": "ChanRelay edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanLatest (03-ChatGPT)",
+      "remarks": "ChanLatest edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochTape (10-Gemini)",
+      "remarks": "EpochTape edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: no Close assertions (none exists).",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "GenCaster (06-Meta)",
+      "remarks": "GenCaster edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFanout (12-OpenRouter)",
+      "remarks": "ChanFanout edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: no stalled-subscriber publishes (publisher would spin).",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "EpochCaster (13-OpenRouter)",
+      "remarks": "EpochCaster13 edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanBeacon (07-Qwen)",
+      "remarks": "ChanBeacon edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanFeed (04-DeepSeek)",
+      "remarks": "ChanFeed edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRotor (17-Gemini)",
+      "remarks": "ChanRotor edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanGathererPubSub (05-Qwen)",
+      "remarks": "ChanGathererPubSub edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: no Close (none exists); Send facets always drain.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanHub (15-Nemotron)",
+      "remarks": "ChanHub edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon (01-baseline)",
+      "remarks": "Beacon: publish with no watchers is a single atomic store.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: volume stays within ring capacity.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "RingBeacon (08-MuseSpark)",
+      "remarks": "RingBeacon edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochCasterGemini (09-Gemini)",
+      "remarks": "EpochCasterGemini edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochPubSub (11-meta)",
+      "remarks": "EpochPubSub edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReliableBeacon (08-MuseSpark)",
+      "remarks": "ReliableBeacon edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRelay TrySend (20-Arena)",
+      "remarks": "ChanRelay TrySend edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanHub TrySend (15-Nemotron)",
+      "remarks": "ChanHub TrySend edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingPubSub TrySend (18-ChatGPT)",
+      "remarks": "RingPubSub TrySend edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSubV2_06meta",
+      "remarks": "Manual-API lock-step edge behaviour via adapter.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub09Gemini",
+      "remarks": "Lock-step variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub10Gemini",
+      "remarks": "Lock-step variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub14Xing",
+      "remarks": "Lock-step variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub16DeepSeek",
+      "remarks": "Lock-step variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub17Gemini",
+      "remarks": "Lock-step variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCaster",
+      "remarks": "Caster-family edge behaviour via the caster Broadcaster adapter.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCaster2",
+      "remarks": "Caster variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCasterV2_06meta",
+      "remarks": "Caster variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCaster09Gemini",
+      "remarks": "Caster variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCaster11Meta",
+      "remarks": "Lock-free dual-counter caster variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCaster14Xing",
+      "remarks": "Caster variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCaster15Nemotron",
+      "remarks": "Caster variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCaster17FastPath",
+      "remarks": "Caster variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Caster:ChanCaster17Pumped",
+      "remarks": "Caster variant edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Carillon (21-ClaudeHaiku)",
+      "remarks": "Per-subscriber ring cursors; Send waits until each registered subscriber has advanced, providing synchronous lossless fan-out.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSubPacked (22-ChatGPT)",
+      "remarks": "Packed-state version of the shared-channel pub/sub protocol with explicit receive acknowledgements.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SeqCaster23Meta (23-MetaAI)",
+      "remarks": "Sharded wakeups over a bounded sequence ring; lag is explicitly counted by SeqSub23Meta.Lost.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SenseCaster (25-ClaudeHaiku)",
+      "remarks": "Sense-flip publication waits until every subscriber receives or closes; this is a lossless lockstep fit.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRing26Kimi (26-Kimi)",
+      "remarks": "Fixed ring with independent cursors; overwritten values are skipped and detectable through cursor/loss accounting.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Multicast27Mistral (27-Mistral)",
+      "remarks": "Intrusive subscriber list and synchronous per-mailbox delivery; send is backpressured but has no processing acknowledgement barrier.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcast28Flint (28-Flint)",
+      "remarks": "Lock-free linked subscribers with quit-select retirement; handoff does not wait for post-receive acknowledgements.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Relay29Nemotron (29-Nemotron)",
+      "remarks": "Per-link cursors read from a bounded sequence ring; subscribers can fall behind and skip overwritten publications.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Arcadia (30-dots3)",
+      "remarks": "Bounded atomic-pointer ring with independent subscriber cursors; late/slow readers may skip overwritten values.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: withdrawal during the blocked slow-receiver phase can strand Send until hub Close; churn facets skip it and lifecycle facets always Close to release pending sends.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "Vecast (31-Nemotron)",
+      "remarks": "Sharded subscriber-vector fan-out with per-subscriber channel handoff and a slow-receiver phase.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanMulticast33North (33-North)",
+      "remarks": "Single distributor fans out to unbuffered private channels; included as a synchronous backpressure design.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: exercise only deterministic LIFO Unsubscribe after the steady publish facet. This design has no per-handle unsubscribe identity and no subscriber-channel close; do not exercise arbitrary concurrent removal or lifecycle closure of subscriber channels.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanMultiCast34Lightning (34-Lightning)",
+      "remarks": "RWMutex-protected subscriber snapshot and synchronous fan-out.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ShardCaster36Meta (36-MetaAI)",
+      "remarks": "Immutable subscriber snapshots keep membership churn off the Send path; each subscriber has an unbuffered rendezvous channel and a teardown signal.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectCaster37Gemini (37-Gemini)",
+      "remarks": "Per-subscriber selectable buffered channels with sliding overflow preserve the newest state without blocking Send.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ShardCast39Mistral/latest (39-Mistral)",
+      "remarks": "Latest policy evicts stale buffered values for each subscriber and keeps Send nonblocking.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: adapter selects only DropOldest and tests never race Close/unsubscribe or slot reuse with an active Send. The source stores a mutable channel pointer without atomic/lease protection, and Block policy can race channel closure; those concurrency/lifecycle paths are structurally unsafe in this version.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "SlabCaster40Gemini/drop-oldest (40-Gemini)",
+      "remarks": "DropOldest per-subscriber channels supply a nonblocking latest-oriented broadcast.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochCast41Sonnet/lossy (41-Sonnet)",
+      "remarks": "Lossy bounded ring reports overwrite counts and supports independent subscriber cursors; this adapter consumes lag notifications and is covered by direct accounting tests.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcast42Spark (42-MuseSpark)",
+      "remarks": "Immutable sequence-stamped ring nodes allow stateless independent cursors; overrun is counted and SendBatch coalesces wakeups.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "Exposure limited: the adapter acknowledges every successful receive before returning, and facets do not cancel/unsubscribe in the middle of a Send round. The source's global acknowledgement count can strand a publisher if a registered receiver exits before its matching Wait.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "SlotPubSub43Grok (43-Grok)",
+      "remarks": "Preallocated page slots plus a shared pong barrier provide acknowledged synchronous fan-out.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "PhantomCast44Qwen (44-Qwen)",
+      "remarks": "Bounded Disruptor-style ring uses independent subscriber cursors and explicit Missed accounting; each publication coalesces wake signals.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanHub46Grok (46-Grok)",
+      "remarks": "Power-of-two sequence ring with independent cursors; Publish blocks at capacity until every attached cursor advances, preserving each value in order.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanHub46Grok (46-Grok)",
+      "remarks": "Independent cursor attach/detach supports changing subscriber membership while publication continues; each new cursor begins at the current head.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanHub46Grok (46-Grok)",
+      "remarks": "Context-bound cursor iterators detach on cancellation, and Close wakes receivers while allowing already-published values to drain.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanHub46Grok (46-Grok)",
+      "remarks": "With no cursors, publication is immediately available; later cursors start at the current head and observe subsequent values only.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub47Gemini (47-Gemini)",
+      "remarks": "Response 47's atomic-state caster plus pong barrier sends once to each registered receiver and waits for each receive acknowledgement.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub47Gemini (47-Gemini)",
+      "remarks": "Context iterators register synchronously and withdraw between publication rounds; Send includes the current subscriber set.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub47Gemini (47-Gemini)",
+      "remarks": "Send returns immediately with no subscribers and later subscriptions participate in later sends.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "The candidate has no hub Close API; lifecycle facets cancel the active iterator first and do not rely on the adapter's no-op Close.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanPubSub47Gemini (47-Gemini)",
+      "remarks": "Context cancellation withdraws an iterator subscription.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRing47Gemini (47-Gemini)",
+      "remarks": "Native-select cursor ring pipelines up to its bounded capacity, blocks Send rather than overwriting unread values, and advances each subscriber independently.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRing47Gemini (47-Gemini)",
+      "remarks": "Value-held readers support dynamic membership; Close releases unread slot references so a slow cursor does not permanently pin the ring.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRing47Gemini (47-Gemini)",
+      "remarks": "Context cancellation closes the reader cursor, while ring Close wakes select-ready readers and stops publishers.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "WatchCaster48Grok (48-Grok)",
+      "remarks": "Generation-tracked latest value coalesces intermediates; a closed generation channel wakes all current observers and Load returns a coherent snapshot.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "WatchCaster48Grok (48-Grok)",
+      "remarks": "Observers are per-cursor generation snapshots with no registration in the publisher; churn does not mutate fan-out state.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "WatchCaster48Grok (48-Grok)",
+      "remarks": "Send is independent of observer count; each observer begins at the current generation and observes later updates only.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanReplay51DeepSeek (51-DeepSeek)",
+      "remarks": "The response-51 extension preserves synchronous receive acknowledgements for live subscribers while retaining a bounded history for late joins.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanCascade52Opus (52-ClaudeOpus)",
+      "remarks": "Two phase-alternating unbuffered transports carry cooperative relays; Send waits for all receipt/relay handoffs, but not for application processing after Received.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochBroadcast54Terra (54-GPT-6.1-Terra)",
+      "remarks": "Every subscriber in the membership snapshot receives each value before Send returns; Close of an outstanding subscription releases its share without counting delivery.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochBroadcast54Terra (54-GPT-6.1-Terra)",
+      "remarks": "Membership is a locked count rather than a subscriber registry; independent subscription cursors can join or close around publication snapshots.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "EpochBroadcast54Terra (54-GPT-6.1-Terra)",
+      "remarks": "Send with no registered subscriptions returns zero without allocating an epoch; later subscriptions participate only in later sends.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "The primitive has no broadcaster-wide Close; lifecycle facets exercise per-subscription cancellation only, and the adapter's Close is intentionally a no-op.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "EpochBroadcast54Terra (54-GPT-6.1-Terra)",
+      "remarks": "Per-subscription Close and context cancellation release an outstanding receive obligation.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingCaster55Haiku (55-ClaudeHaiku)",
+      "remarks": "Slab-allocated immutable cells plus per-subscriber cursors retain a bounded window; TryRecv reports every overwritten sequence and SubscribeFrom reports an initial retention gap.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingCaster55Haiku (55-ClaudeHaiku)",
+      "remarks": "Publish writes one immutable cell and signals a shared armed generation rather than traversing subscribers; parked readers share the wake.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingCaster55Haiku (55-ClaudeHaiku)",
+      "remarks": "Subscriber cursors are caller-owned values and never enter publisher state; attach/detach churn is local to each session.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingCaster55Haiku (55-ClaudeHaiku)",
+      "remarks": "Context-aware Recv and idempotent caster Close wake parked readers, allow retained values to drain, then return ErrRingClosed.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout56MaiCode (56-MaiCode)",
+      "remarks": "Each subscription has an independent bounded channel; publications are lossless in order and a full queue backpressures Send until read or per-subscription Close.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout56MaiCode (56-MaiCode)",
+      "remarks": "The one-element queue can accept a value before the subscriber reads it, so this is explicitly not a receive barrier; attached as a measured mismatch.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout56MaiCode (56-MaiCode)",
+      "remarks": "Correct exact delivery, but Send walks and synchronously enqueues to every cursor; this is a deliberate poor-fit measurement for O(1) high fan-out.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout56MaiCode (56-MaiCode)",
+      "remarks": "Membership uses immutable copy-on-write snapshots; churn performs O(N) copy work but never mutates a snapshot being traversed by Send.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout56MaiCode (56-MaiCode)",
+      "remarks": "Send with an empty snapshot returns zero; new subscriptions receive subsequent publications only.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "There is no broadcaster-wide Close. Lifecycle facets cancel readers and close individual subscriptions; the adapter's hub Close is a no-op.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "Fanout56MaiCode (56-MaiCode)",
+      "remarks": "Per-subscription Close is idempotent and unblocks an in-flight send.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingCaster55Haiku (55-ClaudeHaiku)",
+      "remarks": "Publish remains nonblocking with no cursors; a late subscriber starts at the current tail and only sees future publications.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReplayCast53Gpt6Sol (53-GPT-6-Sol)",
+      "remarks": "O(1)-with-fanout sequence ring retains bounded history; each Next reports exact overwritten publications while Publish only replaces one shared generation signal.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReplayCast53Gpt6Sol (53-GPT-6-Sol)",
+      "remarks": "Publication does not sweep subscriber state; a shared generation notification wakes independently paced cursors, with scheduling work paid by actual awakened readers.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReplayCast53Gpt6Sol (53-GPT-6-Sol)",
+      "remarks": "Subscriptions own independent cursors and Done channels; attach/detach does not mutate publication fan-out work.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReplayCast53Gpt6Sol (53-GPT-6-Sol)",
+      "remarks": "Unsubscribe is idempotent and signals Done; Close wakes selectors, permits retained values to drain, then reports closed.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ReplayCast53Gpt6Sol (53-GPT-6-Sol)",
+      "remarks": "With no active cursors Publish advances sequence without copying; later subscriptions start at the next publication and cannot read stale ring slots.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanReplay51DeepSeek (51-DeepSeek)",
+      "remarks": "Atomic replay-snapshot plus live registration yields the retained suffix without a gap or duplicate; capacity is fixed and older history is intentionally unavailable.",
+      "scenario": "bounded-catchup-replay"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBoundedReplay (baseline)",
+      "remarks": "Textbook mutex-protected bounded history plus per-subscriber buffered channels; snapshot and registration share one lock, with send backpressure on slow readers.",
+      "scenario": "bounded-catchup-replay"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBoundedReplay (baseline)",
+      "remarks": "Mutex-protected per-subscriber bounded queues provide ordinary lossless backpressure; replay history is an additional bounded retention cost.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanReplay51DeepSeek (51-DeepSeek)",
+      "remarks": "Subscriber registration and removal participate in the replay/send lock protocol; live readers withdraw by compensating the active one-shot send count.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanReplay51DeepSeek (51-DeepSeek)",
+      "remarks": "Send retains history while no live subscribers exist; the harness adapter intentionally uses live-only Subscribe, then tests future delivery.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "The implementation has no hub Close API; lifecycle facets cancel and unsubscribe first and do not require adapter Close to stop it.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanReplay51DeepSeek (51-DeepSeek)",
+      "remarks": "A cancelled live iterator withdraws its receiver intent.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBoundedReplay (baseline)",
+      "remarks": "The baseline removes per-subscriber channels under a mutex; a done signal releases sends already targeting a removed subscriber.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBoundedReplay (baseline)",
+      "remarks": "Zero-listener sends append only to bounded history; live-only new subscriptions receive subsequent publications.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineBoundedReplay (baseline)",
+      "remarks": "Close and per-subscription cancellation signal blocked receivers and unblock pending sends.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectBroadcaster49Qwen (49-Qwen)",
+      "remarks": "Closed notification epochs wake all waiters; a sequence-stamped bounded ring lets observers catch up and eventually see the latest value without blocking publishers.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectBroadcaster49Qwen (49-Qwen)",
+      "remarks": "No central subscriber registry; each iterator keeps an independent sequence cursor and can be cancelled independently.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectBroadcaster49Qwen (49-Qwen)",
+      "remarks": "Publication does not require registered observers; new iterators begin at the generation captured when SubscribeContext is called.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectBroadcaster49Qwen (49-Qwen)",
+      "remarks": "Bounded ring provides ordered catch-up until overrun and silently snaps past overwritten values.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "This response has no broadcaster Close API; lifecycle facets cancel subscriptions and never rely on a global close operation.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "SelectBroadcaster49Qwen (49-Qwen)",
+      "remarks": "Context cancellation stops iterator consumption.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanRing47Gemini (47-Gemini)",
+      "remarks": "Publish with no active readers does not consume a slot; readers start at the current tail.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub57DeepSeek (57-DeepSeek)",
+      "remarks": "The phase gate lets receivers acknowledge after the complete rendezvous phase; the atomic ack counter and one-slot signal coordinate the sender.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub57DeepSeek (57-DeepSeek)",
+      "remarks": "Atomic subscriber accounting plus the existing ChanCaster ping protocol withdraws a subscriber during an active send without stranding its publisher.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "The primitive has no hub-wide Close API; lifecycle coverage uses context cancellation and Unsubscribe only, never adapter Close as a global shutdown.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "ChanPubSub57DeepSeek (57-DeepSeek)",
+      "remarks": "Context iterators withdraw their subscriber count on cancellation.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub57DeepSeek (57-DeepSeek)",
+      "remarks": "Send returns immediately at zero subscribers; subscriptions added later participate in subsequent rendezvous rounds.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub57DeepSeek (57-DeepSeek)",
+      "remarks": "Each publication rendezvous and phase-acknowledges all receivers; attached to measure its intentionally costly O(N) synchronization at high fan-out.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineQueuedFanout (baseline)",
+      "remarks": "Ordinary mutex plus private unbounded slice queues and a coalescing wake channel; sender never waits for a consumer.",
+      "scenario": "nonblocking-lossless-overflow"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "QueuedFanout24Meta (24-MetaAI)",
+      "remarks": "COW membership, a serialized nonblocking mailbox/overflow admission step and receiver-pumped private FIFO preserve every value without sender backpressure; lagging consumers grow memory.",
+      "scenario": "nonblocking-lossless-overflow"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "QueuedFanout24Meta (24-MetaAI)",
+      "remarks": "Membership edits copy a snapshot rather than locking the publish traversal; per-subscriber leases make withdrawal safe.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "QueuedFanout24Meta (24-MetaAI)",
+      "remarks": "An empty snapshot accepts no delivery and returns zero; later subscriptions see future publications.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "The response has no hub-wide Close; lifecycle facets use cancellation and per-subscription Unsubscribe, never adapter Close as global shutdown.",
+      "exposure_limited": true,
+      "family": "broadcast",
+      "impl": "QueuedFanout24Meta (24-MetaAI)",
+      "remarks": "RecvContext and Done provide a cancellation escape without closing the data channel.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "QueuedFanout24Meta (24-MetaAI)",
+      "remarks": "Deliberate mismatch: private overflow is lossless and unbounded, not a bounded detectable-loss ring.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectFanout (38-ChatGPT)",
+      "remarks": "Persistent AVL membership snapshots feed cancellable per-subscriber rendezvous leases; Send completes at receipt, not processing.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectFanout (38-ChatGPT)",
+      "remarks": "Subscribe/unsubscribe clone an O(log N) tree path while publishers traverse an immutable snapshot without a membership lock.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectFanout (38-ChatGPT)",
+      "remarks": "SendContext, per-subscription retirement and hub Close cancel pending deliveries and drain leases before closing channels.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectFanout (38-ChatGPT)",
+      "remarks": "An empty tree publishes immediately with count zero; closed instances reject new subscriptions.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "SelectFanout (38-ChatGPT)",
+      "remarks": "Churn is logarithmic but delivery still performs N rendezvous; attached as an explicit poor-fit scaling measurement.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout45ChatGPT/sync (45-ChatGPT)",
+      "remarks": "Intrusive atomic links and one delivery lease per node provide unbuffered handoff without a post-receive barrier.",
+      "scenario": "synchronous-handoff-no-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout45ChatGPT/buffered (45-ChatGPT)",
+      "remarks": "Per-subscription bounded channels absorb independent lag and then backpressure the serialized publisher.",
+      "scenario": "buffered-lossless-backpressured"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout45ChatGPT/buffered (45-ChatGPT)",
+      "remarks": "O(1) intrusive-list edits and node leases avoid copying a subscriber slice on churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout45ChatGPT/buffered (45-ChatGPT)",
+      "remarks": "Node and hub Close abort blocked sends, wait for leases and close data channels exactly once.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Fanout45ChatGPT/sync (45-ChatGPT)",
+      "remarks": "Empty head returns zero without taking the publication mutex; later nodes receive future values.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanout (45-ChatGPT)",
+      "remarks": "Shared overwrite-oldest ring plus independent cursors reports exact missed counts and never waits for readers.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanout (45-ChatGPT)",
+      "remarks": "SubscribeReplay atomically captures the retained suffix and a live cursor; older history is intentionally unavailable.",
+      "scenario": "bounded-catchup-replay"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanout (45-ChatGPT)",
+      "remarks": "Publish stores once and signals coalesced per-node notifications; publisher work still walks nodes but does not copy payloads per reader.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanout (45-ChatGPT)",
+      "remarks": "Intrusive node links and reader leases support attach/detach without rebuilding a membership slice.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanout (45-ChatGPT)",
+      "remarks": "Next accepts context cancellation; subscription/hub Close retire notification and reader leases safely.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanout (45-ChatGPT)",
+      "remarks": "Publish with no nodes still advances the bounded log; live-only subscriptions start at the current tail.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub58Spark (58-MuseSpark)",
+      "remarks": "Atomic pong countdown is armed before the shared-channel ping snapshot; the sender parks on a Cond and a per-round close gate prevents fast receivers from stealing another copy of the same round.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub58Spark (58-MuseSpark)",
+      "remarks": "The write gate fixes round membership while iterator ownership transfer makes cancellation/withdrawal compensation exact.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub58Spark (58-MuseSpark)",
+      "remarks": "Context iterators transfer withdrawal ownership from callback to consumer before receiving, avoiding a steal/receipt race.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub58Spark (58-MuseSpark)",
+      "remarks": "Zero participants return immediately; subscriptions admitted after a round observe later rounds.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "ChanPubSub58Spark (58-MuseSpark)",
+      "remarks": "The atomic pong plane removes a mutex convoy but the ping still performs N rendezvous; explicit poor-fit scaling attachment.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "GenPubSub50Meta (50-MetaAI)",
+      "remarks": "Parity-flipped WaitGroups park the sender on one futex; a per-round close gate prevents same-round stealing after the source's Done-only repair.",
+      "scenario": "lockstep-barrier-lossless"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "GenPubSub50Meta (50-MetaAI)",
+      "remarks": "Membership is separate from generation arming, so Adds during pong wait never race WaitGroup.Wait.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "GenPubSub50Meta (50-MetaAI)",
+      "remarks": "Iterator/callback ownership transfer compensates exactly one withdrawal or acknowledgement.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "GenPubSub50Meta (50-MetaAI)",
+      "remarks": "Empty snapshots return zero; late subscribers join subsequent generations.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "GenPubSub50Meta (50-MetaAI)",
+      "remarks": "Sender wakeup is O(1), but the shared ping still costs N rendezvous and the completion gate wakes N receivers.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster58Spark (58-MuseSpark)",
+      "remarks": "Power-of-two sequence ring with protected payload copies, wrap-safe cursors and exact missed counts; one shared close-generation wakes readers.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster58Spark (58-MuseSpark)",
+      "remarks": "A lagging cursor can skip to the retained window and eventually observe the newest value; publication never waits for readers.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster58Spark (58-MuseSpark)",
+      "remarks": "Subscription is a counter plus private cursor; attach/detach does not coordinate with the publication path.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster58Spark (58-MuseSpark)",
+      "remarks": "Close swaps in a pre-closed generation and signals Done; cursors drain retained values and context cancellation unsubscribes once.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster58Spark (58-MuseSpark)",
+      "remarks": "Send advances the ring with no subscribers; a late cursor starts live and cannot read stale idle-period slots.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanOut14Xing (14-Xing)",
+      "remarks": "Completed prose specification: bounded input burst queue plus pooled per-subscriber mailboxes and one nonblocking drop-oldest dispatcher.",
+      "scenario": "bounded-async-fanout-dispatch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineAsyncFanout (baseline)",
+      "remarks": "Ordinary buffered input channel, dispatcher goroutine and standard drop-oldest fan-out; no channel pool.",
+      "scenario": "bounded-async-fanout-dispatch"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineFanout (standard)",
+      "remarks": "Explicit poor-fit comparison: standard drop-oldest fan-out has no asynchronous input burst queue.",
+      "scenario": "bounded-async-fanout-dispatch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanOut14Xing (14-Xing)",
+      "remarks": "Fixed channel pool leases and drains slots on Remove; churn does not allocate new data channels after construction.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanOut14Xing (14-Xing)",
+      "remarks": "Empty pool membership dispatches nowhere; closed instances reject Add/Send and pooled channels become drainable then closed.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "RingFanOut14Xing (14-Xing)",
+      "remarks": "SubscribeContext owns Remove; Close stops admission and the dispatcher, then closes pooled channels exactly once.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineAsyncFanout (baseline)",
+      "remarks": "Ordinary async baseline edge behaviour.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "BaselineAsyncFanout (baseline)",
+      "remarks": "Context cancellation unsubscribes; Close stops the dispatcher and closes subscriber channels.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "HorizonRing59Gemini (59-Gemini)",
+      "remarks": "Overwritable seqlock ring with independent cursors; overwritten values are reported as dropped counts per cursor (TryRead/ReadContext). Attached ahead of 59's combiner front-end.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "StripedCombiner59Gemini (59-Gemini)",
+      "remarks": "Flat-combining publish front-end over HorizonRing59Gemini; delivery semantics are the ring's (lossy overwrite, drop accounting at the cursor). Single publisher only, like the ring.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Latest3260Terra (60-Terra)",
+      "remarks": "Atomic packed value+revision word; watch semantics by re-reading the word. No wake primitive exists by design (the candidate is a non-parking polling register), so the adapter parks on a bounded exponential backoff rather than spinning; conflation is the whole point of the cell.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Pulse61Deepseek (61-DeepSeek)",
+      "remarks": "Latest-value cell with version-gated WaitFor wakeups; watchers coalesce arbitrarily many sets into one read. Exactly the conflating-watch envelope.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "WatchCell69Deepseek (69-DeepSeek)",
+      "remarks": "Latest-value cell with coalesced generation-gated wakeups; this adapter tail-attaches by a subscribe-time epoch anchor and blocks on the cell's condvar-gated Watch path (no polling). Delivery is conflated under load: only the newest pending value is retained.",
+      "scenario": "latest-value-conflating-watch"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "TelemetryRing63Qwen (63-Qwen)",
+      "remarks": "SPSC seqlock telemetry ring; publishers overwrite the oldest entry and readers observe seqlock-validated values with lag detectable via advertised head. Not attachable to zero-subscriber facets (no published-count accessor); single publisher only.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon64GLM (64-GLM)",
+      "remarks": "Epoch-gated seqlock broadcast ring with self-serve cursors; lapped cursors skip to the oldest retained value and report Skip counts (the scenario's detectable-loss criterion).",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster65Deepseek (65-DeepSeek)",
+      "remarks": "Bounded ring with per-subscription skip accounting (Subscription65Deepseek.Skipped); overwritten generations are counted, never delivered torn.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon66Gemini (66-Gemini)",
+      "remarks": "Bounded horizon ring; lapped readers recover per CatchUpPolicy (SkipToOldest attached) with capability status reporting and lag accounting.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Ring67Haiku (67-Haiku)",
+      "remarks": "Bounded ring with per-cursor lap detection; Next reports the exact number of overwritten tickets (skipped) with each return.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon70Meta (70-Meta)",
+      "remarks": "Bounded ring with per-cursor skip accounting (Lag/Missed) and lossless ordered delivery while the cursor keeps up.",
+      "scenario": "bounded-ring-lossy-detectable"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "HorizonRing59Gemini (59-Gemini)",
+      "remarks": "Stateless cursors; subscription churn never mutates ring state.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "StripedCombiner59Gemini (59-Gemini)",
+      "remarks": "Subscription is a stateless ring cursor; publish-side combining lanes are unaffected by subscriber churn.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Latest3260Terra (60-Terra)",
+      "remarks": "Watchers are stateless; attach/detach is a free read of the atomic word.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Pulse61Deepseek (61-DeepSeek)",
+      "remarks": "Watchers register only while parked in WaitFor; churn costs one wait-free slot per active waiter.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "WatchCell69Deepseek (69-DeepSeek)",
+      "remarks": "Watchers are stateless cursors over an epoch counter; churn never mutates publisher state.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "TelemetryRing63Qwen (63-Qwen)",
+      "remarks": "Readers replay from retained history independently; no membership registry exists.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon64GLM (64-GLM)",
+      "remarks": "Watchers hold private cursors; no registry, no fan-out state.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster65Deepseek (65-DeepSeek)",
+      "remarks": "Subscriptions are independent cursors; churn does not touch the publish path.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon66Gemini (66-Gemini)",
+      "remarks": "Stateless cursors; subscription churn never mutates ring state.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Ring67Haiku (67-Haiku)",
+      "remarks": "Cursors are caller-owned values; attach/detach is local to each session.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon70Meta (70-Meta)",
+      "remarks": "Cursors are caller-owned with no publisher-side registry.",
+      "scenario": "ephemeral-churn-membership"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "HorizonRing59Gemini (59-Gemini)",
+      "remarks": "Publish with no cursors is one slot claim plus a fenced write.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "StripedCombiner59Gemini (59-Gemini)",
+      "remarks": "Submit with no cursors still completes synchronously through the combining lanes.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Latest3260Terra (60-Terra)",
+      "remarks": "Publish with no watchers is a single atomic word swap.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Pulse61Deepseek (61-DeepSeek)",
+      "remarks": "Publish with no watchers is an atomic store and a no-op broadcast.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "WatchCell69Deepseek (69-DeepSeek)",
+      "remarks": "Publish with no watchers is a store plus an O(1) wake broadcast.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon64GLM (64-GLM)",
+      "remarks": "Publish with no watchers arms no gate; one claim CAS and a fenced slot write.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster65Deepseek (65-DeepSeek)",
+      "remarks": "Publish with no subscriptions writes the slot and advances head.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon66Gemini (66-Gemini)",
+      "remarks": "Publish with no readers is one sequence claim and a slot write.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Ring67Haiku (67-Haiku)",
+      "remarks": "Publish with no cursors is a striped CAS and a slot store.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon70Meta (70-Meta)",
+      "remarks": "Publish with no cursors is one slot-claim CAS and a fenced write.",
+      "scenario": "zero-subscriber-and-edge-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "HorizonRing59Gemini (59-Gemini)",
+      "remarks": "ReadContext returns on ctx cancellation; Close is idempotent and wakes parked readers.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "StripedCombiner59Gemini (59-Gemini)",
+      "remarks": "ReadContext honours ctx; adapter Close closes the backing ring (Combiner itself has no separate Close).",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Latest3260Terra (60-Terra)",
+      "remarks": "Receive exits on ctx cancellation; Close flips the closed bit in the same packed word.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Pulse61Deepseek (61-DeepSeek)",
+      "remarks": "WaitFor returns on cancellation or close; Close is idempotent.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "WatchCell69Deepseek (69-DeepSeek)",
+      "remarks": "Watch iterators end on ctx cancellation; Close is idempotent and wakes parked watchers.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "TelemetryRing63Qwen (63-Qwen)",
+      "remarks": "Receive exits on ctx cancellation; no global Close exists by design (the notifier never closes), so adapter Close is a no-op.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon64GLM (64-GLM)",
+      "remarks": "Next honours ctx; Close is idempotent and releases every parked watcher.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Broadcaster65Deepseek (65-DeepSeek)",
+      "remarks": "Receive blocks on the subscription's own wakeups for the background context and parks on a bounded backoff when the caller's context can expire (the candidate wakes per subscription, not per Receive); Close is idempotent.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon66Gemini (66-Gemini)",
+      "remarks": "ReadNext returns on ctx; Close is idempotent and wakes parked readers.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Ring67Haiku (67-Haiku)",
+      "remarks": "Next returns on ctx; Close releases parked cursors.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon70Meta (70-Meta)",
+      "remarks": "WaitNextContext returns on ctx; Close wakes every parked waiter; idempotent.",
+      "scenario": "cancellation-and-close-lifecycle"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "HorizonRing59Gemini (59-Gemini)",
+      "remarks": "Publish is one sequence claim plus a fenced slot write regardless of cursor count.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "StripedCombiner59Gemini (59-Gemini)",
+      "remarks": "Publish amortizes combining cost under contention; fan-out cost stays O(1) for the write path.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Latest3260Terra (60-Terra)",
+      "remarks": "Publish is a single atomic word swap regardless of watcher count.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Pulse61Deepseek (61-DeepSeek)",
+      "remarks": "Publish is one atomic store plus an O(1) wake broadcast regardless of waiter count.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "WatchCell69Deepseek (69-DeepSeek)",
+      "remarks": "Publish is one store plus an O(1) generation flip regardless of watcher count.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Beacon64GLM (64-GLM)",
+      "remarks": "Publish is one claim CAS plus a fenced write regardless of watcher count; no per-watcher work.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon66Gemini (66-Gemini)",
+      "remarks": "Publish is one sequence claim plus a slot write regardless of reader count.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Ring67Haiku (67-Haiku)",
+      "remarks": "Publish is one striped CAS plus a slot store regardless of cursor count.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "broadcast",
+      "impl": "Horizon70Meta (70-Meta)",
+      "remarks": "Publish is one slot-claim CAS plus a fenced write regardless of cursor count.",
+      "scenario": "large-fanout-scalability"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster",
+      "remarks": "Reference rendezvous caster (historical baseline for the family).",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster2",
+      "remarks": "Caster variant.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCasterV2_06meta",
+      "remarks": "Caster variant with wait-free positive Add fast path.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster09Gemini",
+      "remarks": "Caster variant.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster11Meta",
+      "remarks": "Completed lock-free CAS dual-counter sketch: positive Add spins only while armed, negative Add compensates the shared rendezvous.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster14Xing",
+      "remarks": "Caster variant.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster15Nemotron",
+      "remarks": "Caster variant.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster17FastPath",
+      "remarks": "Caster variant with fast-path send.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster17Pumped",
+      "remarks": "Caster variant with pumped send.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "BaselineRendezvousCaster",
+      "remarks": "Vacuum baseline: mutex-guarded count + one unbuffered channel + compensating dummy sends on withdrawal.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "AdaptiveCaster23Meta",
+      "remarks": "Adaptive hybrid retains ChanCaster's synchronous rendezvous path and provides a separate SeqCaster path for registered ring subscribers; this attachment measures its shared-channel caster mode.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "Exposure limited: no concurrent receiver withdrawal or cancellation during a Send/Wait round; the response counts acknowledgements globally and cannot reclaim a missing acknowledgement, so no churn/abandonment facet may run.",
+      "exposure_limited": true,
+      "family": "caster",
+      "impl": "ChanPubSub35ChatJimmy",
+      "remarks": "Shared ChanCaster channel with a condition-variable pong barrier; the registered receive count is acknowledged before Send returns.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster58Spark",
+      "remarks": "The reference dual-counter rendezvous protocol with cache-line isolation and RecvContext/TryRecv helpers; withdrawal still compensates an active Send.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "caster",
+      "impl": "ChanCaster47Gemini",
+      "remarks": "Atomic packed-state one-shot receiver accounting; Add and Send coordinate through CAS and a parked positive-add barrier.",
+      "scenario": "rendezvous-cast-no-ack"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "scatter",
+      "impl": "ChanScatter",
+      "remarks": "Single-channel scatter with steal compensation on last withdrawal: the novel design under test.",
+      "scenario": "work-distribution-scatter"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "scatter",
+      "impl": "StableRing32Nano (32-Nano)",
+      "remarks": "Condvar ring admits without waiting, evicts the oldest pending item at capacity and counts eviction; one shared cursor dispatches to one waiter.",
+      "scenario": "bounded-competing-consumer-overflow"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "scatter",
+      "impl": "BaselineBoundedScatterQueue (baseline)",
+      "remarks": "Ordinary buffered channel with serialized make-room-then-enqueue admission; no novel ring or wakeup machinery.",
+      "scenario": "bounded-competing-consumer-overflow"
+    },
+    {
+      "expected_good_fit": false,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "scatter",
+      "impl": "StableRing32Nano (32-Nano)",
+      "remarks": "Explicit poor-fit comparison: the condvar ring admits before a worker receives and can evict under overload, so it does not provide the lossless receipt-coupled scatter invariant; its good-fit scenario is bounded-competing-consumer-overflow.",
+      "scenario": "work-distribution-scatter"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "scatter",
+      "impl": "BaselineScatterQueue",
+      "remarks": "Vacuum baseline: an ordinary unbuffered channel already dispatches to exactly one ready receiver.",
+      "scenario": "work-distribution-scatter"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "gather",
+      "impl": "ChanGatherer",
+      "remarks": "Dual of the reference caster: Wait receives once per sender, Add(-1) compensates.",
+      "scenario": "signal-gather-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "gather",
+      "impl": "BaselineGatherBarrier",
+      "remarks": "Vacuum baseline: mutex-guarded count + one unbuffered channel + compensating sends.",
+      "scenario": "signal-gather-barrier"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "BaselineFanout_c64",
+      "remarks": "Vacuum async baseline (BaselineFanout) carrying multi-word payloads.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "Beacon",
+      "remarks": "Atomic slot publication: payload is observed via a single pointer/word swap.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "ChanBeacon_c64",
+      "remarks": "Ring slot publication for wide payloads.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "ChanFanout_c64",
+      "remarks": "Shared ring carrying wide payloads by value.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "ChanFeed_drop_c64",
+      "remarks": "Ring feed carrying wide payloads (drop-oldest).",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "ChanFeed_block_c64",
+      "remarks": "Ring feed carrying wide payloads (blocking/lossless mode).",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "ChanLatest",
+      "remarks": "Capacity-1 mailboxes carrying wide payloads by value.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "EpochCasterGemini_c64",
+      "remarks": "Seqlock ring: wide-payload torn-read risk is exactly what this scenario probes.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "EpochCaster13Crouton_r64",
+      "remarks": "Ring caster carrying wide payloads.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "EpochTape_c64",
+      "remarks": "Tape slots carrying wide payloads.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "GenCaster",
+      "remarks": "Epoch nodes carry the payload by value behind an atomic pointer: no tearing by construction.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "RingBeacon_c64",
+      "remarks": "Ring entries are published via atomic pointer store: no tearing by construction.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "RingPubSub_c64",
+      "remarks": "Ring slots carrying wide payloads.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "ChanRelay_sync",
+      "remarks": "Per-subscriber channels carry wide payloads by value.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "ChanRelay_w16",
+      "remarks": "Buffered per-subscriber channels carrying wide payloads.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "ChanHub_c16",
+      "remarks": "Caller-supplied buffered channels carrying wide payloads.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "RingFanOut14Xing_c64",
+      "remarks": "Pooled dispatcher mailboxes carry multi-word payloads; drop-oldest admission must not tear retained values.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "BaselineAsyncFanout_c64",
+      "remarks": "Ordinary async dispatcher baseline carrying multi-word payloads.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "payload",
+      "impl": "Broadcaster58Spark_c64",
+      "remarks": "Per-cell locks make multi-word payload copies coherent while atomic sequence stamps detect cursor overrun.",
+      "scenario": "wide-payload-integrity"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "fanin",
+      "impl": "EdgeFanIn68Chatgpt (68-ChatGPT)",
+      "remarks": "Per-producer bounded SPSC lanes with an MPSC ready-stack and amortised batch drain; drop-newest with push-time accounting (TryPush false / TryPushBatch short count); FIFO per lane, no global ordering; Close drains accepted values before reporting closure. The scenario's intended design.",
+      "scenario": "bounded-fanin-merge"
+    },
+    {
+      "expected_good_fit": true,
+      "exposure": "",
+      "exposure_limited": false,
+      "family": "fanin",
+      "impl": "BaselineFanIn (baseline)",
+      "remarks": "Vacuum baseline: one shared buffered channel behind one mutex (push path), select-default drops counted in Drops(); single lock domain, no lane isolation or batching — the ordinary design the port must beat.",
+      "scenario": "bounded-fanin-merge"
+    }
+  ],
+  "cases": [
+    {
+      "id": "lockstep/test/ordered-ack-fanout",
+      "kind": "test",
+      "runnable": "TestScenarioBroadcast",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Ordered fan-out with ack barrier, 4 subscribers x 20 values"
+    },
+    {
+      "id": "lockstep/bench/fanout",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Publish throughput at 8 subscribers"
+    },
+    {
+      "id": "lockstep/fuzz/op-stream",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioBroadcast",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Randomised subscribe/publish/receive/unsubscribe stream"
+    },
+    {
+      "id": "epochbroadcast/test/fanout-count",
+      "kind": "test",
+      "runnable": "TestEpochBroadcast54Fanout",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Eight cursors receive each value before Send returns"
+    },
+    {
+      "id": "epochbroadcast/test/join-withdraw",
+      "kind": "test",
+      "runnable": "TestEpochBroadcast54MembershipAndUnsubscribe",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Join at epoch boundary and release an outstanding obligation by unsubscribe"
+    },
+    {
+      "id": "epochbroadcast/bench/send",
+      "kind": "bench",
+      "runnable": "BenchmarkEpochBroadcast54Send",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Eight-subscriber epoch publication and receive acknowledgement"
+    },
+    {
+      "id": "cast/test/steady-and-churn",
+      "kind": "test",
+      "runnable": "TestScenarioCaster",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "Caster steady + churn stress (return == actual receives)"
+    },
+    {
+      "id": "cast/bench/rendezvous",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioCaster",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "Rendezvous cost at 8 receivers"
+    },
+    {
+      "id": "cast/fuzz/op-stream",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioCasterScatterGather",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "Randomised add/send/withdraw stream"
+    },
+    {
+      "id": "handoff/test/ordered-fanout",
+      "kind": "test",
+      "runnable": "TestScenarioBroadcast",
+      "scenario": "synchronous-handoff-no-barrier",
+      "title": "Ordered handoff fan-out, 4 subscribers x 20 values"
+    },
+    {
+      "id": "handoff/bench/fanout",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "synchronous-handoff-no-barrier",
+      "title": "Handoff publish throughput at 8 subscribers"
+    },
+    {
+      "id": "cascade/test/fanout-phases",
+      "kind": "test",
+      "runnable": "TestChanCascade52FanoutAndHandoff",
+      "scenario": "synchronous-handoff-no-barrier",
+      "title": "Exact delivery over repeated alternating-phase rounds at fan-outs 1–32"
+    },
+    {
+      "id": "cascade/test/join-unsubscribe",
+      "kind": "test",
+      "runnable": "TestChanCascade52JoinAndUnsubscribeDuringSend",
+      "scenario": "synchronous-handoff-no-barrier",
+      "title": "Join at the active-round boundary and absorb a mid-send unsubscribe"
+    },
+    {
+      "id": "cascade/test/disabled-instance",
+      "kind": "test",
+      "runnable": "TestChanCascade52DisabledInstancePanicsOnSubscribe",
+      "scenario": "synchronous-handoff-no-barrier",
+      "title": "Disabled nil-transport instances reject subscriber registration"
+    },
+    {
+      "id": "cascade/bench/live-send",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "synchronous-handoff-no-barrier",
+      "title": "Eight-receiver live-send throughput and allocations"
+    },
+    {
+      "id": "cascade/bench/source-send",
+      "kind": "bench",
+      "runnable": "BenchmarkChanCascade52Send",
+      "scenario": "synchronous-handoff-no-barrier",
+      "title": "Response-52 direct send measurement with eight receivers"
+    },
+    {
+      "id": "buffered/test/backpressured-fanout",
+      "kind": "test",
+      "runnable": "TestScenarioBroadcast",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Lossless ordered fan-out with draining subscribers"
+    },
+    {
+      "id": "buffered/bench/fanout",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Buffered publish throughput at 8 subscribers"
+    },
+    {
+      "id": "buffered/fuzz/op-stream",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioBroadcast",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Randomised op stream over buffered attachments"
+    },
+    {
+      "id": "fanout56/test/buffer-close",
+      "kind": "test",
+      "runnable": "TestFanout56BufferedAndClose",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Independent queues, full-queue backpressure and idempotent unsubscribe"
+    },
+    {
+      "id": "fanout56/test/publisher-order",
+      "kind": "test",
+      "runnable": "TestFanout56ConcurrentOrder",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Concurrent Send callers preserve the same total order for all subscribers"
+    },
+    {
+      "id": "fanout56/bench/send",
+      "kind": "bench",
+      "runnable": "BenchmarkFanout56Send",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Eight-subscriber buffered fan-out Send cost"
+    },
+    {
+      "id": "lockstep57/test/phase-ack",
+      "kind": "test",
+      "runnable": "TestChanPubSub57FanoutAndLateWaiters",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Eight subscribers receive ordered values through the phase gate and atomic acknowledgement plane"
+    },
+    {
+      "id": "lockstep57/test/withdraw-release",
+      "kind": "test",
+      "runnable": "TestChanPubSub57UnsubscribeReleasesPendingSend",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Withdrawing an undelivered subscriber compensates the active ping and releases Send"
+    },
+    {
+      "id": "lockstep57/test/context-iterator",
+      "kind": "test",
+      "runnable": "TestChanPubSub57ContextIterator",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Context-backed iterator acknowledges delivery and unsubscribes on cancellation"
+    },
+    {
+      "id": "lockstep57/bench/eight-subscriber-send",
+      "kind": "bench",
+      "runnable": "BenchmarkChanPubSub57Send",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Eight-subscriber rendezvous and phase-acknowledgement cost"
+    },
+    {
+      "id": "ring-lossy/test/monotonic-final",
+      "kind": "test",
+      "runnable": "TestScenarioBroadcast",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Monotonic delivery, final value always observed, sends bounded to capacity where exposure-limited"
+    },
+    {
+      "id": "ring-lossy/bench/fanout",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Ring publish throughput at 8 subscribers"
+    },
+    {
+      "id": "ring-lossy/fuzz/op-stream",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioBroadcast",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Randomised op stream over ring attachments"
+    },
+    {
+      "id": "latest/test/conflated-final",
+      "kind": "test",
+      "runnable": "TestScenarioBroadcast",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Strictly increasing observations, latest always observed, Send non-blocking"
+    },
+    {
+      "id": "latest/bench/fanout",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Conflating publish throughput at 8 subscribers"
+    },
+    {
+      "id": "latest/fuzz/op-stream",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioBroadcast",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Randomised op stream over conflating attachments"
+    },
+    {
+      "id": "replay/test/full-catchup",
+      "kind": "test",
+      "runnable": "TestScenarioBroadcast",
+      "scenario": "unbounded-catchup-replay",
+      "title": "Lagging subscriber reads full ordered history"
+    },
+    {
+      "id": "replay/bench/fanout",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "unbounded-catchup-replay",
+      "title": "Replay publish throughput at 8 subscribers"
+    },
+    {
+      "id": "bounded-replay/test/snapshot-live-boundary",
+      "kind": "test",
+      "runnable": "TestScenarioBoundedReplayCatchup",
+      "scenario": "bounded-catchup-replay",
+      "title": "Retained suffix plus concurrent live value has no gap or duplicate"
+    },
+    {
+      "id": "bounded-replay/test/live-fanout",
+      "kind": "test",
+      "runnable": "TestScenarioBroadcast",
+      "scenario": "bounded-catchup-replay",
+      "title": "Lossless ordered live delivery after subscriptions attach"
+    },
+    {
+      "id": "bounded-replay/bench/live-fanout",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "bounded-catchup-replay",
+      "title": "Live publish throughput at 8 draining subscribers"
+    },
+    {
+      "id": "bounded-replay/bench/snapshot",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBoundedReplaySnapshot",
+      "scenario": "bounded-catchup-replay",
+      "title": "Recent-history snapshot and iterator catch-up cost"
+    },
+    {
+      "id": "scatter/test/exactly-one",
+      "kind": "test",
+      "runnable": "TestScenarioScatter",
+      "scenario": "work-distribution-scatter",
+      "title": "Every value received exactly once across the pool; last-withdrawal cannot hang Send"
+    },
+    {
+      "id": "scatter/bench/dispatch",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioScatterGather",
+      "scenario": "work-distribution-scatter",
+      "title": "Dispatch cost with 8 competing receivers"
+    },
+    {
+      "id": "scatter/fuzz/op-stream",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioCasterScatterGather",
+      "scenario": "work-distribution-scatter",
+      "title": "Randomised register/dispatch/withdraw stream"
+    },
+    {
+      "id": "gather/test/all-signals",
+      "kind": "test",
+      "runnable": "TestScenarioGather",
+      "scenario": "signal-gather-barrier",
+      "title": "Wait collects one signal per sender; withdrawal compensated"
+    },
+    {
+      "id": "gather/bench/wait",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioScatterGather",
+      "scenario": "signal-gather-barrier",
+      "title": "Gather cost with 8 senders"
+    },
+    {
+      "id": "gather/fuzz/op-stream",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioCasterScatterGather",
+      "scenario": "signal-gather-barrier",
+      "title": "Randomised register/signal/withdraw stream"
+    },
+    {
+      "id": "fanin68/test/bounded-lanes",
+      "kind": "test",
+      "runnable": "TestScenarioFanin",
+      "scenario": "bounded-fanin-merge",
+      "title": "Bounded lanes drop-newest with push-time accounting; per-lane FIFO; Close-then-drain contract; exact accepted/refused counts"
+    },
+    {
+      "id": "fanin-baseline/test/shared-channel",
+      "kind": "test",
+      "runnable": "TestScenarioFanin",
+      "scenario": "bounded-fanin-merge",
+      "title": "Vacuum shared-channel baseline passes the same bounded-loss FIFO contracts"
+    },
+    {
+      "id": "fanin/bench/merge",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioFaninMerge",
+      "scenario": "bounded-fanin-merge",
+      "title": "Merged throughput at producers=4 with a concurrent consumer and exact accepted/drained accounting"
+    },
+    {
+      "id": "fanin/fuzz/model",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioFaninModel",
+      "scenario": "bounded-fanin-merge",
+      "title": "Bounded-loss per-lane FIFO model against a random push/drain/close op stream"
+    },
+    {
+      "id": "churn/test/membership-churn",
+      "kind": "test",
+      "runnable": "TestScenarioChurn",
+      "scenario": "ephemeral-churn-membership",
+      "title": "Continuous subscribe/unsubscribe while publishing; no corruption/stall"
+    },
+    {
+      "id": "churn/bench/subscribe-unsubscribe",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "ephemeral-churn-membership",
+      "title": "Subscribe/unsubscribe cost (BenchmarkUnified_Churn + scenario bench)"
+    },
+    {
+      "id": "fanout/test/32-subscribers",
+      "kind": "test",
+      "runnable": "TestScenarioLargeFanout",
+      "scenario": "large-fanout-scalability",
+      "title": "Correct fan-out at 32 subscribers"
+    },
+    {
+      "id": "fanout/bench/up-to-512",
+      "kind": "bench",
+      "runnable": "BenchmarkUnified_Broadcast",
+      "scenario": "large-fanout-scalability",
+      "title": "Publish scaling at 1/8/64/512 subscribers"
+    },
+    {
+      "id": "payload/test/torn-read",
+      "kind": "test",
+      "runnable": "TestScenarioPayload",
+      "scenario": "wide-payload-integrity",
+      "title": "Multi-word payload never torn under steady + churn load"
+    },
+    {
+      "id": "payload/bench/broadcast",
+      "kind": "bench",
+      "runnable": "BenchmarkAsync",
+      "scenario": "wide-payload-integrity",
+      "title": "Wide-payload publish throughput"
+    },
+    {
+      "id": "payload/fuzz/model",
+      "kind": "fuzz",
+      "runnable": "FuzzRingPubSubModel",
+      "scenario": "wide-payload-integrity",
+      "title": "Ring model fuzz (existing) + scenario op streams"
+    },
+    {
+      "id": "lifecycle/test/cancel-close",
+      "kind": "test",
+      "runnable": "TestScenarioLifecycle",
+      "scenario": "cancellation-and-close-lifecycle",
+      "title": "Context cancellation and idempotent Close where documented"
+    },
+    {
+      "id": "lifecycle/fuzz/op-stream",
+      "kind": "fuzz",
+      "runnable": "FuzzScenarioBroadcast",
+      "scenario": "cancellation-and-close-lifecycle",
+      "title": "Randomised op stream including unsubscribe/close edges"
+    },
+    {
+      "id": "edge/test/zero-subscriber",
+      "kind": "test",
+      "runnable": "TestScenarioZeroSubscriber",
+      "scenario": "zero-subscriber-and-edge-lifecycle",
+      "title": "Publish with zero subscribers never blocks; late subscriber gets later values"
+    },
+    {
+      "id": "edge/bench/no-subscribers",
+      "kind": "bench",
+      "runnable": "BenchmarkScenarioBroadcast",
+      "scenario": "zero-subscriber-and-edge-lifecycle",
+      "title": "Publish cost with zero subscribers"
+    },
+    {
+      "id": "ring-lossy/test/seqcaster-loss-accounting",
+      "kind": "test",
+      "runnable": "TestSeqCaster23MetaLossAndClose",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "SeqCaster23Meta reports exact overwrite loss and shuts down its workers"
+    },
+    {
+      "id": "ring-lossy/bench/seqcaster-empty-send",
+      "kind": "bench",
+      "runnable": "BenchmarkSeqCaster23MetaSendNoSubscribers",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "SeqCaster23Meta publication cost with no subscriptions"
+    },
+    {
+      "id": "ringcaster/test/lap-resume",
+      "kind": "test",
+      "runnable": "TestRingCaster55LapResumeAndConflation",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Retained-window catch-up, exact lapping loss, resume gap and conflation semantics"
+    },
+    {
+      "id": "ringcaster/test/wake-close",
+      "kind": "test",
+      "runnable": "TestRingCaster55SelectWakeAndClose",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Arm/re-check wake protocol, close drain and closed-arm behavior"
+    },
+    {
+      "id": "ringcaster/test/allocations",
+      "kind": "test",
+      "runnable": "TestRingCaster55AllocationProfile",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "One slab per 256 publications and allocation-free cursor fast paths"
+    },
+    {
+      "id": "ringcaster/bench/publish",
+      "kind": "bench",
+      "runnable": "BenchmarkRingCaster55Publish",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Slab-backed ring publish cost with no parked consumers"
+    },
+    {
+      "id": "ringcaster/fuzz/model",
+      "kind": "fuzz",
+      "runnable": "FuzzRingCaster55Model",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "TryRecv/TryRecvLatest compared with a retained-window model"
+    },
+    {
+      "id": "replaycast/test/exact-overrun",
+      "kind": "test",
+      "runnable": "TestReplayCast53LossAccounting",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Exact missed count and retained suffix after overwrite"
+    },
+    {
+      "id": "replaycast/test/zero-close-concurrency",
+      "kind": "test",
+      "runnable": "TestReplayCast53EdgesAndConcurrency",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "No stale values after zero-subscriber publications; idempotent close/drain and concurrent sequence publication"
+    },
+    {
+      "id": "replaycast/bench/publish",
+      "kind": "bench",
+      "runnable": "BenchmarkReplayCast53Publish",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Bounded-ring publication with an active cursor"
+    },
+    {
+      "id": "replaycast/fuzz/ring-model",
+      "kind": "fuzz",
+      "runnable": "FuzzReplayCast53RingModel",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Operation streams compared with an exact bounded-ring/missed-count model"
+    },
+    {
+      "id": "cast/test/adaptive-redirect",
+      "kind": "test",
+      "runnable": "TestAdaptiveCaster23MetaRedirect",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "AdaptiveCaster23Meta toggles its redirect state at the configured threshold and delivers on its sequence path"
+    },
+    {
+      "id": "cast/test/chatjimmy-single-ack",
+      "kind": "test",
+      "runnable": "TestChanPubSub35ChatJimmySingleReceiver",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "ChatJimmy's shared-channel ack barrier under a single receiver, the explicitly exposed-safe case"
+    },
+    {
+      "id": "hub46/test/cursor-backpressure-close",
+      "kind": "test",
+      "runnable": "TestChanHub46GrokBackpressureAndClose",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Independent cursor ordering, capacity backpressure, and close drain"
+    },
+    {
+      "id": "cast47/test/concurrent-churn",
+      "kind": "test",
+      "runnable": "TestChanCaster_ConcurrentChurnAndSelect",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "Atomic-state caster send and concurrent receiver withdrawal"
+    },
+    {
+      "id": "lockstep47/test/scale-cancel",
+      "kind": "test",
+      "runnable": "TestChanPubSub_ScalableBroadcastAndContextCancel",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "128-subscriber acknowledged broadcasts with context cancellation"
+    },
+    {
+      "id": "lockstep47/bench/broadcast-128",
+      "kind": "bench",
+      "runnable": "BenchmarkChanPubSub_Broadcast128",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Acknowledged broadcasts at 128 subscribers"
+    },
+    {
+      "id": "ring47/test/select-backpressure",
+      "kind": "test",
+      "runnable": "TestChanRing_PipelinedSelectAndBackpressure",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Native-select ring delivery with lossless backpressure"
+    },
+    {
+      "id": "ring47/test/wide-payload",
+      "kind": "test",
+      "runnable": "TestChanRing47GeminiWidePayloadIntegrity",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Concurrent multiword payload integrity and unread-slot release"
+    },
+    {
+      "id": "ring47/test/unsubscribe-release",
+      "kind": "test",
+      "runnable": "TestChanRing47GeminiFullSlotReleasedByUnsubscribe",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Closing a slow reader releases its retained ring slots"
+    },
+    {
+      "id": "ring47/test/context-cancel",
+      "kind": "test",
+      "runnable": "TestChanRing47GeminiSubscribeContextCancellation",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Context-bound sequence cancellation detaches without racing its cursor"
+    },
+    {
+      "id": "watch48/test/latest-generation-wake",
+      "kind": "test",
+      "runnable": "TestWatchCaster48GrokBroadcastWakeAndCoalescing",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Coherent latest snapshot and broadcast notification wake all observers"
+    },
+    {
+      "id": "watch48/test/nil-payload",
+      "kind": "test",
+      "runnable": "TestWatchCaster48GrokNilPayloadAndGeneration",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Zero and nil payloads remain representable across generations"
+    },
+    {
+      "id": "watch48/test/coherent-snapshot",
+      "kind": "test",
+      "runnable": "TestWatchCaster48GrokCoherentSnapshot",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Concurrent readers observe value and generation from one publication"
+    },
+    {
+      "id": "watch48/test/concurrent-senders",
+      "kind": "test",
+      "runnable": "TestWatchCaster48GrokConcurrentSenders",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Concurrent publishers retain unique monotonic generations"
+    },
+    {
+      "id": "watch48/bench/send",
+      "kind": "bench",
+      "runnable": "BenchmarkWatchCaster48GrokSend",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Latest-state publication cost with no active readers"
+    },
+    {
+      "id": "select49/test/broadcast-epoch",
+      "kind": "test",
+      "runnable": "TestSelectBroadcaster49QwenBroadcastEpochAndEagerSubscribe",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Eager subscription snapshots and close-notification wake all observers"
+    },
+    {
+      "id": "select49/test/overrun-integrity",
+      "kind": "test",
+      "runnable": "TestSelectBroadcaster49QwenOverrunKeepsSnapshotsOrdered",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Bounded overrun skips stale values without torn or out-of-order payloads"
+    },
+    {
+      "id": "select49/test/state-boundaries",
+      "kind": "test",
+      "runnable": "TestSelectBroadcaster49QwenStateRejectsStaleOrFuture",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Manual state load rejects stale and future sequences"
+    },
+    {
+      "id": "select49/bench/send",
+      "kind": "bench",
+      "runnable": "BenchmarkSelectBroadcaster49QwenSend",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Ring-backed select broadcast with deterministic terminal-value observation"
+    },
+    {
+      "id": "ring47/bench/broadcast-128",
+      "kind": "bench",
+      "runnable": "BenchmarkChanRing_Broadcast128",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Select-native pipelined ring publish at 128 subscribers"
+    },
+    {
+      "id": "queued24/test/backlog-isolation",
+      "kind": "test",
+      "runnable": "TestQueuedFanout24BacklogIsolation",
+      "scenario": "nonblocking-lossless-overflow",
+      "title": "One stalled consumer queues while another drains; exact FIFO and accepted counts"
+    },
+    {
+      "id": "queued24/test/withdraw-leases",
+      "kind": "test",
+      "runnable": "TestQueuedFanout24WithdrawLeases",
+      "scenario": "nonblocking-lossless-overflow",
+      "title": "Concurrent Send/Unsubscribe admits no value after withdrawal and drains accepted backlog"
+    },
+    {
+      "id": "queued24/test/cancel-and-pump",
+      "kind": "test",
+      "runnable": "TestQueuedFanout24CancelAndPump",
+      "scenario": "nonblocking-lossless-overflow",
+      "title": "Context escape, select Pump contract and idempotent withdrawal"
+    },
+    {
+      "id": "queued24/bench/mailbox-and-overflow",
+      "kind": "bench",
+      "runnable": "BenchmarkQueuedFanout24Paths",
+      "scenario": "nonblocking-lossless-overflow",
+      "title": "Mailbox fast path versus exact accounted private overflow"
+    },
+    {
+      "id": "queued24/fuzz/fifo-model",
+      "kind": "fuzz",
+      "runnable": "FuzzQueuedFanout24FIFO",
+      "scenario": "nonblocking-lossless-overflow",
+      "title": "Bounded publish/drain/withdraw stream compared with a per-subscriber FIFO model"
+    },
+    {
+      "id": "queued24/test/concurrent-publishers",
+      "kind": "test",
+      "runnable": "TestQueuedFanout24ConcurrentPublisherFIFO",
+      "scenario": "nonblocking-lossless-overflow",
+      "title": "Concurrent publishers preserve each producer's FIFO order and exact accepted count"
+    },
+    {
+      "id": "nonblocking-overflow/test/baseline-drain",
+      "kind": "test",
+      "runnable": "TestNonblockingOverflowBaseline",
+      "scenario": "nonblocking-lossless-overflow",
+      "title": "Novel mailbox and ordinary queued baseline both drain accepted backlog after withdrawal"
+    },
+    {
+      "id": "stable32/test/competing-drain",
+      "kind": "test",
+      "runnable": "TestStableRing32CompetingDrain",
+      "scenario": "work-distribution-scatter",
+      "title": "Bounded ring dispatches each value to exactly one waiter and reports no-receiver drops"
+    },
+    {
+      "id": "stable32/test/cancel-bounds",
+      "kind": "test",
+      "runnable": "TestStableRing32CancelAndBounds",
+      "scenario": "bounded-competing-consumer-overflow",
+      "title": "Context cancellation, receiver accounting bounds and capacity overwrite policy"
+    },
+    {
+      "id": "stable32/bench/dispatch",
+      "kind": "bench",
+      "runnable": "BenchmarkStableRing32Dispatch",
+      "scenario": "bounded-competing-consumer-overflow",
+      "title": "Condvar ring admission plus dispatch round trip with eight competing waiters"
+    },
+    {
+      "id": "stable32/fuzz/queue-model",
+      "kind": "fuzz",
+      "runnable": "FuzzStableRing32QueueModel",
+      "scenario": "bounded-competing-consumer-overflow",
+      "title": "Serial queue operations against an overwrite-oldest bounded FIFO model"
+    },
+    {
+      "id": "select38/test/cancel-close",
+      "kind": "test",
+      "runnable": "TestSelectFanout38Cancellation",
+      "scenario": "cancellation-and-close-lifecycle",
+      "title": "Cancellable send and lease-draining retirement at membership boundaries"
+    },
+    {
+      "id": "select38/bench/churn",
+      "kind": "bench",
+      "runnable": "BenchmarkSelectFanout38Churn",
+      "scenario": "ephemeral-churn-membership",
+      "title": "Persistent-tree membership churn versus snapshot publication"
+    },
+    {
+      "id": "fanout45/test/lease-close",
+      "kind": "test",
+      "runnable": "TestFanout45LeaseClose",
+      "scenario": "cancellation-and-close-lifecycle",
+      "title": "Buffered and synchronous node leases close without send-on-closed panic"
+    },
+    {
+      "id": "fanout45/bench/buffered",
+      "kind": "bench",
+      "runnable": "BenchmarkFanout45Buffered",
+      "scenario": "buffered-lossless-backpressured",
+      "title": "Intrusive-list buffered publication with deterministic draining"
+    },
+    {
+      "id": "ring45/test/replay-overrun",
+      "kind": "test",
+      "runnable": "TestRingFanout45ReplayAndOverrun",
+      "scenario": "bounded-catchup-replay",
+      "title": "Retained suffix replay and exact detectable overrun accounting"
+    },
+    {
+      "id": "ring45/bench/publish",
+      "kind": "bench",
+      "runnable": "BenchmarkRingFanout45Publish",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Shared-ring publication with eight draining cursors"
+    },
+    {
+      "id": "caster11/test/cas-boundaries",
+      "kind": "test",
+      "runnable": "TestChanCaster11MetaCASBoundaries",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "Lock-free CAS registration, zero-subscriber fast path and withdrawal compensation"
+    },
+    {
+      "id": "caster58/test/helpers",
+      "kind": "test",
+      "runnable": "TestChanCaster58Helpers",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "Padding layout, TryRecv gate behavior and context withdrawal compensation"
+    },
+    {
+      "id": "caster58/bench/try-recv",
+      "kind": "bench",
+      "runnable": "BenchmarkChanCaster58Helpers",
+      "scenario": "rendezvous-cast-no-ack",
+      "title": "Empty TryRecv and successful rendezvous helper cost"
+    },
+    {
+      "id": "lockstep58/test/atomic-pong",
+      "kind": "test",
+      "runnable": "TestChanPubSub58AtomicPong",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Pre-armed atomic countdown, final signal and late join boundaries"
+    },
+    {
+      "id": "lockstep58/test/cancel-ownership",
+      "kind": "test",
+      "runnable": "TestChanPubSub58CancellationOwnership",
+      "scenario": "cancellation-and-close-lifecycle",
+      "title": "Callback/iterator ownership transfer during active rendezvous"
+    },
+    {
+      "id": "lockstep58/bench/send",
+      "kind": "bench",
+      "runnable": "BenchmarkChanPubSub58Send",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Eight-subscriber atomic-pong Send cost"
+    },
+    {
+      "id": "lockstep50/test/parity",
+      "kind": "test",
+      "runnable": "TestGenPubSub50Parity",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Parity WaitGroup generations, completion gate and withdrawal accounting"
+    },
+    {
+      "id": "lockstep50/test/cancel-ownership",
+      "kind": "test",
+      "runnable": "TestGenPubSub50CancellationOwnership",
+      "scenario": "cancellation-and-close-lifecycle",
+      "title": "Generation-aware callback/iterator ownership transfer"
+    },
+    {
+      "id": "lockstep50/bench/send",
+      "kind": "bench",
+      "runnable": "BenchmarkGenPubSub50Send",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "Eight-subscriber parity WaitGroup Send cost"
+    },
+    {
+      "id": "broadcast58/test/ring-generations",
+      "kind": "test",
+      "runnable": "TestBroadcaster58RingAndClose",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Exact missed counts, retained suffix, wide payloads and close drain"
+    },
+    {
+      "id": "broadcast58/test/iterator-edges",
+      "kind": "test",
+      "runnable": "TestBroadcaster58IteratorEdges",
+      "scenario": "cancellation-and-close-lifecycle",
+      "title": "Load-drain-select wake protocol, nil yield and cancellation cleanup"
+    },
+    {
+      "id": "broadcast58/test/wide-payload",
+      "kind": "test",
+      "runnable": "TestBroadcaster58WidePayload",
+      "scenario": "wide-payload-integrity",
+      "title": "Concurrent multi-word ring copies are coherent and monotonic under overwrite"
+    },
+    {
+      "id": "broadcast58/bench/send",
+      "kind": "bench",
+      "runnable": "BenchmarkBroadcaster58Send",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Ring copy plus swap-then-close generation cost"
+    },
+    {
+      "id": "broadcast58/fuzz/ring-model",
+      "kind": "fuzz",
+      "runnable": "FuzzBroadcaster58RingModel",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "Cursor operations compared with an exact bounded-ring model"
+    },
+    {
+      "id": "ring14/test/burst-eviction",
+      "kind": "test",
+      "runnable": "TestRingFanOut14BurstEviction",
+      "scenario": "bounded-async-fanout-dispatch",
+      "title": "Paused two-stage model checks exact input/dispatch drop counters and retained suffix"
+    },
+    {
+      "id": "ring14/test/pool-reuse",
+      "kind": "test",
+      "runnable": "TestRingFanOut14PoolReuse",
+      "scenario": "bounded-async-fanout-dispatch",
+      "title": "Remove drains pooled channels before reuse and pool exhaustion is explicit"
+    },
+    {
+      "id": "ring14/test/close",
+      "kind": "test",
+      "runnable": "TestRingFanOut14Close",
+      "scenario": "cancellation-and-close-lifecycle",
+      "title": "Idempotent Close rejects admission and closes pooled channels after dispatcher exit"
+    },
+    {
+      "id": "ring14/bench/admission",
+      "kind": "bench",
+      "runnable": "BenchmarkRingFanOut14Admission",
+      "scenario": "bounded-async-fanout-dispatch",
+      "title": "Full input-queue and full subscriber-mailbox drop-oldest admission cost"
+    },
+    {
+      "id": "ring14/fuzz/two-stage-model",
+      "kind": "fuzz",
+      "runnable": "FuzzRingFanOut14TwoStageModel",
+      "scenario": "bounded-async-fanout-dispatch",
+      "title": "Paused dispatcher compared with an exact two-stage bounded FIFO model"
+    },
+    {
+      "id": "async-baseline/test/final-value",
+      "kind": "test",
+      "runnable": "TestBaselineAsyncFanoutFinalValue",
+      "scenario": "bounded-async-fanout-dispatch",
+      "title": "Ordinary async baseline retains the final burst value under bounded overload"
+    },
+    {
+      "id": "bounded-scatter/test/evict-exactly-one",
+      "kind": "test",
+      "runnable": "TestBoundedScatterEviction",
+      "scenario": "bounded-competing-consumer-overflow",
+      "title": "Full-queue eviction count and exactly-once retained suffix across competing waiters"
+    },
+    {
+      "id": "bounded-scatter/bench/admission",
+      "kind": "bench",
+      "runnable": "BenchmarkBoundedScatterAdmission",
+      "scenario": "bounded-competing-consumer-overflow",
+      "title": "Nonblocking admission into a full bounded queue"
+    },
+    {
+      "id": "bounded-scatter/fuzz/model",
+      "kind": "fuzz",
+      "runnable": "FuzzBoundedScatterModel",
+      "scenario": "bounded-competing-consumer-overflow",
+      "title": "Ring and ordinary baseline admission/drain operations compared with a bounded FIFO eviction model"
+    },
+    {
+      "id": "bounded-scatter/test/competing-exactly-one",
+      "kind": "test",
+      "runnable": "TestBoundedScatterCompetingExactlyOne",
+      "scenario": "bounded-competing-consumer-overflow",
+      "title": "Non-overflow dispatch to competing workers is exactly once for ring and baseline"
+    },
+    {
+      "id": "beacon08/test/call-point",
+      "kind": "test",
+      "runnable": "TestBeaconSubscribeContextCapturesCallPoint",
+      "scenario": "latest-value-conflating-watch",
+      "title": "Beacon and RingBeacon capture the subscription point at SubscribeContext call time"
+    },
+    {
+      "id": "beacon08/test/ring-call-point",
+      "kind": "test",
+      "runnable": "TestRingBeaconSubscribeContextCapturesCallPoint",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "RingBeacon iterator observes values published before first invocation"
+    },
+    {
+      "id": "beacon08/test/ring-wakeup",
+      "kind": "test",
+      "runnable": "TestRingBeaconSubscribeContextNoLostWakeup",
+      "scenario": "bounded-ring-lossy-detectable",
+      "title": "RingBeacon re-checks after Ready capture so a concurrent Send cannot strand the iterator"
+    },
+    {
+      "id": "beacon08/test/reliable-armed-round",
+      "kind": "test",
+      "runnable": "TestReliableBeaconSubscribeContextCapturesArmedRound",
+      "scenario": "lockstep-barrier-lossless",
+      "title": "ReliableBeacon registration captures the armed round so churn cannot leave an unacknowledged subscription"
+    }
+  ],
+  "scenarios": [
+    {
+      "baseline": "BaselineBarrierPubSub (baseline)",
+      "id": "lockstep-barrier-lossless",
+      "invariants": [
+        "every subscriber receives every value exactly once, in publish order",
+        "Send does not return before every subscriber registered at send time has received (and, where the API separates it, acknowledged)",
+        "no delivery to subscribers registered after the send"
+      ],
+      "kind": "broadcast",
+      "loss": "lossless",
+      "title": "Lock-step lossless broadcast with acknowledgement barrier",
+      "tradeoffs": "Publisher latency is bounded by the slowest subscriber; throughput does not scale with fan-out, in exchange for a hard delivery+ack guarantee and in-order delivery.",
+      "use_case": "Ordered command/config distribution for consumers that must all receive and acknowledge each value before the publisher may proceed"
+    },
+    {
+      "baseline": "ChanCaster",
+      "id": "rendezvous-cast-no-ack",
+      "invariants": [
+        "each Send is received by exactly the receivers registered for that round",
+        "Send's return equals the number of actual receives",
+        "a withdrawing receiver can never hang a Send"
+      ],
+      "kind": "caster",
+      "loss": "lossless",
+      "title": "Rendezvous cast to N receivers without post-receive barrier",
+      "tradeoffs": "Send performs one rendezvous per receiver and returns at receipt, not after processing; cheapest possible synchronous fan-out, but receivers must re-register per round and a missing receiver stalls the sender.",
+      "use_case": "Synchronous hand-off of each value to a known set of receivers for lock-step simulation ticks and staged pipelines where receipt itself is the synchronisation"
+    },
+    {
+      "baseline": "BaselineBarrierPubSub (baseline)",
+      "id": "synchronous-handoff-no-barrier",
+      "invariants": [
+        "every subscriber receives every value in order",
+        "Send returns after handoff to all subscribers registered at send time"
+      ],
+      "kind": "broadcast",
+      "loss": "lossless",
+      "title": "Synchronous handoff broadcast without acknowledgement barrier",
+      "tradeoffs": "Send waits for handoff (receipt/readiness) but not processing; faster than a full barrier and still lossless, but a subscriber that never becomes ready stalls the publisher.",
+      "use_case": "Tick/phase distribution for workers that must all be handed the current value before it is superseded, where processing acknowledgement is unnecessary"
+    },
+    {
+      "baseline": "BaselineBufferedBroadcast (baseline)",
+      "id": "buffered-lossless-backpressured",
+      "invariants": [
+        "while subscribers keep lag below capacity, every value is delivered in order",
+        "Send applies backpressure instead of dropping",
+        "memory stays bounded regardless of publish volume"
+      ],
+      "kind": "broadcast",
+      "loss": "lossless",
+      "title": "Buffered lossless broadcast with backpressure",
+      "tradeoffs": "Memory is bounded by per-subscriber capacity; publisher can be stalled by the slowest consumer (or must use a context/try variant); delivery stays lossless and ordered while lag \u003c capacity.",
+      "use_case": "Event streaming for consumers with independent pacing and bounded lag tolerance, where no event may be lost and a lagging consumer should slow the publisher rather than drop data"
+    },
+    {
+      "baseline": "BaselineFanout (standard)",
+      "id": "bounded-ring-lossy-detectable",
+      "invariants": [
+        "received values are strictly increasing (no duplicates, no reordering, no torn values)",
+        "the final value is always eventually observable",
+        "Send never blocks on a slow consumer"
+      ],
+      "kind": "broadcast",
+      "loss": "lossy-detectable",
+      "title": "Bounded ring broadcast, lossy under overrun with detectable skips",
+      "tradeoffs": "Send is O(1)-ish and never waits for consumers; consumers that fall more than capacity behind lose values, but the loss is reported (skipped/missed) so they can resync.",
+      "use_case": "High-rate telemetry/market-data style feeds for many consumers where keeping up matters more than completeness and a consumer must be able to tell (and count) what it missed"
+    },
+    {
+      "baseline": "BaselineLatestBroadcast (baseline)",
+      "id": "latest-value-conflating-watch",
+      "invariants": [
+        "observed values are strictly increasing and the latest published value is always eventually observed",
+        "Send never blocks on any subscriber",
+        "no stale value is observed after a newer one"
+      ],
+      "kind": "broadcast",
+      "loss": "coalescing-latest",
+      "title": "Latest-value conflating broadcast / watch",
+      "tradeoffs": "Intermediate values may be conflated away entirely; in exchange Send is non-blocking, cheap at any fan-out, and watchers can never be stalled by (or stall) the publisher.",
+      "use_case": "State observation — configuration snapshots, health/progress, cache invalidation — for watchers that only ever care about the newest state and integrate with select"
+    },
+    {
+      "baseline": "BaselineBufferedBroadcast (baseline)",
+      "id": "unbounded-catchup-replay",
+      "invariants": [
+        "every subscriber can eventually read every value published after it subscribed, in order, however far behind it falls"
+      ],
+      "kind": "broadcast",
+      "loss": "lossless",
+      "title": "Unbounded catch-up broadcast (full history replay)",
+      "tradeoffs": "Delivery is lossless for arbitrarily lagging consumers; in exchange memory retention is pinned by the slowest live consumer and grows without bound if one never reads.",
+      "use_case": "Audit/event-sourcing style distribution for late or slow consumers that must eventually see every value in order, where retention cost is accepted"
+    },
+    {
+      "baseline": "BaselineBoundedReplay (baseline)",
+      "id": "bounded-catchup-replay",
+      "invariants": [
+        "a joining observer sees the retained suffix in order with no gap or duplicate at the live boundary",
+        "all values published after registration are delivered once in order",
+        "retention is bounded by configured capacity and older history is intentionally absent"
+      ],
+      "kind": "broadcast",
+      "loss": "lossless",
+      "title": "Bounded recent-history catch-up with lossless live delivery",
+      "tradeoffs": "Memory remains bounded and a new observer can replay the recent window atomically with live registration; a larger window costs more snapshot/copy work and cannot satisfy full audit-history requirements.",
+      "use_case": "Late observers need a recent context window before joining a live, ordered stream, and deliberately accept that history older than a fixed retention bound is unavailable"
+    },
+    {
+      "baseline": "BaselineQueuedFanout (baseline)",
+      "id": "nonblocking-lossless-overflow",
+      "invariants": [
+        "every active subscription receives every accepted value exactly once in FIFO order",
+        "Send does not wait for consumer readiness",
+        "a slow consumer's backlog does not reorder or block another consumer",
+        "withdrawal stops future admission without losing already accepted backlog"
+      ],
+      "kind": "broadcast",
+      "loss": "lossless",
+      "title": "Nonblocking lossless fan-out with private unbounded overflow",
+      "tradeoffs": "Slow consumers are isolated in private FIFO queues and cannot apply backpressure or cause loss; retained memory grows with lag and can exhaust the process, unlike bounded rings or backpressured buffers.",
+      "use_case": "Event notification where a publisher must never wait for any consumer and every active consumer must eventually receive every value, accepting per-consumer memory growth as the price"
+    },
+    {
+      "baseline": "BaselineScatterQueue",
+      "id": "work-distribution-scatter",
+      "invariants": [
+        "every dispatched value is received by exactly one receiver",
+        "Send returns 0 iff no receiver was registered, 1 iff exactly one received (including via steal compensation)",
+        "withdrawal of the last receiver never hangs a Send"
+      ],
+      "kind": "scatter",
+      "loss": "exactly-one",
+      "title": "Work distribution to exactly one receiver (scatter / competing consumers)",
+      "tradeoffs": "No broadcast cost and natural load balancing (whichever worker is ready wins); in exchange delivery is exactly-one, so this is useless for notification, and a withdrawing worker must never orphan an in-flight dispatch.",
+      "use_case": "Task dispatch for a dynamic worker pool where each item must be processed by exactly one worker and workers join/leave freely"
+    },
+    {
+      "baseline": "BaselineAsyncFanout (baseline)",
+      "id": "bounded-async-fanout-dispatch",
+      "invariants": [
+        "Send never blocks on subscriber readiness",
+        "input and dispatch eviction are separately counted",
+        "each subscriber observes retained values in increasing order without duplicates",
+        "the final value of a burst is eventually observable after overload clears"
+      ],
+      "kind": "broadcast",
+      "loss": "lossy-detectable",
+      "title": "Bounded asynchronous fan-out dispatch with detectable overload",
+      "tradeoffs": "A central input queue absorbs bursts and decouples publication from fan-out, but adds dispatch latency and a second loss stage; pooled channels bound allocation while slow subscribers lose oldest mail with observable counters.",
+      "use_case": "Bursty event publication where the publisher should enqueue quickly and a dispatcher fans out to independent subscriber mailboxes, accepting bounded loss when either stage overloads"
+    },
+    {
+      "baseline": "BaselineBoundedScatterQueue (baseline)",
+      "id": "bounded-competing-consumer-overflow",
+      "invariants": [
+        "each retained value is received by at most one worker",
+        "accepted values that are not evicted are received exactly once in FIFO order",
+        "admission never blocks on worker readiness",
+        "overwrite-oldest eviction increments an exact dropped count"
+      ],
+      "kind": "scatter",
+      "loss": "lossy-detectable",
+      "title": "Bounded competing-consumer dispatch with explicit overload eviction",
+      "tradeoffs": "Unlike rendezvous scatter, admission does not wait for a worker; unlike lossless work distribution, a full queue evicts pending work. The drop counter makes overload visible and the retained suffix remains FIFO.",
+      "use_case": "Work queues where admission must remain nonblocking and memory must stay bounded, but each accepted item is processed by exactly one worker and overload may evict the oldest pending item with an observable counter"
+    },
+    {
+      "baseline": "BaselineGatherBarrier",
+      "id": "signal-gather-barrier",
+      "invariants": [
+        "Wait returns after exactly one signal per registered sender",
+        "a withdrawing sender is compensated so Wait cannot hang",
+        "Wait's return equals the number of real (non-compensated) signals"
+      ],
+      "kind": "gather",
+      "loss": "gather-all",
+      "title": "Signal gathering from N senders (N-to-1 barrier)",
+      "tradeoffs": "Wait performs one rendezvous per registered sender; a sender that withdraws without signalling must be compensated or Wait hangs, which is the central correctness hazard of the family.",
+      "use_case": "Phase/completion barriers for a dynamic set of producers whose signals must all be collected before a coordinator proceeds (the dual of casting)"
+    },
+    {
+      "baseline": "BaselineFanIn (baseline)",
+      "id": "bounded-fanin-merge",
+      "invariants": [
+        "every accepted value is observed by the consumer exactly once, in per-producer FIFO order",
+        "TryPush/TryPushBatch report refusal (false/short count) exactly when the value was not accepted — loss is observable at push time",
+        "total buffered values never exceed the sum of lane capacities",
+        "after Close returns, all accepted values are drainable and Next eventually reports closure"
+      ],
+      "kind": "fanin",
+      "loss": "lossy-detectable",
+      "title": "Bounded fan-in merge (M producers, one batch-oriented consumer)",
+      "tradeoffs": "The consumer is a single serialization point, unlike broadcast; producers must never block behind a slow consumer, so each lane is bounded and drops newest values at push time (counted at push), trading completeness for liveness and bounded memory. Ordering is FIFO per producer only; there is deliberately no global order, which removes any temptation for cross-lane coordination.",
+      "use_case": "Ingestion and telemetry lanes where many independent producers stream into a single batch-oriented consumer (log pipelines, metrics fan-in, agent work completion queues) with bounded memory and overload that must drop, never block"
+    },
+    {
+      "baseline": "BaselineFanout (standard)",
+      "id": "ephemeral-churn-membership",
+      "invariants": [
+        "within one subscription session, values are never duplicated or reordered",
+        "churn never deadlocks, panics or corrupts a publisher",
+        "every long-lived session eventually observes the final value (lossless variants) or the latest value (conflating variants)"
+      ],
+      "kind": "broadcast",
+      "loss": "lossy-detectable",
+      "title": "Broadcast under ephemeral membership (high subscribe/unsubscribe churn)",
+      "tradeoffs": "Subscribe/unsubscribe cost and its contention with Send dominate; implementations that rebuild or lock the whole registry per membership change degrade, while per-value guarantees may legitimately weaken to 'no corruption, no stall, no duplicate/reordered delivery within a session'.",
+      "use_case": "Short-lived consumer workloads — per-request subscriptions, websocket sessions, plugin hooks — where subscriptions are created and destroyed continuously while publishing proceeds"
+    },
+    {
+      "baseline": "BaselineFanout (standard)",
+      "id": "large-fanout-scalability",
+      "invariants": [
+        "correctness invariants of the implementation's own loss policy hold at N=32 in tests (N up to 512 in benchmarks)",
+        "Send completes without deadlock at full fan-out"
+      ],
+      "kind": "broadcast",
+      "loss": "lossy-detectable",
+      "title": "Broadcast at large fan-out (hundreds of subscribers)",
+      "tradeoffs": "O(N)-rendezvous designs pay linearly per Send; O(1)-wake designs pay in buffering/conflation. The scenario measures that scaling honestly rather than declaring a universal winner.",
+      "use_case": "Fan-out to hundreds of simultaneous consumers for dashboards, game-state replication and notification storms, where per-Send cost scaling with N is the deciding factor"
+    },
+    {
+      "baseline": "BaselineFanout_c64",
+      "id": "wide-payload-integrity",
+      "invariants": [
+        "no consumer ever observes a torn value (all words equal)",
+        "values are never duplicated or reordered within a session"
+      ],
+      "kind": "payload",
+      "loss": "lossy-detectable",
+      "title": "Wide/multi-word payload broadcast integrity",
+      "tradeoffs": "Pointer/slot publication costs an indirection but guarantees atomic observation; direct struct writes into shared slots are faster but can tear or trip the race detector under overrun.",
+      "use_case": "Dissemination of multi-word values (structs, snapshots, frames) for consumers that must never observe a torn, half-published value"
+    },
+    {
+      "baseline": "BaselineFanout (standard)",
+      "id": "cancellation-and-close-lifecycle",
+      "invariants": [
+        "a cancelled subscriber stops promptly and never blocks a publisher afterwards",
+        "Close (where it exists) is idempotent",
+        "no facet exercises a lifecycle operation the implementation does not document"
+      ],
+      "kind": "broadcast",
+      "loss": "lossy-detectable",
+      "title": "Cancellation and close lifecycle",
+      "tradeoffs": "Implementations without a Close/context story are structurally limited here regardless of hot-path merit; facets must only exercise the lifecycle an implementation actually documents.",
+      "use_case": "Long-running services where contexts are cancelled and broadcasters are closed mid-stream, and shutdown must be prompt, idempotent and leak-free"
+    },
+    {
+      "baseline": "BaselineFanout (standard)",
+      "id": "zero-subscriber-and-edge-lifecycle",
+      "invariants": [
+        "Publish with zero subscribers never blocks and reports 0 (or the documented equivalent)",
+        "a subscriber registered after idle publishes receives subsequent values per the scenario's loss policy"
+      ],
+      "kind": "broadcast",
+      "loss": "lossless",
+      "title": "Zero-subscriber and edge lifecycle",
+      "tradeoffs": "Fast paths for the empty case matter for idle-heavy workloads; several synchronous designs legitimately treat 'no subscribers' specially, which must be verified rather than assumed.",
+      "use_case": "Idle-period publishing and start-up/shut-down edges for any broadcaster: publishing with nobody listening, subscribing after idle periods, double unsubscribe"
+    }
+  ],
+  "schema": 1,
+  "type": "registry"
+}
