@@ -378,9 +378,11 @@ blocks). Both are documented in their attachment remarks.
 - #64 shipped no benchmarks; four were added in the completion phase
   (`BenchmarkBeacon64GLM_*` in `beacon_64_glm_test.go`: publish with no
   watcher, publish then read, snapshot, publish with eight blocked watchers).
-- #64’s ARM64 fence (`beacon_64_glm_fence_arm64.s`, `DMB ISHLD/ISH`) is
-  compile-verified only; untested on ARM hardware. AMD64 fences are covered by
-  the full amd64 suite; GOARCH=386 is green as of the portability batch above.
+- #64’s ARM64 fence (`beacon_64_glm_fence_arm64.s`, `DMB ISHLD/ISH`) has
+  been executed under an ARMv8 emulator, one function at a time, and never on
+  ARM hardware; see "arm64 assembly: executed under emulation" below. AMD64
+  fences are covered by the full amd64 suite; GOARCH=386 is green as of the
+  portability batch above.
 - `Build tags`: fast slot paths are `!race`; `-race` swaps in the atomic slot
   protocol (`beacon_64_glm_slot_race.go`) or per-slot mutex
   (`horizon_70_meta_slot_race.go`) so the race detector verifies the same
@@ -452,15 +454,40 @@ it; delivery is sequential, so one slow subscriber delays the rest; a
 compensated delivery may be counted as zero; break-compensation is slow at
 GOMAXPROCS=1 (about 20 ms per iteration here).
 
-### 72 — bitmap scan kernels (six repairs, not wired)
+### 72 — bitmap scan kernels (six repairs; wired in the second pass)
 
 The response describes hoisting the scan into assembly but its wiring sketch
-does not compile, so the kernels stand alone: parity-tested against a
-reference implementation and fuzzed, **excluded from every measurement**.
-Repairs: the compile error; a POPCNT feature guard; a destination bounds
-check; normalisation of the start index; a dead `CMOVQGE`; `VUADDLV` on arm64.
-The arm64 file assembles and vets (`GOARCH=arm64`); **it has never been
-executed** — no arm64 hardware or emulator was available.
+does not compile. Repairs to the kernels themselves: the compile error; a
+POPCNT feature guard; a destination bounds check; normalisation of the start
+index; a dead `CMOVQGE`; `VUADDLV` on arm64. They are parity-tested against a
+reference implementation and fuzzed.
+
+In the first completion report they stood alone. They are now wired in:
+`PhaseCaster72Gemini` keeps its per-bank masks in two contiguous arrays
+(`activeMasks`, `allocMasks`) instead of inside each padded bank, every
+broadcast calls `scanActiveBanks72Gemini`, and every subscribe calls
+`findNonFullBank72Gemini`. Measurement runs up to 04 predate this.
+
+What the wiring costs and buys, linux/amd64, 2 vCPU, GOMAXPROCS 2, median of
+6 runs of 150 ms, ns per operation (`BenchmarkPhaseCaster72Gemini_*`):
+
+| Benchmark | banks | masks inside banks (before) | contiguous, Go loop | contiguous, assembly (now) |
+|---|---|---|---|---|
+| Broadcast, no subscribers | 4 (default) | 123 | 123 | 131 |
+| | 64 | 205 | 183 | 161 |
+| | 1024 | 1518 | 1146 | 778 |
+| Subscribe + Unsubscribe, only the last bank free | 4 (default) | 68 | 69 | 74 |
+| | 64 | 129 | 106 | 107 |
+| | 1024 | 1320 | 808 | 717 |
+
+So at the default size (256 slots) the wired version is 6 to 9 percent
+slower on these two paths: the assembly call costs more than it saves over
+four words. At 64 banks and above it is faster, and most of that gain comes
+from the contiguous layout, not from the assembly. The masks of neighbouring
+banks now share cache lines, which the original layout avoided; that cost
+would show under concurrent subscribe and unsubscribe on different banks and
+was not measured (2 CPUs). The scenario benchmarks, which are dominated by
+channel handoffs, did not move outside run-to-run variation.
 
 ### 72 — SymExchanger72Gemini (three repairs)
 
@@ -630,6 +657,43 @@ Also in the second pass:
   everything already published; the adapter now tail-attaches like the other
   ring adapters and #63 is attached to `zero-subscriber-and-edge-lifecycle`.
 
+### arm64 assembly: executed under emulation
+
+No arm64 hardware and no `qemu-aarch64` were available (the sandbox reaches
+only GitHub, PyPI and npm, and has no root). The assembly was therefore
+executed one routine at a time: the test binary was cross-compiled
+(`GOARCH=arm64 go test -c`), each routine's machine code was read out of it
+with `go tool objdump`, and it was run on Unicorn 2.1.4's ARMv8 CPU model
+(PyPI package `unicorn`) with arguments laid out on the stack as Go's ABI0
+does, comparing results with the Go reference loops. The driver is a scratch
+Python script and is not committed (AGENTS.md allows no Python in the
+repository).
+
+| Routine | Cases | Result |
+|---|---|---|
+| `asmScanAndPopcnt72Gemini` | 200: lengths 0 to 19, 63, 64, 65, 255, 1024; random, all-zero, all-one and single-bit words; negative length | count, copied words and no write past the destination all match |
+| `asmFindNonFullBank72Gemini` | 544: lengths 0 to 11, 64, 65, 300; all full, all free, up to two free banks; several start indexes | index matches, including wrap-around and -1 |
+| `asmHasPopcnt72Gemini` | 1 | returns true |
+| `asmCPUPause72Gemini`, `fenceAcquire64GLM`, `fenceRelease64GLM`, `spinHint64GLM` | each on two CPU models | the expected instruction word executes and the routine returns to its caller with the link register unchanged |
+
+**This found a defect.** `spinHint64GLM` in `beacon_64_glm_fence_arm64.s` was
+written as `WORD $0xd503233f // YIELD`. That word is `HINT #25`, which is
+`PACIASP` (sign the link register with the stack pointer); `YIELD` is
+`HINT #1`, `0xd503203f`. Go's own disassembler prints the shipped word as
+`HINT $25`. The function is declared and never called, so the wrong
+instruction never ran. It is now written with the assembler's `YIELD`
+mnemonic. What the wrong word would do on hardware with pointer
+authentication enabled was not established here.
+
+Limits of this check. It shows the instructions compute the right results.
+It does not exercise the routines inside a running Go program on arm64, and
+an emulator says nothing about the memory-ordering effect of the `DMB`
+fences or the acquire loads, which only real multi-core arm64 hardware can
+show. `make verify-arm64` runs the tests of the implementations concerned as
+an arm64 binary, natively or under `qemu-aarch64`; it fails when neither is
+available, and it has not been run to completion anywhere: only its build
+step and its failure path were exercised here.
+
 Measurement run 04 measured the defective versions of #28, #29, #30, #31,
 #47, `BaselineBarrierPubSub` and the `EpochPubSub` adapter. Its numbers for
 those implementations are superseded by the run that follows these repairs.
@@ -638,5 +702,5 @@ those implementations are superseded by the run that follows these repairs.
 
 - No measurement battery for the exchange and barrier scenarios (Go
   benchmarks only).
-- The #72 bitmap kernels are not wired into the broadcaster.
-- arm64 assembly (#64 fence, #72 bitmap) is assembled, never executed.
+- arm64 assembly (#64 fence, #72 bitmap) has run under an emulator, one
+  function at a time, and never on arm64 hardware (next section).
