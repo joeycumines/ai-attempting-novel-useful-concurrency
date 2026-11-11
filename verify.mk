@@ -112,6 +112,7 @@ verify.fuzz: ## Fuzz every target matching VERIFY_FUZZ for VERIFY_FUZZTIME each.
 	@$(VERIFY_SH) { \
 	  targets=$$(go test -list '$(VERIFY_FUZZ)' . | grep '^Fuzz'); \
 	  test -n "$$targets" || { echo 'verify.fuzz: no fuzz targets match $(VERIFY_FUZZ)'; exit 1; }; \
+	  echo "== go test -run=NONE -fuzz='^TARGET\$$' -fuzztime=$(VERIFY_FUZZTIME) -timeout $(VERIFY_TIMEOUT) . (once for each target)"; \
 	  for t in $$targets; do \
 	    echo "== $$t ($(VERIFY_FUZZTIME))"; \
 	    go test -run=NONE -fuzz="^$$t\$$" -fuzztime=$(VERIFY_FUZZTIME) -timeout $(VERIFY_TIMEOUT) .; \

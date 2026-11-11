@@ -140,6 +140,9 @@ func collectCasterTrace(x casterLike, ops, maxEvents int, deadline time.Duration
 		mu.Unlock()
 	}
 
+	// The sender waits, before each Send, for the receivers that took the
+	// previous value to register again (see casterRounds). Without that the
+	// trace of a caster is a column of Sends that deliver nothing.
 	const receivers = 3
 	if !x.rearmEach {
 		for i := 0; i < receivers; i++ {
@@ -147,6 +150,7 @@ func collectCasterTrace(x casterLike, ops, maxEvents int, deadline time.Duration
 		}
 	}
 	stop := make(chan struct{})
+	ready := make(chan struct{}, receivers)
 	var wg sync.WaitGroup
 	for r := 0; r < receivers; r++ {
 		r := r
@@ -156,6 +160,12 @@ func collectCasterTrace(x casterLike, ops, maxEvents int, deadline time.Duration
 			for {
 				if x.rearmEach {
 					x.add(1)
+				}
+				select {
+				case ready <- struct{}{}:
+				case <-stop:
+					x.add(-1)
+					return
 				}
 				select {
 				case v := <-x.c:
@@ -181,8 +191,18 @@ func collectCasterTrace(x casterLike, ops, maxEvents int, deadline time.Duration
 				panicked.Store(true)
 			}
 		}()
+		toArm := receivers
 		for i := 1; i <= ops; i++ {
-			x.send(i)
+			for ; toArm > 0; toArm-- {
+				select {
+				case <-ready:
+				case <-stop:
+					return
+				}
+			}
+			if k := x.send(i); k > 0 {
+				toArm = min(k, receivers)
+			}
 			opsDone.Add(1)
 			appendEvent(traceEvent{T: time.Since(start).Nanoseconds(), Lane: 0, Kind: "pub", Seq: i})
 		}
@@ -194,6 +214,8 @@ func collectCasterTrace(x casterLike, ops, maxEvents int, deadline time.Duration
 			outcome = "sender_panicked"
 		}
 	case <-time.After(deadline):
+		// Either a Send is blocked, or the sender is waiting for a receiver
+		// that a Send reported as served and that never took the value.
 		outcome = "sender_blocked"
 	}
 	close(stop)

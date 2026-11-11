@@ -127,7 +127,7 @@ measure.gates: SHELL := bash
 measure.gates: ## Run `make verify`, record what it reported as slot 06 of the newest run, and regenerate that run's evaluation.
 	rm -rf $(MEASURE_GATES_LOG) && mkdir -p $(MEASURE_GATES_LOG)
 	cd $(PROJECT_ROOT) && { $(MAKE) --keep-going verify.all VERIFY_LOG=$(MEASURE_GATES_LOG) || true; } && \
-	  $(MEASURE_HARNESS) gates --log $(MEASURE_GATES_LOG) --out $(REPORT_STEM)-06-gates.json; rc=$$?; \
+	  $(MEASURE_HARNESS) gates --log $(MEASURE_GATES_LOG) --run $(REPORT_IN) --out $(REPORT_STEM)-06-gates.json; rc=$$?; \
 	  $(MEASURE_HARNESS) evaluate --in $(REPORT_IN) && $(MAKE) site.build && exit $$rc
 
 .PHONY: measure.ci

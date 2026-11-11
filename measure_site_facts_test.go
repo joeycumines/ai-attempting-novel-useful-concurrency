@@ -347,6 +347,9 @@ func renderSiteFacts(page string, cat siteCatalog, facts siteFacts) string {
 		if r.Generator == "1.0.0" {
 			cards.WriteString(`            <li><span class="dot"></span> <strong>Record contract 1.0.0:</strong> stall resilience was not recorded and small families were scored; its scores are not comparable with later runs</li>` + "\n")
 		}
+		if generatorBefore(r.Generator, casterDeliveryContract) {
+			cards.WriteString(`            <li><span class="dot"></span> <strong>Caster family not ranked:</strong> this run's caster batteries timed Sends that delivered nothing; runs under record contract ` + casterDeliveryContract + ` or later measure delivery</li>` + "\n")
+		}
 		if _, ok := r.file("06"); ok {
 			cards.WriteString(`            <li><span class="dot"></span> <strong>Gates recorded:</strong> the evaluation states what <code>make verify</code> reported</li>` + "\n")
 		}
