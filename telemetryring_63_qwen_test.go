@@ -130,3 +130,34 @@ func BenchmarkRing_Latest(b *testing.B) {
 		r.Latest()
 	}
 }
+
+// TestRing_HeadTailAttach covers Head, added in the completion phase: a
+// cursor of Head()+1 skips everything already published, where a zero cursor
+// replays the retained history.
+func TestRing_HeadTailAttach(t *testing.T) {
+	r := NewTelemetryRing63Qwen[int](8, false)
+	if h := r.Head(); h != 0 {
+		t.Fatalf("Head of an empty ring = %d, want 0", h)
+	}
+	for v := 1; v <= 5; v++ {
+		r.Publish(v)
+	}
+	if h := r.Head(); h != 5 {
+		t.Fatalf("Head after 5 publishes = %d, want 5", h)
+	}
+	tail := r.Head() + 1
+	if v, ok := r.Next(&tail); ok {
+		t.Fatalf("a tail-attached cursor read %d before anything new was published", v)
+	}
+	replay := uint64(0)
+	if v, ok := r.Next(&replay); !ok || v != 1 {
+		t.Fatalf("a zero cursor read (%d, %v), want the first retained value (1, true)", v, ok)
+	}
+	r.Publish(6)
+	if v, ok := r.Next(&tail); !ok || v != 6 {
+		t.Fatalf("the tail-attached cursor read (%d, %v), want (6, true)", v, ok)
+	}
+	if v, ok := r.Next(&tail); ok {
+		t.Fatalf("the tail-attached cursor read %d again", v)
+	}
+}

@@ -255,10 +255,10 @@ func (a *telemetryRing63QwenAdapter) Publish(v int) int  { a.r.Publish(v); retur
 func (a *telemetryRing63QwenAdapter) Close()             {} // no Close by design
 func (a *telemetryRing63QwenAdapter) IsCoalescing() bool { return true }
 func (a *telemetryRing63QwenAdapter) Subscribe() BroadcastSubscriber {
-	// Subscribers replay from the first retained value; zero-subscriber
-	// facets are not attached because the ring exposes no published-count
-	// accessor to tail-attach cheaply.
-	return &telemetryRing63QwenSub{r: a.r, cursor: 0}
+	// Tail attach: a subscriber sees values published after it subscribed,
+	// like every other ring adapter. (A cursor of zero would replay the
+	// retained history.)
+	return &telemetryRing63QwenSub{r: a.r, cursor: a.r.Head() + 1}
 }
 
 type telemetryRing63QwenSub struct {
@@ -560,7 +560,7 @@ func portBroadcastAttachments() []Attachment {
 		att("ephemeral-churn-membership", "Latest3260Terra (60-Terra)", "Watchers are stateless; attach/detach is a free read of the atomic word.", true),
 		att("ephemeral-churn-membership", "Pulse61Deepseek (61-DeepSeek)", "Watchers register only while parked in WaitFor; churn costs one wait-free slot per active waiter.", true),
 		att("ephemeral-churn-membership", "WatchCell69Deepseek (69-DeepSeek)", "Watchers are stateless cursors over an epoch counter; churn never mutates publisher state.", true),
-		att("ephemeral-churn-membership", "TelemetryRing63Qwen (63-Qwen)", "Readers replay from retained history independently; no membership registry exists.", true),
+		att("ephemeral-churn-membership", "TelemetryRing63Qwen (63-Qwen)", "Readers are independent cursors over the ring; no membership registry exists, so joining and leaving cost nothing.", true),
 		att("ephemeral-churn-membership", "Beacon64GLM (64-GLM)", "Watchers hold private cursors; no registry, no fan-out state.", true),
 		att("ephemeral-churn-membership", "Broadcaster65Deepseek (65-DeepSeek)", "Subscriptions are independent cursors; churn does not touch the publish path.", true),
 		att("ephemeral-churn-membership", "Horizon66Gemini (66-Gemini)", "Stateless cursors; subscription churn never mutates ring state.", true),
@@ -572,6 +572,7 @@ func portBroadcastAttachments() []Attachment {
 		att("zero-subscriber-and-edge-lifecycle", "Latest3260Terra (60-Terra)", "Publish with no watchers is a single atomic word swap.", true),
 		att("zero-subscriber-and-edge-lifecycle", "Pulse61Deepseek (61-DeepSeek)", "Publish with no watchers is an atomic store and a no-op broadcast.", true),
 		att("zero-subscriber-and-edge-lifecycle", "WatchCell69Deepseek (69-DeepSeek)", "Publish with no watchers is a store plus an O(1) wake broadcast.", true),
+		att("zero-subscriber-and-edge-lifecycle", "TelemetryRing63Qwen (63-Qwen)", "Publish with no readers is two seqlock stores, a slot write, a head store and one non-blocking notifier send. A late reader attaches at Head()+1.", true),
 		att("zero-subscriber-and-edge-lifecycle", "Beacon64GLM (64-GLM)", "Publish with no watchers arms no gate; one claim CAS and a fenced slot write.", true),
 		att("zero-subscriber-and-edge-lifecycle", "Broadcaster65Deepseek (65-DeepSeek)", "Publish with no subscriptions writes the slot and advances head.", true),
 		att("zero-subscriber-and-edge-lifecycle", "Horizon66Gemini (66-Gemini)", "Publish with no readers is one sequence claim and a slot write.", true),
