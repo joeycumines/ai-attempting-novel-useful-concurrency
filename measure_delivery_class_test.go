@@ -349,3 +349,50 @@ func TestScoresCSVCarriesTheDeliveryClass(t *testing.T) {
 		}
 	}
 }
+
+// A group whose members the headline cost does not separate is not ranked:
+// with every interval overlapping the median member's, the order is noise.
+// One whose members stand apart is.
+func TestGroupTheMeasurementDoesNotSeparateIsNotRanked(t *testing.T) {
+	family := func(spread, half float64) []map[string]any {
+		var metrics []map[string]any
+		for i := range 7 {
+			mean := 700 + spread*float64(i)
+			metrics = append(metrics, map[string]any{"type": "metric", "family": "caster", "impl": fmt.Sprintf("C%d", i), "metric": "send_ns_op",
+				"dims": map[string]any{"receivers": 8.0}, "mean": mean, "ci95_low": mean - half, "ci95_high": mean + half})
+		}
+		return metrics
+	}
+	// 700 to 760 ns with intervals of 100 ns either way: nobody stands apart.
+	close := family(10, 100)
+	dd := deriveReport(&reportData{meta: map[string]any{"generator_version": measureGeneratorVersion}, metrics: close}, nil)
+	s := dd.Scores["caster"]["C0"]
+	if s.Ranked || s.Score != 0 || s.Verdict != "Not ranked (not distinguishable)" || !strings.Contains(s.UnrankedReason, "tells apart only 0 of the 21 pairs of its 7") {
+		t.Errorf("overlapping intervals: %+v", s)
+	}
+	if reason, no := dd.Unranked["caster"]; !no || reason != s.UnrankedReason || dd.UnrankedSince["caster"] != "" {
+		t.Errorf("family: unranked=%v %q since %q", no, reason, dd.UnrankedSince["caster"])
+	}
+	// 700 to 1,300 ns with intervals of 20 ns: every one stands apart.
+	apart := family(100, 20)
+	dd = deriveReport(&reportData{meta: map[string]any{"generator_version": measureGeneratorVersion}, metrics: apart}, nil)
+	if s := dd.Scores["caster"]["C0"]; !s.Ranked || s.Dims["throughput"] != 100 {
+		t.Errorf("separated intervals: %+v", s)
+	}
+	if same, n, others, ok := indistinguishable(apart, "send_ns_op", "caster", 8, []string{"C0", "C1", "C2", "C3", "C4", "C5", "C6"}); same || n != 21 || others != 21 || !ok {
+		t.Errorf("indistinguishable = %v, %d of %d pairs, ok=%v", same, n, others, ok)
+	}
+	// A tight cluster of four among seven: 6 pairs inside the cluster overlap,
+	// the other 15 of 21 do not, and the group is ranked.
+	cluster := family(100, 20)
+	for i := range 4 {
+		cluster[i]["mean"], cluster[i]["ci95_low"], cluster[i]["ci95_high"] = 700.0+float64(i), 680.0, 720.0
+	}
+	if same, n, pairs, _ := indistinguishable(cluster, "send_ns_op", "caster", 8, []string{"C0", "C1", "C2", "C3", "C4", "C5", "C6"}); same || n != 15 || pairs != 21 {
+		t.Errorf("cluster of four: same=%v, %d of %d pairs", same, n, pairs)
+	}
+	// Records without intervals: the rule does not apply, and nothing changes.
+	if _, _, _, ok := indistinguishable([]map[string]any{{"family": "caster", "impl": "C0", "metric": "send_ns_op", "mean": 1.0}}, "send_ns_op", "caster", -1, []string{"C0"}); ok {
+		t.Error("the rule was applied to records without intervals")
+	}
+}

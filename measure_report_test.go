@@ -398,6 +398,49 @@ func percentileRank(values []float64, v float64, lowerIsBetter bool) int {
 	return int(math.Round(100 * (float64(worse) + 0.5*float64(same)) / float64(n-1)))
 }
 
+// indistinguishable decides whether the headline cost separates the members
+// of a scoring group. It takes the 95 percent interval of each member's
+// headline record and counts the pairs of members whose intervals do not
+// overlap. When fewer than half of the pairs can be told apart, a percentile
+// rank would mostly be ordering noise: two runs of the caster family, whose
+// thirteen members send in 680 to 1,130 ns with intervals of 30 to 240 ns
+// (about one pair in five apart), put different implementations first and
+// moved the same implementation from 2nd to 7th.
+//
+// apart is the number of pairs told apart, of pairs. ok is false when the
+// rule cannot be applied (fewer than two members carry an interval).
+func indistinguishable(metrics []map[string]any, metric, family string, dims int, impls []string) (same bool, apart, pairs int, ok bool) {
+	member := map[string]bool{}
+	for _, impl := range impls {
+		member[impl] = true
+	}
+	type interval struct{ lo, hi float64 }
+	var ivs []interval
+	for _, m := range metrics {
+		if m["metric"] != metric || m["family"] != family || (dims >= 0 && dimsSubs(m) != dims) {
+			continue
+		}
+		impl, _ := m["impl"].(string)
+		lo, okLo := m["ci95_low"].(float64)
+		hi, okHi := m["ci95_high"].(float64)
+		if member[impl] && okLo && okHi {
+			ivs = append(ivs, interval{lo, hi})
+		}
+	}
+	if len(ivs) < 2 {
+		return false, 0, 0, false
+	}
+	for i := range ivs {
+		for j := i + 1; j < len(ivs); j++ {
+			pairs++
+			if ivs[i].hi < ivs[j].lo || ivs[j].hi < ivs[i].lo {
+				apart++
+			}
+		}
+	}
+	return 2*apart < pairs, apart, pairs, true
+}
+
 // uniformValues reports whether a dimension has the same value for every
 // member of a scoring group of more than one.
 func uniformValues(values []float64) bool {
@@ -589,6 +632,13 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			} else if !ranked && validSince == "" && grp.class != "" {
 				unrankedReason = fmt.Sprintf("%d implementations measured in the delivery class \"%s\", fewer than the %d a percentile score needs", len(impls), deliveryClassLabel(grp.class), minRankedImpls)
 			}
+			indistinct := false
+			if ranked && thrMetric != "" {
+				if same, apart, pairs, ok := indistinguishable(data.metrics, thrMetric, family, thrDims, impls); ok && same {
+					ranked, validSince, indistinct = false, "", true
+					unrankedReason = fmt.Sprintf("the cost of one %s tells apart only %d of the %d pairs of its %d implementations (the 95 percent intervals of the other pairs overlap), which is fewer than half, so a percentile rank would mostly order noise", strings.TrimSuffix(thrMetric, "_ns_op"), apart, pairs, len(impls))
+				}
+			}
 			anyRanked = anyRanked || ranked
 			if gi == 0 {
 				firstReason, firstSince = unrankedReason, validSince
@@ -702,7 +752,9 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 					verdict = "Do not adopt (integrity failure)"
 				case !ranked:
 					verdict = fmt.Sprintf("Not ranked (family of %d)", len(impls))
-					if grp.class != "" {
+					if indistinct {
+						verdict = "Not ranked (not distinguishable)"
+					} else if grp.class != "" {
 						verdict = fmt.Sprintf("Not ranked (class of %d)", len(impls))
 					} else if len(groups) > 1 {
 						verdict = "Not ranked (no delivery figures)"

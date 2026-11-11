@@ -240,8 +240,10 @@ func TestEvaluationComparesEachScenarioWithItsBaseline(t *testing.T) {
 	}
 	// A family whose measurement is not valid under the run's contract has no row either.
 	caster := []map[string]any{}
-	for _, impl := range []string{"BaselineC", "C1", "C2", "C3", "C4"} {
-		m := rec("caster", impl, 10, 1)
+	for i, impl := range []string{"BaselineC", "C1", "C2", "C3", "C4"} {
+		// Means far enough apart to be told from each other, so that the
+		// record contract is the only thing deciding whether they are ranked.
+		m := rec("caster", impl, float64(10*(i+1)), 1)
 		m["metric"], m["dims"] = "send_ns_op", map[string]any{"receivers": 8.0}
 		caster = append(caster, m)
 	}

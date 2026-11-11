@@ -1,0 +1,101 @@
+{
+  "commit": "df776172e692",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+  "duration_s": 788.884643992,
+  "failures": 0,
+  "files": [
+    {
+      "bytes": 3512837,
+      "commit": "df776172e692",
+      "cpu": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+      "generator_version": "1.4.0",
+      "go": "go1.27.3",
+      "goarch": "amd64",
+      "gomaxprocs": 2,
+      "goos": "linux",
+      "num_cpu": 2,
+      "path": "results-08-01-results.jsonl",
+      "profile": "standard",
+      "records": {
+        "meta": 1,
+        "metric": 2183,
+        "residue": 116,
+        "skipped": 25,
+        "summary": 1,
+        "trace": 201
+      },
+      "seed": 1,
+      "sha256": "8e741221a50806e66f40fa2764ae36e1b3724797cc5297fddf5cfde1bd0d529b",
+      "slot": "01",
+      "summary": {
+        "duration_s": 788.884643992,
+        "failure_msg": null,
+        "failures": 0,
+        "records": 2527,
+        "skipped": 25
+      },
+      "timestamp": "2026-11-11T10:41:47.042640359Z",
+      "verified": true,
+      "verified_against": "results-08-02-registry.json"
+    },
+    {
+      "bytes": 541162,
+      "generator": "bigbuff-measure dump-registry",
+      "kind": "registry-dump",
+      "path": "results-08-02-registry.json",
+      "sha256": "24a4e30a371b42fcba3b4ee707c44e3b906887aee078dc069867bd7a0a62aeb2",
+      "slot": "02"
+    },
+    {
+      "bytes": 4138700,
+      "generator": "bigbuff-measure report",
+      "kind": "interactive-report",
+      "path": "results-08-03-report.html",
+      "sha256": "35ca4232713feb9e6816e605aec71cac45f5c10bf5e865f1576007fee918c379",
+      "slot": "03"
+    },
+    {
+      "bytes": 367888,
+      "generator": "bigbuff-measure report",
+      "kind": "csv-export",
+      "path": "results-08-04-metrics_wide.csv",
+      "sha256": "4905fc4b63aeb1b9f85edbb32637b80dfefe2590fa9c3881190a587bade325cf",
+      "slot": "04"
+    },
+    {
+      "bytes": 17009,
+      "generator": "bigbuff-measure report",
+      "kind": "csv-export",
+      "path": "results-08-05-scores.csv",
+      "sha256": "f5557fb56c080d6396772175b1c470a760b35d8102a36b2da690a6c94d304c15",
+      "slot": "05"
+    },
+    {
+      "bytes": 28077,
+      "generator": "bigbuff-measure evaluate",
+      "kind": "evaluation",
+      "path": "results-08-07-evaluation.md",
+      "sha256": "190ac54ab634ab5f9904883f7e2924c6a95e9ff605c6225707fcce75635a199b",
+      "slot": "07"
+    }
+  ],
+  "generated": "2026-11-11T11:14:13.01287301Z",
+  "generator": "bigbuff-measure",
+  "generator_version": "1.4.0",
+  "go": "go1.27.3",
+  "goarch": "amd64",
+  "gomaxprocs": 2,
+  "goos": "linux",
+  "indexed_hostname": "e2b.local",
+  "num_cpu": 2,
+  "prefix": "results",
+  "profile": "standard",
+  "run": 8,
+  "schema": 1,
+  "seed": 1,
+  "skipped": 25,
+  "timestamp": "2026-11-11T10:41:47.042640359Z",
+  "type": "manifest",
+  "verified": true,
+  "verified_against": "results-08-02-registry.json"
+}

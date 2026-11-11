@@ -133,8 +133,8 @@ these committed artifacts.
 
 ### Results: JSONL schema v1 (`results-NN-01-results.jsonl`)
 
-One JSON object per line. The committed files are `results-01-01-results.jsonl`
-(standard profile) and `results-02-01-results.jsonl` (quick profile). `type` is one of:
+One JSON object per line. Every committed run has one (`results-NN-01-results.jsonl`;
+`results-00-00-readme.md` lists the runs and the record contract of each). `type` is one of:
 
 | type      | meaning                                                            |
 |-----------|--------------------------------------------------------------------|
@@ -162,6 +162,7 @@ One JSON object per line. The committed files are `results-01-01-results.jsonl`
 | `approx_retained_bytes` | post-GC heap attributed to one permanently stalled subscriber |
 | `exactly_once_violations` | scatter: items neither delivered exactly once nor counted as evicted, i.e. `|sent − (received + evicted)|` (all receivers, warmup included). Any non-zero value fails the implementation's integrity gate |
 | `evicted`, `delivered_fraction` | scatter: items a bounded queue evicted by contract (its own eviction counter), and the fraction of sent items that were delivered. `dispatch_ns_op` is wall time per **delivered** item, so an evicting queue is not credited with the items it dropped. Always `0` and `1` for implementations without an eviction counter |
+| `publishes`, `receives`, `delivered_fraction` | broadcast and payload `publish_ns_op` (contract 1.4.0 on): the publishes made over all repetitions of the cell, warm-up included; the values the subscribers received; and `receives / (publishes × subscribers)`. `publish_ns_op` is the cost of the call whatever became of the value. The count is read once the subscribers have gone 50 ms without receiving, so a backlog that is still draining is waited for; a cell whose subscribers are still receiving after 20 s fails the run. `verify` rejects a 1.4.0 run whose throughput records lack `publishes` or `receives` |
 | `torn_reads`, `checked` | payload: multi-word ([4]uint64) read integrity vs loads checked |
 | `deliveries`, `deliveries_expected`, `deliveries_missing` | caster throughput and latency: values the receivers took, values the timed Sends should have delivered, and the difference. A Send is timed only once every receiver is registered for it. Any missing delivery fails the implementation's integrity gate |
 | `withdrawal_compensation_success` | caster: fraction of rounds where `Add(-1)` unstuck a parked `Send` |
@@ -328,15 +329,41 @@ seconds in total.
 
 ## Adoptability score
 
-Percentile rank within family, weighted: **throughput .28 · stall resilience .20 ·
-scaling .16 · latency .14 · allocations .14 · churn .08**. Stall resilience uses
-log₁₀(completed ops) under a shared stalled-consumer deadline (higher = better);
-scaling is the 64/1 relative publish-cost ratio (flatter = better). Payload integrity
-failure caps the score at 50. A 100 means *best measured on these axes within this
-family*, not “use everywhere” — read the radar chart, the pathology panel, and the
-registry remarks.
+Percentile rank within a scoring group, weighted: **throughput .28 · stall
+resilience .20 · scaling .16 · latency .14 · allocations .14 · churn .08**. Stall
+resilience uses log₁₀(completed ops) under a shared stalled-consumer deadline
+(higher = better); scaling is the 64/1 relative publish-cost ratio (flatter =
+better). Payload integrity failure caps the score at 50. A 100 means *best measured
+on these axes within this group*, not “use everywhere” — read the radar chart, the
+pathology panel, and the registry remarks.
+
+A scoring group is a family, or, for broadcast and payload, one **delivery class**
+of the family:
+
+- `delivers-all` ("delivers every value"): in every cell and every repetition of
+  the throughput battery, the subscribers received every value published to them.
+- `drops` ("drops or coalesces"): in at least one, they did not.
+
+The class is measured, not declared. The throughput battery publishes as fast as
+it can to subscribers that do nothing but receive, and counts what arrives
+(`publishes`, `receives`). It is a statement about that battery on this machine:
+an implementation that drops delivers everything to subscribers that keep up. An
+implementation with no delivery figure (every throughput cell skipped) has no
+class and is not ranked. A class with fewer than 5 members is not ranked, with
+verdict `Not ranked (class of N)`; the other class of the family still is.
+
+Why the classes exist. A publish is cheaper when the value need not arrive. Up
+to contract 1.3.0 the throughput record gave the cost of the call and nothing
+else, and the family was one table. In run 07 the eight broadcast "Strong
+candidates" delivered between 0.1 and 79 percent of what was published at 8
+subscribers, and every implementation that delivers everything ranked below
+them. That table answered "which publish returns soonest", which is not a
+question anybody choosing between a lossless and a lossy design is asking.
 
 Rules about which runs and families are scored, and why:
+
+- **Broadcast and payload of a run before record contract 1.4.0 are not scored**,
+  for the reason above. That is run 07; runs 01 to 06 are unscored anyway.
 
 - **No family of a run before record contract 1.3.0 is scored.** Runs 01 to 06
   were one process each, and from the eleventh broadcast implementation on they
@@ -348,8 +375,34 @@ Rules about which runs and families are scored, and why:
   again, so most Sends found nobody and returned at once. From 1.2.0 a Send is
   timed only when every receiver is registered, and the deliveries are counted.
 
-The decision is made in one function, `familyRanking`, which the report, the
-score CSV, the evaluation and the landing page all read.
+The decision is made in `familyRanking` and, for the classes, in `deriveReport`
+(`measure_report_test.go`), which the report, the score CSV, the evaluation and
+the landing page all read.
+
+Three rules that hold from contract 1.4.0 (run 08) on. They are rules of the
+report, not of the records, so they apply to every run when it is re-rendered:
+
+- **A tie counts as half a place.** The percentile rank of a value is the share
+  of the other members of the group that are worse, plus half the share that are
+  equal. Before, a tie counted as nothing: half the broadcast family completes
+  the stalled-consumer probe, so the best any of them could score on that
+  dimension was 51, and nothing in the family could reach 100 overall.
+- **A group the measurement does not separate is not ranked.** For each scoring
+  group the report takes the 95 percent interval of every member's headline
+  cost (publish or send at 8 subscribers) and counts the pairs whose intervals
+  do not overlap. With fewer than half the pairs apart, the group gets the
+  verdict `Not ranked (not distinguishable)` and its measurements are printed
+  instead (`indistinguishable` in `measure_report_test.go`). The caster family
+  is the case: 13 implementations within 800 to 1,130 ns, 16 of 78 pairs
+  apart, and an order that changed between runs 07 and 08 with unchanged
+  batteries. The rule looks at the headline cost only. It does not test the
+  other dimensions, and it does not make the ranking of a group that passes
+  reproducible; it withholds the ones that plainly are not.
+- **A dimension on which the whole group has one value is left out.** It is
+  listed in `dims_uniform`, shown as "tied", empty in the scores CSV, and not
+  part of the composite. Every member of the dropping broadcast class completes
+  the stalled-consumer probe; leaving the dimension in would cap the class at
+  90 and say nothing.
 
 Three rules that hold from generator 1.1.0 (run 05) on, and why:
 
@@ -369,8 +422,8 @@ Three rules that hold from generator 1.1.0 (run 05) on, and why:
   named for, so that dimension, a fifth of the weight, was a constant 100 for
   every implementation. `verify` now rejects a metric record without a value.
 
-A score is never comparable between families, between profiles or between
-record contracts.
+A score is never comparable between families, between the delivery classes of a
+family, between profiles or between record contracts.
 
 ## Verification semantics
 
@@ -411,6 +464,17 @@ is recorded in `extraction_audit.md` ("arm64 assembly: executed under emulation"
 - Shared hardware: every committed run was taken on a shared 2-CPU virtual machine.
   Compare *ratios*, not absolutes; use `--profile full` on quiet machines for
   publication numbers.
+- The delivery class is what one battery saw: a publisher that never pauses,
+  subscribers that only receive, on 2 CPUs. A different load would put some
+  implementations in the other class, and the delivered share of an
+  implementation that drops varies from run to run with the scheduler. The
+  class membership itself was the same in three takes of the battery on this
+  machine. Nothing here measures how an implementation that drops behaves when
+  its subscribers keep up, which is the case it is built for.
+- Within the dropping class, a publish that delivers 0.1 percent of its values
+  and one that delivers 70 percent are still scored on the cost of the call.
+  The evaluation prints the delivered share beside each score so that the two
+  can be told apart; the score does not weigh it.
 - Isolation covers what one battery leaves for the next. It does not cover what
   else the machine is doing: another tenant of the host still shows up as noise,
   and the within-run variation in the evaluation is the only measure of it.

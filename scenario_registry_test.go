@@ -237,6 +237,7 @@ var harnessRunnables = map[string]string{
 	"TestSettledReceivesWaitsForABacklog":               "measurement tooling",
 	"TestEvaluationRanksEachDeliveryClassSeparately":    "measurement report tooling",
 	"TestScoresCSVCarriesTheDeliveryClass":              "measurement report tooling",
+	"TestGroupTheMeasurementDoesNotSeparateIsNotRanked": "measurement report tooling",
 	"TestExchangePairingViolations":                     "measurement battery tooling",
 	"TestGateRecordReadsTheStamp":                       "measurement gates tooling",
 	"TestGateCommitComparison":                          "measurement gates tooling",
