@@ -157,6 +157,34 @@ func registryDump() (map[string]any, error) {
 		sort.Strings(names)
 		measured[set.family] = names
 	}
+	// Every top-level runnable with the scenarios it bears on (see
+	// scenario_runnables_test.go). Read from the source files, so the dump
+	// must be made from the package directory.
+	all, err := Runnables()
+	if err != nil {
+		return nil, err
+	}
+	runnables := []map[string]any{}
+	for _, r := range all {
+		rec := map[string]any{
+			"name":      r.Name,
+			"file":      r.File,
+			"kind":      string(r.Kind),
+			"class":     string(r.Class),
+			"scenarios": r.Scenarios,
+		}
+		switch r.Class {
+		case RunnableCase:
+			rec["cases"] = r.Cases
+		case RunnableUnit:
+			rec["source"] = r.Source
+			rec["implementations"] = r.Implementations
+		case RunnableHarness:
+			rec["reason"] = r.Reason
+			rec["scenarios"] = []ScenarioID{}
+		}
+		runnables = append(runnables, rec)
+	}
 	return map[string]any{
 		"type":        "registry",
 		"schema":      measureSchemaVersion,
@@ -164,6 +192,7 @@ func registryDump() (map[string]any, error) {
 		"cases":       cases,
 		"attachments": attachments,
 		"measured":    measured,
+		"runnables":   runnables,
 	}, nil
 }
 
