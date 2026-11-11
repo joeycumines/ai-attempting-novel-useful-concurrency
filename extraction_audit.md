@@ -822,6 +822,30 @@ which is less than the cost of one channel operation per subscriber.
   cell still receiving after 20 s fails the run. Class membership was then
   identical in three takes.
 
+### Fifth pass: two failures in the final race gate
+
+The gates were run twice on the final code. The second time the race leg
+failed in two tests that had passed every earlier time. Neither was a flaky
+test to be retried:
+
+- **#70 `Horizon70Meta`: lost wakeup.** `notify` used `TryLock` on the Cond
+  mutex and skipped the broadcast when it failed, on the argument that the
+  holder was a waiter that would see the new value itself. A waiter holds the
+  mutex from its re-check until `sync.Cond.Wait` releases it, and the
+  re-check can precede the publish; a publish in that window was never
+  announced, and `WaitNext` slept until the next publish. `notify` now takes
+  the mutex. `TestHorizon_PublishWakesAWaiterAboutToPark` puts a waiter in
+  that window deterministically and fails on the delivered code. Run 08
+  measured the delivered code; the repaired publish blocks briefly on a
+  waiter's re-check, and has not been re-measured.
+- **#28 `Broadcast28Flint`: retirement order.** `Unsubscribe` closed the
+  subscription's quit channel and then took the subscriber count down, so a
+  caller released by quit could still read the old count
+  (`TestBroadcast28Flint_SubscribeWithCancelledContext`: 1 counted, want 0;
+  reproduced within 400 runs under the race detector, none in 400 after).
+  The count is now taken down first. The count is only the fast path of
+  `Send`, so no value was misdelivered.
+
 ### Not done
 
 - arm64 assembly (#64 fence, #72 bitmap) has run under an emulator, one

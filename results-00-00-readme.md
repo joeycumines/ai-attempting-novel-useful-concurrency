@@ -108,6 +108,13 @@ that delivers everything (`GenCaster (06-Meta)`) lossy. The rule was replaced
 (50 ms of quiet, and a run that is still receiving after 20 s fails), and the
 run was taken again from a clean tree. The committed run 08 is the second one.
 
+**One implementation changed after run 08.** `Horizon70Meta (70-Meta)` had a
+lost wakeup, found by the gates of run 08 and repaired
+(`extraction_audit.md`, "Fifth pass"). Run 08 measured it before the repair,
+at 132 ns per publish to 8 subscribers; two trial passes afterwards gave 236
+and 516 ns. Its row in run 08 is too favourable. Nothing else that run 08
+measured has changed.
+
 **Gates.** Runs 05 and 08 have a gates record (slot 06). Runs 06 and 07 do
 not: nothing recorded what `make verify` reported for their trees.
 

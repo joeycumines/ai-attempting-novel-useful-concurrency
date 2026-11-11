@@ -67,6 +67,8 @@ These are rings that overwrite, latest-value cells and non-blocking fan-outs. Ve
 | 8 | Horizon70Meta (70-Meta) | 73 | 132 ns | 11% | 0.35% |
 | 8 | Latest3260Terra (60-Terra) | 73 | 131 ns | 2.5% | 0.12% |
 
+`Horizon70Meta`'s row describes code that was repaired after the run, and is too favourable; see "Source defects found while fixing the measurement".
+
 The other baselines of this class: BaselineFanout 29th (34, 993 ns, 23% delivered), BaselineLatestBroadcast 35th (30, 910 ns, 15% delivered).
 
 Read the delivered columns before the score. The battery publishes as fast as it can, with no pause, to subscribers that do nothing but receive. Under that load most of these implementations deliver a few percent of what is published, and the cheapest publish is the one that delivers least. The score ranks the cost of the call and does not weigh the share delivered, so `Pulse61Deepseek` at 0.07 percent and `StripedCombiner59Gemini` at 68 percent sit three places apart. For a latest-value design, delivering 0.07 percent of a flood is the design working. For a ring meant to carry a stream, it is not. The table cannot tell you which you need.
@@ -138,6 +140,7 @@ Found by tests written for this work, and repaired in the ports with the repair 
 - `SlabCaster40Gemini`: five defects under concurrent churn, including a send on a closed channel.
 - `SlotPubSub43Grok`: `Send` held its mutex across unbuffered sends, and shared one acknowledgement count between concurrent Sends.
 - `ChanPubSub57DeepSeek`: the primitive is sound; the harness adapter deadlocked.
+- `Horizon70Meta`: a lost wakeup. A publish that arrived while a consumer was between its last check and parking skipped the wakeup, and the consumer slept until the next publish. Found after run 08, by one failure of its own test under the race detector, and repaired: the publisher now takes the mutex instead of trying it. **Run 08 measured the code before this repair.** Its row for `Horizon70Meta` (8th of the dropping class, 132 ns at 8 subscribers) describes a publish that could skip a wakeup. Two trial passes of the repaired code gave 236 and 516 ns. Treat that row as too favourable; no other implementation's source changed after the run.
 
 No adapter is exempt from the concurrent churn tests any more.
 
@@ -153,6 +156,7 @@ Runs 06 and 07 have no gates record. Run 05 has one.
 
 - **Nothing was measured on more than 2 CPUs.** Every claim about scaling here is about subscriber count on 2 CPUs. Contention behaviour with real parallelism is unknown.
 - **The arm64 assembly has not run on arm64 hardware.** The assembly of responses 64 and 72 was executed one routine at a time under an emulator (744 cases pass). That checks the instructions. It says nothing about memory ordering on a real machine.
+- **One row of run 08 is out of date.** `Horizon70Meta` was repaired after the run (see "Source defects"), and the run was not taken again.
 - **Run 08 is one run.** The rankings have not been reproduced by a second run under the same contract. Class membership is the one thing with a second take: a separate pass of the throughput batteries under the same settling rule put all 108 implementations it covered (of 113) in the same class as run 08. That pass is not committed. It missed five because `--impl '*'` did not match a name with a `/` in it; that is fixed and tested. The caster comparison between runs 07 and 08 is the only between-run evidence, and it showed a ranking that did not reproduce, which is why that family is now unranked.
 - **The latency dimension is weak.** `publish_latency_ns` has a median coefficient of variation of 183 percent across its samples. It carries 14 percent of the weight and I have not established that its ranks are stable.
 - **`EpochTape (10-Gemini)` is unexplained.** Its publish cost at 8 subscribers is 184 µs with a coefficient of variation of 1.68. Its subscribers poll while its publisher takes a write lock; I have not determined whether that is a property of the design or a defect of the port.

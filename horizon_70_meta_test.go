@@ -224,6 +224,53 @@ func TestHorizon_WaitNext_Wakes(t *testing.T) {
 	}
 }
 
+// A waiter holds the Cond mutex from its re-check until Wait releases it. A
+// publish that arrives in that window must still wake it. As delivered, the
+// publisher's TryLock failed, it skipped the broadcast, and the waiter parked
+// for good.
+func TestHorizon_PublishWakesAWaiterAboutToPark(t *testing.T) {
+	h := NewHorizon70Meta[int64](16)
+	defer h.Close() // wakes the waiter if the test fails, so it does not leak
+	locked, proceed, woke := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		// A waiter that has registered and re-checked, and has not parked.
+		h.waiters.Add(1)
+		h.mu.Lock()
+		close(locked)
+		<-proceed
+		h.cond.Wait()
+		h.mu.Unlock()
+		h.waiters.Add(-1)
+		close(woke)
+	}()
+	<-locked
+	published := make(chan struct{})
+	go func() {
+		defer close(published)
+		if _, ok := h.Publish(42); !ok {
+			t.Error("publish failed")
+		}
+	}()
+	// Let the publish reach its notification while the mutex is held. A
+	// publisher that waits for the mutex is still there when this expires; one
+	// that gave up has returned.
+	select {
+	case <-published:
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(proceed)
+	select {
+	case <-woke:
+	case <-timeAfterGuard():
+		t.Fatal("a publish that arrived while the waiter held the mutex did not wake it")
+	}
+	select {
+	case <-published:
+	case <-timeAfterGuard():
+		t.Fatal("Publish did not return")
+	}
+}
+
 func TestHorizon_WaitNext_CloseWakes(t *testing.T) {
 	h := NewHorizon70Meta[int64](16)
 	c := h.Subscribe()
