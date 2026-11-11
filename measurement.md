@@ -46,6 +46,12 @@ go test -run=NONE -count=1 -args bigbuff-measure site        # wires the reports
 run. Partial JSONL is streamed line-by-line; a crashed run leaves a prefix that
 `verify` will reject (missing coverage), so a green verify means a *complete* run.
 
+`run` measures nothing itself: it starts one process per battery per
+implementation (see "Process isolation"). `--in-process` measures everything in
+the one process instead. That is for debugging a battery under a debugger or a
+profiler; such a run says `"isolation": "none"` in its meta record and `verify`
+rejects it.
+
 ---
 
 ## Committed artifacts & the run log (flat layout)
@@ -132,17 +138,18 @@ One JSON object per line. The committed files are `results-01-01-results.jsonl`
 
 | type      | meaning                                                            |
 |-----------|--------------------------------------------------------------------|
-| `meta`    | environment header (first line; required by `verify`)              |
+| `meta`    | environment header (first line; required by `verify`); `generator_version` is the record contract, `isolation` says how the run was isolated |
 | `metric`  | one measured statistic with distributional summaries                |
 | `trace`   | per-lane event timeline (publisher + subscribers)                   |
 | `skipped` | an implementation deliberately excluded from a battery, with reason |
-| `summary` | run footer: records, failures, skipped, duration                   |
+| `residue` | what one battery of one implementation left running in its process: `goroutines` above the count before it, and `cpu_cores`, the CPUs the process went on using afterwards. Written only when something was left |
+| `summary` | run footer: records, failures (with `failure_msg`), skipped, duration |
 
 `metric` record glossary:
 
 | field | meaning |
 |---|---|
-| `impl`, `family`, `metric` | identity; `family` ∈ broadcast, caster, scatter, gather, payload |
+| `impl`, `family`, `metric` | identity; `family` ∈ broadcast, caster, scatter, gather, payload, fanin, exchange, barrier |
 | `dims` | sweep dimension — `subs` (fan-out), `receivers` (caster/scatter), `senders` (gather) |
 | `ops`, `n`, `reps` | operations per repetition, samples, repetitions |
 | `mean`, `stddev`, `cv` | distributional summaries across repetitions |
@@ -156,6 +163,7 @@ One JSON object per line. The committed files are `results-01-01-results.jsonl`
 | `exactly_once_violations` | scatter: items neither delivered exactly once nor counted as evicted, i.e. `|sent − (received + evicted)|` (all receivers, warmup included). Any non-zero value fails the implementation's integrity gate |
 | `evicted`, `delivered_fraction` | scatter: items a bounded queue evicted by contract (its own eviction counter), and the fraction of sent items that were delivered. `dispatch_ns_op` is wall time per **delivered** item, so an evicting queue is not credited with the items it dropped. Always `0` and `1` for implementations without an eviction counter |
 | `torn_reads`, `checked` | payload: multi-word ([4]uint64) read integrity vs loads checked |
+| `deliveries`, `deliveries_expected`, `deliveries_missing` | caster throughput and latency: values the receivers took, values the timed Sends should have delivered, and the difference. A Send is timed only once every receiver is registered for it. Any missing delivery fails the implementation's integrity gate |
 | `withdrawal_compensation_success` | caster: fraction of rounds where `Add(-1)` unstuck a parked `Send` |
 | `median_round_ns` | withdrawal round latency |
 
@@ -213,6 +221,16 @@ with an explicit GC; latency batteries use a bounded reservoir; stalled-consumer
 run a shared wall-clock deadline after which a still-parked publisher is *recorded*,
 not killed.
 
+A throughput repetition of the broadcast and payload families is sized by the
+clock, not by an estimate: the publisher warms up for an eighth of the target
+time, then publishes in batches until the target has passed (`opBudget`), and
+the subscribers' goroutines are running before either starts. `ops` is what the
+last repetition ran. Until contract 1.3.0 the count was fixed from 16 publishes
+made straight after subscribing, before any subscriber had run. For an
+implementation whose publish is cheap only while its subscribers sleep that
+estimate was the cheap cost: the count went to its maximum, and a repetition
+with a 60 ms target ran for half a minute.
+
 ## Batteries
 
 29 batteries across 8 families (`make measure-list`). Highlights: throughput sweeps,
@@ -235,6 +253,50 @@ Every record of these four carries `exactly_once_violations`, and `verify` count
 toward coverage. Both families have fewer than five implementations, so they are
 measured and not scored (see Adoptability score).
 
+## Process isolation
+
+Every battery of every implementation is measured in a process of its own. The
+`run` command is a parent that measures nothing: it lists the units of the run
+(`measurePlan`: families in run order, implementations in registration order or
+by name, batteries in registry order), starts a child process for each, and
+copies the child's records into the results file byte for byte. The meta record
+of such a run says `"isolation": "process-per-battery"`, and from record
+contract 1.3.0 `verify` fails a run that does not.
+
+The reason is what a battery can leave behind. A stalled-consumer probe ends
+with a publisher that is blocked in a `Send` that will never return, and nothing
+can stop it. For most implementations that goroutine is parked. For an
+implementation whose `Send` waits by spinning it is not: it uses a whole CPU
+until the process ends. Runs 01 to 06 were one process each. The eleventh
+broadcast implementation in run order, `EpochCaster (13-OpenRouter)`, is such
+an implementation, and its two stall probes left two spinning publishers on a
+machine with two CPUs. The ten implementations before it were measured on an
+idle machine. Everything after it, 83 broadcast implementations and all seven
+other families, was measured while those publishers held the CPUs, which kept
+the measured implementation's own subscribers from running while its publisher
+was timed. `Latest3260Terra`, measured alone, publishes in 173 to 450 ns at 4
+to 256 subscribers; in run 06 it reads a flat 10 ns at every count. No family
+of those runs is ranked (see Adoptability score).
+
+What isolation guarantees:
+
+- Every unit starts from the same state: a new process with no goroutines, no
+  heap and no garbage from anything measured before it. The order of the run
+  cannot affect a measurement.
+- A unit that kills its process (a runtime fatal error, a deadlock the runtime
+  detects) or hangs it (killed after 10 minutes) is a recorded failure of that
+  unit. The run goes on, exits non-zero, and its summary names the unit.
+- What a unit leaves behind is recorded. After the unit the child counts its
+  goroutines; if there are more than before, it watches its own CPU use for
+  100 ms and writes a `residue` record. A parked publisher shows as goroutines
+  with no CPU. A spinning one shows as about one CPU, and the evaluation lists
+  it under "One subscriber that never reads".
+
+The child is the same binary, started as
+`<test binary> -test.run=NONE bigbuff-measure run --unit-family F --unit-impl NAME --unit-battery ID`.
+A process starts in a few milliseconds, so the 1,041 units of a standard run cost
+seconds in total.
+
 ## Measurement discipline (the rules that make this comparable)
 
 - **One harness, one timer.** Every battery constructs the implementation from the
@@ -252,8 +314,10 @@ measured and not scored (see Adoptability score).
   probe outcome, `Unsubscribe`/`Close` are skipped (or watchdog-bounded in a helper
   goroutine). `recover` cannot unpark a goroutine blocked inside a send; a blocked
   cleanup in the main path trips the Go runtime's global deadlock detector
-  (`fatal error: all goroutines are asleep`). This is the single hardest-won rule in
-  this harness and it is enforced everywhere.
+  (`fatal error: all goroutines are asleep`).
+- **A blocked publisher ends with its process.** Skipping the cleanup leaves the
+  goroutine where it is, and one that spins goes on using a CPU. Nothing else is
+  ever measured in that process (see Process isolation).
 - **Exposure limiting, never mis-measuring.** An implementation that cannot survive a
   battery by construction is skipped with a recorded reason (see attachment registry,
   e.g. concurrent withdrawal during `Send`). It is excluded from that battery's
@@ -271,6 +335,21 @@ scaling is the 64/1 relative publish-cost ratio (flatter = better). Payload inte
 failure caps the score at 50. A 100 means *best measured on these axes within this
 family*, not “use everywhere” — read the radar chart, the pathology panel, and the
 registry remarks.
+
+Rules about which runs and families are scored, and why:
+
+- **No family of a run before record contract 1.3.0 is scored.** Runs 01 to 06
+  were one process each, and from the eleventh broadcast implementation on they
+  were measured on CPUs that two leftover spinning publishers were using (see
+  Process isolation). Their reports show every measurement and the verdict
+  `Not ranked (measurement not valid)`.
+- **The caster send figures of contracts before 1.2.0 do not measure delivery.**
+  Those batteries looped on `Send` without waiting for the receivers to register
+  again, so most Sends found nobody and returned at once. From 1.2.0 a Send is
+  timed only when every receiver is registered, and the deliveries are counted.
+
+The decision is made in one function, `familyRanking`, which the report, the
+score CSV, the evaluation and the landing page all read.
 
 Three rules that hold from generator 1.1.0 (run 05) on, and why:
 
@@ -290,8 +369,8 @@ Three rules that hold from generator 1.1.0 (run 05) on, and why:
   named for, so that dimension, a fifth of the weight, was a constant 100 for
   every implementation. `verify` now rejects a metric record without a value.
 
-Scores are therefore not comparable between runs 01 to 04 and later runs, and a
-score is never comparable between families or between profiles.
+A score is never comparable between families, between profiles or between
+record contracts.
 
 ## Verification semantics
 
@@ -313,7 +392,12 @@ failure.
 
 `make verify` runs vet (default, race, arm64, 386), the tests at GOMAXPROCS 1, 2
 and 4, the race detector, the allocation assertions and every fuzz target.
-`make measure-gates` runs it and records the outcome with the newest run.
+`make measure-gates` runs it and records the outcome with the newest run
+(`bigbuff-measure gates --log <dir> --run results-NN-01-results.jsonl`). The
+record names the commit the gates ran on. When that is not the commit the run
+was measured at, `--run` makes it list the files that differ between the two,
+so that a reader can see whether the gates and the measurement are about the
+same code. The fuzz leg records the command line it ran.
 
 `make verify-arm64` executes the tests of the implementations that ship arm64
 assembly (64 and 72) as an arm64 binary: natively on an arm64 host, otherwise under
@@ -324,14 +408,16 @@ is recorded in `extraction_audit.md` ("arm64 assembly: executed under emulation"
 
 ## Known limitations
 
-- Shared hardware (this run: 2×2.60 GHz, ~183% single-core utilization — the batteries
-  are CPU-bound, so more cores shave the p99-heavy cells, not the scaling). Compare
-  *ratios*, not absolutes; use `--profile full` on quiet machines for publication numbers.
-- The measure process deliberately accumulates parked goroutines (blocked publishers
-  and their pumps) across a full run; this is by construction and bounded by the
-  batteries' watchdogs. If a battery ever appears wedged, the global deadlock detector
-  (`fatal error: all goroutines are asleep`) is the tripwire, and any parked cleanup
-  will be reported as a harness bug — please file it.
+- Shared hardware: every committed run was taken on a shared 2-CPU virtual machine.
+  Compare *ratios*, not absolutes; use `--profile full` on quiet machines for
+  publication numbers.
+- Isolation covers what one battery leaves for the next. It does not cover what
+  else the machine is doing: another tenant of the host still shows up as noise,
+  and the within-run variation in the evaluation is the only measure of it.
+- With more goroutines than CPUs, a cell whose subscribers poll or spin measures
+  the scheduler as much as the implementation. The 128- and 256-subscriber cells
+  on 2 CPUs have coefficients of variation above 100% for some implementations;
+  the report shows the interval, and such a cell supports no fine comparison.
 - Stalled-consumer retention is post-GC *attribution*, approximate by nature;
   a `0` means “nothing attributable”, e.g. pre-sized or ring-based designs
   (GenCaster), or coalesce-and-overwrite semantics.

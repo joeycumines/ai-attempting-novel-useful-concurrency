@@ -133,6 +133,21 @@ Policy that the documentation of the mechanics does not carry:
 - **A dimension nobody was measured on is not a perfect score.** It is left out
   of the composite and shown as having no data. The opposite convention once
   gave every implementation full marks for stall resilience.
+- **Nothing measured may share a process with something measured before it.**
+  A stalled-consumer probe ends with a publisher nothing can stop, and one that
+  waits by spinning uses a CPU until its process exits. Six runs were taken in
+  one process each before anyone looked at what the process was doing between
+  batteries: ten implementations had the machine and the rest did not. The run
+  is one process per battery per implementation. Do not add an in-process
+  shortcut to a committed run, and when a result looks too good (a publish cost
+  that does not change between 1 and 256 subscribers), measure it alone before
+  believing it.
+- **Time what the battery says it times.** A timed loop must start after the
+  system is in the state the battery describes (receivers registered,
+  subscribers running), and its length must not rest on an estimate taken
+  before that. Two batteries here measured something else for five runs: one
+  timed Sends that delivered nothing, one sized repetitions from publishes that
+  reached no running subscriber.
 - **Say what was executed and where.** A cross-compiled or cross-vetted file
   has not run. Emulating a routine is not running the program, and neither says
   anything about memory ordering on real hardware. `make verify-arm64` exists
