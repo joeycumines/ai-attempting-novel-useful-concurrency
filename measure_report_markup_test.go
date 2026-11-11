@@ -114,7 +114,7 @@ const reportHTMLBody = `<body>
   </div>
   <div class="tbl-wrap"><table class="tbl" id="lbTable"><thead><tr>
     <th data-k="impl">Implementation</th><th data-k="score">Adoptability</th><th data-k="verdict">Verdict</th>
-    <th data-k="thr">ns/op @8</th><th data-k="ci">95% CI</th><th data-k="lat">p99 latency</th><th data-k="alloc">allocs/op</th><th data-k="scale">64/1 ratio</th><th data-k="stall">stall ops</th><th data-k="baseline">kind</th>
+    <th data-k="thr">ns/op @8</th><th data-k="ci">95% CI</th><th data-k="lat">p99 latency</th><th data-k="alloc">allocs/op</th><th data-k="ratio">64/1 ratio</th><th data-k="stall">stall ops</th><th data-k="delivered">delivered @8</th><th data-k="baseline">kind</th>
   </tr></thead><tbody id="lbBody"></tbody></table></div>
   <p class="small" id="lbFoot" style="margin-top:8px"></p>
 </section>

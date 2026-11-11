@@ -69,6 +69,12 @@ type siteScoreRow struct {
 	StallResilience string `json:"stall_resilience"`
 	ExpectedGoodFit string `json:"expected_good_fit"`
 	ExposureLimited string `json:"exposure_limited"`
+	// Class is the delivery class the score is relative to (empty for a
+	// family without classes, and for every run before record contract
+	// 1.4.0); DeliveredAt8 is the share of published values the subscribers
+	// received in the throughput battery at 8 subscribers.
+	Class        string `json:"class"`
+	DeliveredAt8 string `json:"delivered_at_8"`
 }
 
 type siteCatalog struct {
@@ -336,6 +342,8 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 					StallResilience: getVal(row, "stall_resilience"),
 					ExpectedGoodFit: getVal(row, "expected_good_fit"),
 					ExposureLimited: getVal(row, "exposure_limited"),
+					Class:           getVal(row, "class"),
+					DeliveredAt8:    getVal(row, "delivered_at_8"),
 				})
 			}
 		}

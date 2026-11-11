@@ -46,11 +46,11 @@
       "slot": "02"
     },
     {
-      "bytes": 2944911,
+      "bytes": 2949006,
       "generator": "bigbuff-measure report",
       "kind": "interactive-report",
       "path": "results-01-03-report.html",
-      "sha256": "5a99106ecfc5ba7a6cff163f1da7b65c678f088fc35f39c03885ea6e7e708af4",
+      "sha256": "f8393fb6657b8c5af88450932ceb9326f5487b1921b2470095f143115d612c02",
       "slot": "03"
     },
     {
@@ -62,15 +62,15 @@
       "slot": "04"
     },
     {
-      "bytes": 11861,
+      "bytes": 12243,
       "generator": "bigbuff-measure report",
       "kind": "csv-export",
       "path": "results-01-05-scores.csv",
-      "sha256": "83c9ca6983c0428805776bb376be7f6b231df560cd98128536771192243e31ce",
+      "sha256": "a766c49fa717ca17f91a83e97c12f15cb7888b425cc760235fbc140aa0313b46",
       "slot": "05"
     }
   ],
-  "generated": "2026-11-11T08:22:33.563893506Z",
+  "generated": "2026-11-11T10:41:32.146170644Z",
   "generator": "bigbuff-measure",
   "generator_version": "1.0.0",
   "go": "go1.27.3",

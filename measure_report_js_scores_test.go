@@ -5,9 +5,10 @@ package bigbuff
 const reportJS3 = `
 
 /* ── Leaderboard ── */
-var lbFamily = 'broadcast', lbSort = {k:'score', dir:-1};
-function lbRows(family){
-  var sc = derivedFamily(family);
+var lbGroup = 0, lbSort = {k:'score', dir:-1};
+function lbRows(group){
+  var family = group.family;
+  var sc = derivedGroup(group);
   var thrName = familyMetricName(family, 'throughput');
   var latName = familyMetricName(family, 'latency');
   var thr = metricByImpl(thrName, family, family === 'fanin' ? 4 : 8);
@@ -28,6 +29,7 @@ function lbRows(family){
       lat: p99,
       alloc: am ? meanOf(am) : null,
       ratio: (s.metrics && typeof s.metrics.scaling_ratio_64_over_1 === 'number') ? s.metrics.scaling_ratio_64_over_1 : null,
+      delivered: (s.metrics && typeof s.metrics['delivered_fraction@8'] === 'number') ? s.metrics['delivered_fraction@8'] : null,
       stall: stallOps
     });
   });
@@ -35,16 +37,17 @@ function lbRows(family){
 }
 function lbRender(){
   var tabs = $('lbTabs'); clear(tabs);
-  familiesPresent.forEach(function(f){
+  scoreGroups.forEach(function(g, gi){
     var t = document.createElement('button');
-    t.className = 'tab' + (f===lbFamily?' active':'');
-    t.textContent = familyLabel[f];
-    t.onclick = function(){ lbFamily = f; lbRender(); };
+    t.className = 'tab' + (gi===lbGroup?' active':'');
+    t.textContent = g.label;
+    t.onclick = function(){ lbGroup = gi; lbRender(); };
     tabs.appendChild(t);
   });
+  if (!scoreGroups.length) return;
   var q = ($('lbSearch').value||'').toLowerCase();
   var baseOnly = $('lbBaselinesOnly').checked, goodOnly = $('lbGoodFitOnly').checked;
-  var rows = lbRows(lbFamily).filter(function(r){
+  var rows = lbRows(scoreGroups[lbGroup]).filter(function(r){
     if (q && r.impl.toLowerCase().indexOf(q) < 0) return false;
     if (baseOnly && !r.baseline) return false;
     if (goodOnly && !r.goodFit) return false;
@@ -79,10 +82,11 @@ function lbRender(){
       + '<td class="barnum">'+(r.alloc!=null?r.alloc.toFixed(2):'—')+'</td>'
       + '<td class="barnum">'+(r.ratio!=null?r.ratio.toFixed(2)+'×':'—')+'</td>'
       + '<td class="barnum">'+(r.stall!=null?fmtNum(r.stall):'—')+'</td>'
+      + '<td class="barnum">'+fmtShare(r.delivered)+'</td>'
       + '<td>'+kind+'</td>';
     tbody.appendChild(tr);
   });
-  $('lbFoot').textContent = rows.length + ' implementation(s) shown · CI = 95% half-width on the per-op mean · sorted by ' + key + (dir<0 ? ' (desc)' : ' (asc)');
+  $('lbFoot').textContent = rows.length + ' implementation(s) shown · scores are relative to the group in the selected tab' + (scoreGroups[lbGroup].classed ? ' (one delivery class) and are not comparable with the other class' : '') + ' · delivered = share of published values the subscribers received in the throughput battery at 8 subscribers · CI = 95% half-width on the per-op mean · sorted by ' + key + (dir<0 ? ' (desc)' : ' (asc)');
 }
 document.querySelectorAll('#lbTable th').forEach(function(th){
   th.addEventListener('click', function(){
@@ -97,7 +101,7 @@ $('lbBaselinesOnly').addEventListener('change', lbRender);
 $('lbGoodFitOnly').addEventListener('change', lbRender);
 
 /* ── Adoptability radar ── */
-var radarFamily = 'broadcast', radarSel = [];
+var radarGroup = 0, radarSel = [];
 var radarAxes = [
   {key:'throughput', label:'Throughput'},
   {key:'latency', label:'Latency'},
@@ -108,14 +112,15 @@ var radarAxes = [
 ];
 function radarRender(){
   var tabs = $('radarTabs'); clear(tabs);
-  familiesPresent.forEach(function(f){
+  scoreGroups.forEach(function(g, gi){
     var t = document.createElement('button');
-    t.className = 'tab' + (f===radarFamily?' active':'');
-    t.textContent = familyLabel[f];
-    t.onclick = function(){ radarFamily = f; radarSel = []; radarRender(); };
+    t.className = 'tab' + (gi===radarGroup?' active':'');
+    t.textContent = g.label;
+    t.onclick = function(){ radarGroup = gi; radarSel = []; radarRender(); };
     tabs.appendChild(t);
   });
-  var sc = derivedFamily(radarFamily);
+  if (!scoreGroups.length) return;
+  var sc = derivedGroup(scoreGroups[radarGroup]);
   var ranked = Object.keys(sc).map(function(i){ return sc[i]; }).sort(function(a,b){ return b.score-a.score; });
   // Default selection: family champion + best baseline
   if (!radarSel.length && ranked.length) {

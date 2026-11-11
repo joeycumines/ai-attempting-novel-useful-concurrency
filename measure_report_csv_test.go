@@ -51,7 +51,7 @@ func writeReportCSVs(metricsPath, scoresPath string, data *reportData, derived d
 		return err
 	}
 	sw := csv.NewWriter(sf)
-	if err := sw.Write([]string{"family", "impl", "score", "verdict", "baseline", "integrity", "throughput", "latency", "allocations", "churn", "scaling", "stall_resilience", "expected_good_fit", "exposure_limited"}); err != nil {
+	if err := sw.Write([]string{"family", "impl", "score", "verdict", "baseline", "integrity", "throughput", "latency", "allocations", "churn", "scaling", "stall_resilience", "expected_good_fit", "exposure_limited", "class", "delivered_at_8", "delivered_least"}); err != nil {
 		return err
 	}
 	families := make([]string, 0, len(derived.Scores))
@@ -64,7 +64,13 @@ func writeReportCSVs(metricsPath, scoresPath string, data *reportData, derived d
 		for _, s := range derived.Scores[family] {
 			scores = append(scores, s)
 		}
+		// A score is relative to its delivery class, so the rows of a class
+		// stay together: the class that delivers everything first.
+		classOrder := map[string]int{classDeliversAll: 0, classDrops: 1, "": 2}
 		sort.Slice(scores, func(i, j int) bool {
+			if scores[i].Class != scores[j].Class {
+				return classOrder[scores[i].Class] < classOrder[scores[j].Class]
+			}
 			if scores[i].Score != scores[j].Score {
 				return scores[i].Score > scores[j].Score
 			}
@@ -79,9 +85,11 @@ func writeReportCSVs(metricsPath, scoresPath string, data *reportData, derived d
 				}
 				return fmt.Sprint(v)
 			}
-			// A dimension the implementation has no data for is empty too.
+			// A dimension the implementation has no data for is empty too,
+			// and so is one that is the same for its whole scoring group
+			// and is therefore not part of the score.
 			dim := func(key string) string {
-				for _, missing := range s.DimsMissing {
+				for _, missing := range append(append([]string{}, s.DimsMissing...), s.DimsUniform...) {
 					if missing == key {
 						return ""
 					}
@@ -93,6 +101,7 @@ func writeReportCSVs(metricsPath, scoresPath string, data *reportData, derived d
 				dim("throughput"), dim("latency"), dim("allocations"),
 				dim("churn"), dim("scaling"), dim("stall_resilience"),
 				fmt.Sprint(s.ExpectedGoodFit), fmt.Sprint(s.ExposureLimited),
+				s.Class, ffloat(s.Metrics["delivered_fraction@8"]), ffloat(s.Metrics["delivered_fraction_least"]),
 			}
 			if err := sw.Write(row); err != nil {
 				return err

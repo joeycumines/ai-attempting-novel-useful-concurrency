@@ -2,6 +2,7 @@ package bigbuff
 
 import (
 	"bufio"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -231,6 +232,120 @@ func TestThroughputRecordsSayWhatWasDelivered(t *testing.T) {
 		f.Close()
 		if !found {
 			t.Errorf("%s: no throughput record", name)
+		}
+	}
+}
+
+// settledReceives waits out a backlog: a count that is still rising is not
+// read as final, one that has stopped is, and one that never stops is
+// reported as unsettled instead of being returned as if it were the total.
+func TestSettledReceivesWaitsForABacklog(t *testing.T) {
+	savedQuiet, savedLimit := settleQuiet, settleLimit
+	settleQuiet, settleLimit = 20*time.Millisecond, 400*time.Millisecond
+	defer func() { settleQuiet, settleLimit = savedQuiet, savedLimit }()
+
+	// A backlog that drains in steps of 5 ms, each shorter than the quiet
+	// period, and reaches the total.
+	start := time.Now()
+	draining := func() int64 { return min(100, int64(time.Since(start)/(5*time.Millisecond))*10) }
+	if n, settled := settledReceives(draining, 100); n != 100 || !settled {
+		t.Errorf("draining backlog: %d settled=%v, want 100 settled", n, settled)
+	}
+	// Subscribers that stop at 40 of 100: the rest was dropped.
+	start = time.Now()
+	short := func() int64 { return min(40, int64(time.Since(start)/(5*time.Millisecond))*10) }
+	if n, settled := settledReceives(short, 100); n != 40 || !settled {
+		t.Errorf("lossy: %d settled=%v, want 40 settled", n, settled)
+	}
+	// Subscribers still receiving at the limit.
+	start = time.Now()
+	endless := func() int64 { return int64(time.Since(start) / (2 * time.Millisecond)) }
+	if n, settled := settledReceives(endless, 1<<40); settled {
+		t.Errorf("endless: %d reported as settled", n)
+	}
+	// Already complete: no wait.
+	begun := time.Now()
+	if n, settled := settledReceives(func() int64 { return 7 }, 7); n != 7 || !settled || time.Since(begun) > settleQuiet {
+		t.Errorf("complete: %d settled=%v after %v", n, settled, time.Since(begun))
+	}
+}
+
+// The evaluation gives each delivery class its own section and its own
+// ranking, and says what each row delivered.
+func TestEvaluationRanksEachDeliveryClassSeparately(t *testing.T) {
+	data := &reportData{
+		meta:    map[string]any{"profile": "quick", "commit": "abc123", "num_cpu": 2.0, "gomaxprocs": 2.0, "seed": 1.0, "generator_version": deliveryClassContract},
+		metrics: deliveryClassMetrics(),
+		summary: map[string]any{"failures": 0.0, "duration_s": 1.0},
+	}
+	registry := map[string]any{"scenarios": []any{}, "attachments": []any{}}
+	page := renderEvaluation(evaluationInput{data: data, registry: registry, derived: deriveReport(data, registry),
+		resultsName: "results-09-01-results.jsonl", registryName: "results-09-02-registry.json", verified: true})
+	for _, want := range []string{
+		"| in delivery classes (delivers every value: 6, ranked; drops or coalesces: 6, ranked) |",
+		"## Family broadcast: 12 implementations in delivery classes",
+		"| delivers every value | 6 | 100% / 100% / 100% | ranked |",
+		"| drops or coalesces | 6 | 10% / 10% / 10% | ranked |",
+		"### broadcast, delivers every value: 6 implementations",
+		"### broadcast, drops or coalesces: 6 implementations",
+		"Every implementation of this class has the same value for: stall_resilience.",
+		// Best of the dropping class: rank 1 there, with what it delivered.
+		"| 1 | D0 | 100 | 100 | no data | no data | no data | 100 | tied | 17 ns | 10% | 10% |",
+		// Best throughput of the class that delivers everything, 1,000 ns
+		// against the 10 ns of D0, is rank 1 of its own class.
+		"| 1 | L0 | ",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("evaluation lacks %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Log(page)
+	}
+}
+
+// The scores CSV names the class of each row and what it delivered, and
+// keeps the rows of a class together.
+func TestScoresCSVCarriesTheDeliveryClass(t *testing.T) {
+	data := &reportData{meta: map[string]any{"generator_version": deliveryClassContract}, metrics: deliveryClassMetrics()}
+	dir := t.TempDir()
+	scores := filepath.Join(dir, "scores.csv")
+	if err := writeReportCSVs(filepath.Join(dir, "metrics.csv"), scores, data, deriveReport(data, nil)); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(scores)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	rows, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	col := map[string]int{}
+	for i, name := range rows[0] {
+		col[name] = i
+	}
+	for _, name := range []string{"class", "delivered_at_8", "delivered_least", "stall_resilience"} {
+		if _, ok := col[name]; !ok {
+			t.Fatalf("no %s column in %v", name, rows[0])
+		}
+	}
+	if len(rows) != 13 {
+		t.Fatalf("%d rows, want a header and 12", len(rows))
+	}
+	for i, row := range rows[1:] {
+		wantClass, wantDelivered := classDeliversAll, "1"
+		if i >= 6 {
+			wantClass, wantDelivered = classDrops, "0.1"
+		}
+		if row[col["class"]] != wantClass || row[col["delivered_at_8"]] != wantDelivered {
+			t.Errorf("row %d (%s): class %q delivered %q, want %q %q", i, row[col["impl"]], row[col["class"]], row[col["delivered_at_8"]], wantClass, wantDelivered)
+		}
+		// The dimension that is the same for the whole dropping class is
+		// not part of its score and has an empty cell.
+		if (row[col["stall_resilience"]] == "") != (i >= 6) {
+			t.Errorf("row %d (%s): stall_resilience cell %q", i, row[col["impl"]], row[col["stall_resilience"]])
 		}
 	}
 }

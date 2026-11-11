@@ -161,23 +161,40 @@ func warmOps(target time.Duration, maxOps int, op func(i int)) int {
 	return n
 }
 
+// The settling of a throughput cell. A publisher can finish with values still
+// queued for its subscribers: a design that buffers without bound delivers
+// everything, later. Counting receives the moment the publisher returns would
+// call that design lossy, so the count is read only once the subscribers have
+// stopped receiving for settleQuiet, and a cell whose subscribers are still
+// receiving at settleLimit is a harness failure, because its count would be a
+// guess.
+var (
+	settleQuiet = 50 * time.Millisecond
+	settleLimit = 20 * time.Second
+)
+
 // settledReceives returns the receive count once the subscribers have taken
-// what they are going to take: it reaches want, or it has not moved for two
-// milliseconds, or 200 ms have passed. It is called after the timed loop, so
-// it costs the measurement nothing. A lossless implementation reaches want; a
-// lossy one stops short, and the difference is what it dropped.
-func settledReceives(read func() int64, want int64) int64 {
-	deadline := time.Now().Add(200 * time.Millisecond)
-	last, still := read(), 0
-	for last < want && still < 2 && time.Now().Before(deadline) {
+// what they are going to take: it has reached want, or it has not moved for
+// settleQuiet. settled is false when it was still moving at settleLimit. It
+// is called after the timed loop, so it costs the measurement nothing. A
+// lossless implementation reaches want; a lossy one stops short, and the
+// difference is what it dropped.
+func settledReceives(read func() int64, want int64) (n int64, settled bool) {
+	start := time.Now()
+	last, lastMove := read(), start
+	for last < want {
 		time.Sleep(time.Millisecond)
-		if now := read(); now != last {
-			last, still = now, 0
-		} else {
-			still++
+		now := time.Now()
+		if got := read(); got != last {
+			last, lastMove = got, now
+		} else if now.Sub(lastMove) >= settleQuiet {
+			return last, true
+		}
+		if now.Sub(start) >= settleLimit {
+			return last, false
 		}
 	}
-	return last
+	return last, true
 }
 
 // deliveryFields are the fields a throughput record carries about what its
@@ -358,7 +375,11 @@ func measureBroadcastThroughput(ctx *measureContext, factory func() Broadcaster,
 			}
 			n, d := budget.done()
 			publishes += int64(warmup + n)
-			receives += settledReceives(g.totalReceived, int64(warmup+n)*int64(subs))
+			got, settled := settledReceives(g.totalReceived, int64(warmup+n)*int64(subs))
+			if !settled {
+				ctx.fail("%s: subscribers were still receiving %v after the last publish (subs=%d): the delivered count is not final", name, settleLimit, subs)
+			}
+			receives += got
 			clean := g.stop(3 * time.Second)
 			lastOps = n
 			if !clean {

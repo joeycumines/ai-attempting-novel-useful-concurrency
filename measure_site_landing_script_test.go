@@ -24,6 +24,17 @@ const landingPageScript = `<script>
     });
   }
 
+  // A score is relative to a delivery class where the family has them.
+  var CLASS_LABEL = {'delivers-all': 'delivers every value', 'drops': 'drops or coalesces'};
+  function share(v){
+    if (v === '' || v == null) return '-';
+    var f = parseFloat(v);
+    if (isNaN(f)) return '-';
+    if (f >= 1) return '100%';
+    if (f >= 0.9995) return '&lt;100%';
+    return (100*f).toFixed(f >= 0.1 ? 0 : f >= 0.01 ? 1 : 2) + '%';
+  }
+
   // --- Render Leaderboard Scores Table ---
   var currentFamily = 'all';
   var currentVerdict = 'all';
@@ -37,6 +48,7 @@ const landingPageScript = `<script>
       if (q) {
         var match = (r.impl||'').toLowerCase().indexOf(q) !== -1 ||
                     (r.family||'').toLowerCase().indexOf(q) !== -1 ||
+                    (CLASS_LABEL[r['class']]||'').indexOf(q) !== -1 ||
                     (r.verdict||'').toLowerCase().indexOf(q) !== -1;
         if (!match) return false;
       }
@@ -54,7 +66,7 @@ const landingPageScript = `<script>
       else if (r.verdict.indexOf('Not ranked') !== -1) vClass = 'v-unranked';
 
       html += '<tr>' +
-        '<td><span class="tag">' + esc(r.family) + '</span></td>' +
+        '<td><span class="tag">' + esc(r.family) + '</span>' + (CLASS_LABEL[r['class']] ? '<div style="color:var(--ink3);font-size:11px;margin-top:3px">' + CLASS_LABEL[r['class']] + '</div>' : '') + '</td>' +
         '<td style="font-weight:600;font-family:var(--mono);font-size:12px">' + esc(r.impl) + '</td>' +
         '<td>' + (ranked ? '<div class="scorebar"><div class="fill" style="width:' + s + '%"></div><span>' + s + '</span></div>' : '<span style="color:var(--ink3)">not ranked</span>') + '</td>' +
         '<td><span class="verdict ' + vClass + '">' + esc(r.verdict) + '</span></td>' +
@@ -64,11 +76,12 @@ const landingPageScript = `<script>
         '<td>' + (r.scaling || '-') + '</td>' +
         '<td>' + (r.churn || '-') + '</td>' +
         '<td>' + (r.stall_resilience || '-') + '</td>' +
+        '<td>' + share(r.delivered_at_8) + '</td>' +
         '</tr>';
     });
 
     if (!filtered.length) {
-      html = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--ink3)">No implementations matched your filter criteria.</td></tr>';
+      html = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--ink3)">No implementations matched your filter criteria.</td></tr>';
     }
     document.getElementById('scoresBody').innerHTML = html;
   }

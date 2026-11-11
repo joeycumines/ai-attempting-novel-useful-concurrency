@@ -181,10 +181,15 @@ func TestEvaluationStatesWhatChangedBeforeTheGates(t *testing.T) {
 // of its own scenario, and only calls a difference when the 95 percent
 // intervals do not overlap.
 func TestEvaluationComparesEachScenarioWithItsBaseline(t *testing.T) {
+	// Every implementation delivers all 100 publishes to its 8 subscribers,
+	// except the one that is made to drop below.
 	rec := func(family, impl string, mean, half float64) map[string]any {
 		return map[string]any{"type": "metric", "family": family, "impl": impl, "metric": "publish_ns_op", "unit": "ns",
-			"dims": map[string]any{"subs": 8.0}, "mean": mean, "ci95_halfwidth": half, "ci95_low": mean - half, "ci95_high": mean + half}
+			"dims": map[string]any{"subs": 8.0}, "mean": mean, "ci95_halfwidth": half, "ci95_low": mean - half, "ci95_high": mean + half,
+			"publishes": 100.0, "receives": 800.0, "delivered_fraction": 1.0}
 	}
+	dropper := rec("broadcast", "Dropper", 5, 1) // cheaper than everything, and delivers a tenth
+	dropper["receives"], dropper["delivered_fraction"] = 80.0, 0.1
 	metrics := []map[string]any{
 		rec("broadcast", "BaselineB", 100, 10),
 		rec("broadcast", "Fast", 50, 5),     // 45..55 against 90..110: faster
@@ -192,6 +197,7 @@ func TestEvaluationComparesEachScenarioWithItsBaseline(t *testing.T) {
 		rec("broadcast", "Slow", 300, 20),   // 280..320: slower
 		rec("broadcast", "Elsewhere", 1, 0), // attached to another scenario only
 		rec("broadcast", "PoorFit", 2, 0),   // attached, but not as a good fit
+		dropper,
 		// The same metric at another subscriber count is not the headline.
 		{"type": "metric", "family": "broadcast", "impl": "Fast", "metric": "publish_ns_op", "dims": map[string]any{"subs": 64.0}, "mean": 9999.0, "ci95_low": 9999.0, "ci95_high": 9999.0},
 		rec("fanin", "BaselineF", 100, 1),
@@ -208,7 +214,7 @@ func TestEvaluationComparesEachScenarioWithItsBaseline(t *testing.T) {
 		},
 		"attachments": []any{
 			attach("ring", "BaselineB", true), attach("ring", "Fast", true), attach("ring", "Close", true), attach("ring", "Slow", true),
-			attach("ring", "PoorFit", false), attach("ring", "NotMeasured", true),
+			attach("ring", "PoorFit", false), attach("ring", "NotMeasured", true), attach("ring", "Dropper", true),
 			attach("other", "Elsewhere", true), attach("merge", "Other", true),
 		},
 	}
@@ -218,9 +224,11 @@ func TestEvaluationComparesEachScenarioWithItsBaseline(t *testing.T) {
 	page := b.String()
 	for _, want := range []string{
 		"## Each scenario against its own baseline",
-		"| `ring` | broadcast | BaselineB | 100 ns (90 ns to 110 ns) | 3 | 1 | 1 | 1 | Fast (50 ns); Close (95 ns); Slow (300 ns) |",
+		// The baseline delivers everything. The attachment that drops is the
+		// cheapest of all and is counted, not compared, and not called faster.
+		"| `ring` | broadcast | BaselineB | 100 ns (90 ns to 110 ns) | 100% | 3 | 1 | 1 | 1 | 1 | Fast (50 ns); Close (95 ns); Slow (300 ns) |",
 		// A scenario whose baseline has no record is listed without a verdict.
-		"| `other` | broadcast | BaselineMissing | no record | 1 |  |  |  | Elsewhere (1 ns) |",
+		"| `other` | broadcast | BaselineMissing | no record | no record | 1 |  |  |  | 0 | Elsewhere (1 ns) |",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("per-scenario section lacks %q\n%s", want, page)

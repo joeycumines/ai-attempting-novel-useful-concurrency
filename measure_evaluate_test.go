@@ -557,7 +557,7 @@ func renderEvaluation(in evaluationInput) string {
 		if list, ok := cov["missing"].([]string); ok {
 			missing = len(list)
 		}
-		ranked := "ranked"
+		ranked := evalClassScoring(dd.Scores[f])
 		if reason, no := dd.Unranked[f]; no {
 			ranked = "not ranked: " + reason
 		}
@@ -677,88 +677,142 @@ func renderEvaluation(in evaluationInput) string {
 		if _, no := dd.Unranked[f]; no {
 			continue
 		}
-		list := make([]implScore, 0, len(scores))
-		for _, s := range scores {
-			list = append(list, s)
-		}
-		sort.Slice(list, func(i, j int) bool {
-			if list[i].Score != list[j].Score {
-				return list[i].Score > list[j].Score
-			}
-			return list[i].Impl < list[j].Impl
-		})
-		rank := make([]int, len(list))
-		for i := range list {
-			rank[i] = i + 1
-			if i > 0 && list[i].Score == list[i-1].Score {
-				rank[i] = rank[i-1]
-			}
-		}
-		fmt.Fprintf(&b, "## Family %s: %d implementations\n\n", f, len(list))
-		missingAll := []string{}
-		for _, d := range dimOrder {
-			n := 0
-			for _, s := range list {
-				for _, m := range s.DimsMissing {
-					if m == d {
-						n++
-					}
+		classes := scoreClasses(scores)
+		classed := len(classes) > 1 || classes[0] != ""
+		if classed {
+			fmt.Fprintf(&b, "## Family %s: %d implementations in delivery classes\n\n", f, len(scores))
+			b.WriteString("An implementation of this family either hands every published value to every subscriber, or it overwrites, drops or coalesces what a subscriber has not yet taken. The throughput battery publishes as fast as it can to subscribers that do nothing but receive, and records how much of it arrived. An implementation is in the class \"" + deliveryClassLabel(classDeliversAll) + "\" when everything arrived in every cell and every repetition, and in \"" + deliveryClassLabel(classDrops) + "\" otherwise.\n\n")
+			b.WriteString("The classes are scored separately, because a publish is cheaper when the value need not arrive. Scored together, as they were before record contract " + deliveryClassContract + ", every place at the top of the family went to an implementation that drops. The delivered share is what happened in this battery, with a publisher that never pauses on this machine. It is not a constant of the implementation: one that drops delivers everything to subscribers that keep up.\n\n")
+			rows = rows[:0]
+			for _, c := range classes {
+				list, _ := scoresOfClass(scores, c)
+				label := deliveryClassLabel(c)
+				if c == "" {
+					label = "no delivery figures"
 				}
+				delivered := "no record"
+				if lo, mid, hi, ok := evalDelivered(list); ok {
+					delivered = evalPercent(lo) + " / " + evalPercent(mid) + " / " + evalPercent(hi)
+				}
+				state := "ranked"
+				if !list[0].Ranked {
+					state = "not ranked: " + list[0].UnrankedReason
+				}
+				rows = append(rows, []string{label, strconv.Itoa(len(list)), delivered, state})
 			}
-			if n == len(list) {
-				missingAll = append(missingAll, d)
+			mdTable(&b, []string{"Class", "Implementations", "Delivered with 8 subscribers: least / median / most", "Scoring"}, rows)
+		}
+		for _, class := range classes {
+			list, rank := scoresOfClass(scores, class)
+			among := "family"
+			if classed {
+				among = "class"
+				label := deliveryClassLabel(class)
+				if class == "" {
+					label = "no delivery figures"
+				}
+				fmt.Fprintf(&b, "### %s, %s: %d implementations\n\n", f, label, len(list))
+			} else {
+				fmt.Fprintf(&b, "## Family %s: %d implementations\n\n", f, len(list))
 			}
-		}
-		b.WriteString("The score is a weighted mean of percentile ranks within this family, so it says where an implementation stands among these subjects on this machine and nothing about absolute quality.")
-		if len(missingAll) > 0 {
-			fmt.Fprintf(&b, " No battery in this family produces data for: %s. Those dimensions are left out.", strings.Join(missingAll, ", "))
-		}
-		b.WriteString("\n\n")
-		verdicts := map[string]int{}
-		order := []string{}
-		for _, s := range list {
-			if verdicts[s.Verdict] == 0 {
-				order = append(order, s.Verdict)
+			if !list[0].Ranked {
+				names := make([]string, len(list))
+				for i, s := range list {
+					names[i] = s.Impl
+				}
+				fmt.Fprintf(&b, "Not ranked: %s. They are: %s.\n\n", list[0].UnrankedReason, mdCell(strings.Join(names, "; ")))
+				continue
 			}
-			verdicts[s.Verdict]++
-		}
-		rows = rows[:0]
-		for _, v := range order {
-			rows = append(rows, []string{v, strconv.Itoa(verdicts[v])})
-		}
-		mdTable(&b, []string{"Verdict", "Implementations"}, rows)
-
-		header := []string{"Rank", "Implementation", "Score"}
-		header = append(header, dimOrder...)
-		row := func(i int) []string {
-			s := list[i]
-			r := []string{strconv.Itoa(rank[i]), s.Impl, strconv.Itoa(s.Score)}
+			missingAll := []string{}
 			for _, d := range dimOrder {
-				cell := strconv.Itoa(s.Dims[d])
-				for _, m := range s.DimsMissing {
-					if m == d {
-						cell = "no data"
+				n := 0
+				for _, s := range list {
+					for _, m := range s.DimsMissing {
+						if m == d {
+							n++
+						}
 					}
 				}
-				r = append(r, cell)
+				if n == len(list) {
+					missingAll = append(missingAll, d)
+				}
 			}
-			return r
-		}
-		rows = rows[:0]
-		for i := 0; i < len(list) && i < 10; i++ {
-			rows = append(rows, row(i))
-		}
-		fmt.Fprintf(&b, "Highest %d scores:\n\n", len(rows))
-		mdTable(&b, header, rows)
-		rows = rows[:0]
-		for i := range list {
-			if list[i].Baseline {
+			fmt.Fprintf(&b, "The score is a weighted mean of percentile ranks within this %s, so it says where an implementation stands among these subjects on this machine and nothing about absolute quality.", among)
+			if len(missingAll) > 0 {
+				fmt.Fprintf(&b, " No battery in this family produces data for: %s. Those dimensions are left out.", strings.Join(missingAll, ", "))
+			}
+			uniform := list[0].DimsUniform
+			if len(uniform) > 0 {
+				fmt.Fprintf(&b, " Every implementation of this %s has the same value for: %s. That distinguishes none of them, so it is left out of the score and shown as \"tied\".", among, strings.Join(uniform, ", "))
+			}
+			b.WriteString("\n\n")
+			verdicts := map[string]int{}
+			order := []string{}
+			for _, s := range list {
+				if verdicts[s.Verdict] == 0 {
+					order = append(order, s.Verdict)
+				}
+				verdicts[s.Verdict]++
+			}
+			rows = rows[:0]
+			for _, v := range order {
+				rows = append(rows, []string{v, strconv.Itoa(verdicts[v])})
+			}
+			mdTable(&b, []string{"Verdict", "Implementations"}, rows)
+
+			header := []string{"Rank", "Implementation", "Score"}
+			header = append(header, dimOrder...)
+			if classed {
+				header = append(header, "Publish cost, 8 subscribers", "Delivered, 8 subscribers", "Delivered, least over all cells")
+			}
+			row := func(i int) []string {
+				s := list[i]
+				r := []string{strconv.Itoa(rank[i]), s.Impl, strconv.Itoa(s.Score)}
+				for _, d := range dimOrder {
+					cell := strconv.Itoa(s.Dims[d])
+					for _, m := range s.DimsMissing {
+						if m == d {
+							cell = "no data"
+						}
+					}
+					for _, m := range s.DimsUniform {
+						if m == d {
+							cell = "tied"
+						}
+					}
+					r = append(r, cell)
+				}
+				if classed {
+					cost, at8, least := "no record", "no record", "no record"
+					if v, ok := s.Metrics["publish_ns_op@8"].(float64); ok {
+						cost = humanNs(v)
+					}
+					if v, ok := s.Metrics["delivered_fraction@8"].(float64); ok {
+						at8 = evalPercent(v)
+					}
+					if v, ok := s.Metrics["delivered_fraction_least"].(float64); ok {
+						least = evalPercent(v)
+					}
+					r = append(r, cost, at8, least)
+				}
+				return r
+			}
+			rows = rows[:0]
+			for i := 0; i < len(list) && i < 10; i++ {
 				rows = append(rows, row(i))
 			}
-		}
-		if len(rows) > 0 {
-			b.WriteString("The baselines:\n\n")
+			fmt.Fprintf(&b, "Highest %d scores:\n\n", len(rows))
 			mdTable(&b, header, rows)
+			rows = rows[:0]
+			for i := range list {
+				if list[i].Baseline {
+					rows = append(rows, row(i))
+				}
+			}
+			if len(rows) > 0 {
+				b.WriteString("The baselines:\n\n")
+				mdTable(&b, header, rows)
+			}
 		}
 	}
 
@@ -1102,12 +1156,20 @@ func evalScenarioBaselines(b *strings.Builder, in evaluationInput, families []st
 		}
 		subjects := []subject{}
 		faster, slower, same := 0, 0, 0
+		// Without a score for the baseline its class is not known, and
+		// nothing is compared anyway: every measured attachment is listed.
+		baseScore, haveBaseScore := in.derived.Scores[family][baseline]
+		baseClass, otherClass := baseScore.Class, 0
 		for _, impl := range attached[id] {
 			if impl == baseline {
 				continue
 			}
 			m, ok := records[key{family, impl}]
 			if !ok {
+				continue
+			}
+			if haveBaseScore && in.derived.Scores[family][impl].Class != baseClass {
+				otherClass++
 				continue
 			}
 			mean, lo, hi, okM := bounds(m)
@@ -1137,10 +1199,17 @@ func evalScenarioBaselines(b *strings.Builder, in evaluationInput, families []st
 		for i := 0; i < len(subjects) && i < 3; i++ {
 			fastest = append(fastest, fmt.Sprintf("%s (%s)", subjects[i].impl, humanNs(subjects[i].mean)))
 		}
-		row := []string{"`" + id + "`", family, baseline, "no record", strconv.Itoa(len(subjects)), "", "", "", strings.Join(fastest, "; ")}
+		delivers := "all (checked exactly-once)"
+		if hasDeliveryClasses(family) {
+			delivers = "no record"
+			if f, ok := in.derived.Scores[family][baseline].Metrics["delivered_fraction@8"].(float64); ok {
+				delivers = evalPercent(f)
+			}
+		}
+		row := []string{"`" + id + "`", family, baseline, "no record", delivers, strconv.Itoa(len(subjects)), "", "", "", strconv.Itoa(otherClass), strings.Join(fastest, "; ")}
 		if okBase {
 			row[3] = fmt.Sprintf("%s (%s to %s)", humanNs(baseMean), humanNs(baseLo), humanNs(baseHi))
-			row[5], row[6], row[7] = strconv.Itoa(faster), strconv.Itoa(same), strconv.Itoa(slower)
+			row[6], row[7], row[8] = strconv.Itoa(faster), strconv.Itoa(same), strconv.Itoa(slower)
 		}
 		rows = append(rows, row)
 	}
@@ -1148,7 +1217,7 @@ func evalScenarioBaselines(b *strings.Builder, in evaluationInput, families []st
 		return
 	}
 	b.WriteString("## Each scenario against its own baseline\n\n")
-	b.WriteString("The family scores rank every implementation of a family in one table, whatever it promises: a ring that drops values and a barrier that waits for every subscriber are scored against each other, and a publisher that blocks behind a stalled subscriber loses the stall dimension even where blocking is the contract. This table compares like with like. For each scenario it takes the implementations attached to it as an expected good fit and compares each with that scenario's baseline on one number: the mean cost of one publish (or send) with 8 subscribers. Faster and slower mean the 95 percent confidence intervals do not overlap.\n\n")
+	b.WriteString("A score ranks every implementation of a family, or of a delivery class, in one table, whatever else it promises: a publisher that blocks behind a stalled subscriber loses the stall dimension even where blocking is the contract. This table narrows the comparison. For each scenario it takes the implementations attached to it as an expected good fit and compares each with that scenario's baseline on one number: the mean cost of one publish (or send) with 8 subscribers. Faster and slower mean the 95 percent confidence intervals do not overlap. An implementation is compared with the baseline only when it is in the baseline's delivery class: the cost of a publish that delivers is not set against the cost of one that drops. Those in the other class are counted and not compared.\n\n")
 	b.WriteString("That number is the steady-state cost only. It does not time what distinguishes the scenario (churn, close, replay, a deadline); the tests exercise those and the batteries do not time them per scenario. An implementation attached to several scenarios appears in each.\n\n")
-	mdTable(b, []string{"Scenario", "Family", "Baseline", "Baseline cost (95% interval)", "Good-fit implementations measured", "Faster", "Not distinguishable", "Slower", "Fastest three"}, rows)
+	mdTable(b, []string{"Scenario", "Family", "Baseline", "Baseline cost (95% interval)", "Baseline delivered", "Good-fit implementations in the baseline's class", "Faster", "Not distinguishable", "Slower", "In the other class, not compared", "Fastest three compared"}, rows)
 }
