@@ -215,17 +215,22 @@ var harnessRunnables = map[string]string{
 	"TestBaselineScatterQueueWithdrawalReleasesAdmission": "unit test of the scatter baselines (its file name matches no single source file)",
 
 	// The registry and the measurement tooling test themselves.
-	"TestScenarioRegistryComplete":                  "registry self-check",
-	"TestScenarioCaseRunnablesExist":                "registry self-check",
-	"TestScenarioCaseRunnablesExhaustive":           "registry self-check",
-	"TestMain":                                      "test binary entry point (hosts the bigbuff-measure CLI)",
-	"TestIntegrityOfGates":                          "measurement report tooling",
-	"TestMeasuredSetsOfRecordedContract":            "measurement index tooling",
-	"TestMeasuredSetsOfLegacyDump":                  "measurement index tooling",
-	"TestIndexVerifiesEachRunAgainstItsOwnRegistry": "measurement index tooling",
-	"TestCommittedRunsAreIndexed":                   "measurement index tooling",
-	"TestSiteWiringIsIdempotent":                    "site tooling",
-	"TestPagesMarkdownLiquidDelimitersAreEscaped":   "site tooling",
+	"TestScenarioRegistryComplete":                   "registry self-check",
+	"TestScenarioCaseRunnablesExist":                 "registry self-check",
+	"TestScenarioCaseRunnablesExhaustive":            "registry self-check",
+	"TestMain":                                       "test binary entry point (hosts the bigbuff-measure CLI)",
+	"TestIntegrityOfGates":                           "measurement report tooling",
+	"TestMeasuredSetsOfRecordedContract":             "measurement index tooling",
+	"TestMeasuredSetsOfLegacyDump":                   "measurement index tooling",
+	"TestIndexVerifiesEachRunAgainstItsOwnRegistry":  "measurement index tooling",
+	"TestCommittedRunsAreIndexed":                    "measurement index tooling",
+	"TestVerifyRejectsMetricRecordsWithoutAValue":    "measurement verify tooling",
+	"TestSmallFamiliesAreNotRanked":                  "measurement report tooling",
+	"TestUnrankedFamilyStillReportsIntegrityFailure": "measurement report tooling",
+	"TestScoreUsesOnlyDimensionsWithData":            "measurement report tooling",
+	"TestExchangePairingViolations":                  "measurement battery tooling",
+	"TestSiteWiringIsIdempotent":                     "site tooling",
+	"TestPagesMarkdownLiquidDelimitersAreEscaped":    "site tooling",
 }
 
 // implementationSource returns the non-test source file a test file belongs
@@ -255,39 +260,38 @@ func implementationSource(testFile string) string {
 // runnable therefore cannot be added without either registering it against
 // a scenario or stating why it is not one.
 func TestScenarioCaseRunnablesExhaustive(t *testing.T) {
-	registered := map[string]bool{}
-	for _, c := range Cases {
-		registered[c.Runnable] = true
-	}
-	re := regexp.MustCompile(`(?m)^func\s+((?:Test|Benchmark|Fuzz)[A-Za-z0-9_]*)\s*\(`)
-	files, err := filepath.Glob("*_test.go")
+	runnables, err := Runnables()
 	if err != nil {
 		t.Fatal(err)
 	}
+	count := map[RunnableClass]int{}
 	listed := map[string]bool{}
-	var cases, units, harness int
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		owner := implementationSource(file)
-		for _, m := range re.FindAllSubmatch(data, -1) {
-			name := string(m[1])
-			_, isListed := harnessRunnables[name]
-			switch {
-			case registered[name] && isListed:
-				t.Errorf("%s (%s) is both a registered case and listed in harnessRunnables", name, file)
-			case registered[name]:
-				cases++
-			case isListed:
-				listed[name] = true
-				harness++
-			case owner != "":
-				units++
-			default:
-				t.Errorf("%s (%s) is not a registered case, is not in an implementation's own test file, and is not listed in harnessRunnables", name, file)
+	perScenario := map[ScenarioID]int{}
+	for _, r := range runnables {
+		count[r.Class]++
+		switch r.Class {
+		case RunnableHarness:
+			listed[r.Name] = true
+			if r.Reason == "" {
+				t.Errorf("%s (%s): listed in harnessRunnables without a reason", r.Name, r.File)
 			}
+		case RunnableUnit:
+			if len(r.Implementations) == 0 {
+				t.Errorf("%s (%s): its source file %s provides no attached implementation; attach one, or name the implementations in sourceImplementations", r.Name, r.File, r.Source)
+			}
+			if len(r.Scenarios) == 0 {
+				t.Errorf("%s (%s): resolves to no scenario", r.Name, r.File)
+			}
+		case RunnableCase:
+			if len(r.Scenarios) == 0 {
+				t.Errorf("%s (%s): registered case without a scenario", r.Name, r.File)
+			}
+		}
+		for _, id := range r.Scenarios {
+			if _, ok := scenarioByID[id]; !ok {
+				t.Errorf("%s (%s): unknown scenario %q", r.Name, r.File, id)
+			}
+			perScenario[id]++
 		}
 	}
 	for name := range harnessRunnables {
@@ -295,5 +299,25 @@ func TestScenarioCaseRunnablesExhaustive(t *testing.T) {
 			t.Errorf("harnessRunnables lists %s, which no longer exists or is now a registered case", name)
 		}
 	}
-	t.Logf("%d runnables: %d registered cases, %d implementation unit runnables, %d listed harness runnables", cases+units+harness, cases, units, harness)
+	for source, impls := range sourceImplementations {
+		if _, err := os.Stat(source); err != nil {
+			t.Errorf("sourceImplementations names %s: %v", source, err)
+		}
+		known := map[string]bool{}
+		for _, a := range allAttachments() {
+			known[a.Impl] = true
+		}
+		for _, impl := range impls {
+			if !known[impl] {
+				t.Errorf("sourceImplementations[%s] names %q, which is not an attached implementation", source, impl)
+			}
+		}
+	}
+	for _, s := range Scenarios {
+		if perScenario[s.ID] == 0 {
+			t.Errorf("scenario %q has no runnable", s.ID)
+		}
+	}
+	t.Logf("%d runnables: %d registered cases, %d implementation unit runnables, %d listed harness runnables",
+		len(runnables), count[RunnableCase], count[RunnableUnit], count[RunnableHarness])
 }
