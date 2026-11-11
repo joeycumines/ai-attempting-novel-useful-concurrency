@@ -14,48 +14,155 @@ import (
 
 // --- Caster family ---
 
-func startCasterReceivers(x casterLike, n int) (stop func(), waitDone func(time.Duration) bool, received *atomic.Int64) {
-	var receivedCount atomic.Int64
-	stopCh := make(chan struct{})
-	var wg sync.WaitGroup
+// casterRounds drives a caster in lock step so that every measured Send has
+// receivers to deliver to.
+//
+// A caster delivers to the receivers registered at the time of the Send, and
+// a receiver registers again (Add(1)) for each value it wants. A sender that
+// simply loops therefore finds nobody registered on almost every call: the
+// receivers have not got round to registering again. The batteries used to do
+// exactly that, and what they timed was the empty fast path. With 8 receivers
+// and 20,000 sends, the reference ChanCaster delivered 13 values and one
+// candidate delivered none; their "send cost" was 2 to 5 ns, and the baseline,
+// which delivered more, ranked last for it.
+//
+// Here the sender waits before each Send until every receiver that took the
+// previous value has registered again (arm), so a Send is timed with all its
+// receivers registered. What is recorded with the time is how many deliveries
+// the Sends reported, how many values the receivers actually took, and how
+// many deliveries were missing.
+type casterRounds struct {
+	x         casterLike
+	receivers int
+	ready     chan struct{} // one token per receiver registration
+	stop      chan struct{}
+	wg        sync.WaitGroup
+	received  atomic.Int64
+	toArm     int // receivers that still owe a registration before the next Send
+}
+
+// casterArmGuard bounds the wait for a receiver to register again. It expires
+// only when a Send reported a delivery that no receiver took.
+var casterArmGuard = 5 * time.Second
+
+func startCasterRounds(x casterLike, receivers int) *casterRounds {
+	r := &casterRounds{x: x, receivers: receivers, ready: make(chan struct{}, receivers), stop: make(chan struct{}), toArm: receivers}
 	if !x.rearmEach {
-		for i := 0; i < n; i++ {
+		for i := 0; i < receivers; i++ {
 			x.add(1)
 		}
 	}
-	for r := 0; r < n; r++ {
-		wg.Add(1)
+	for i := 0; i < receivers; i++ {
+		r.wg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer r.wg.Done()
 			for {
 				if x.rearmEach {
 					x.add(1)
+				}
+				select {
+				case r.ready <- struct{}{}:
+				case <-r.stop:
+					x.add(-1)
+					return
 				}
 				select {
 				case <-x.c:
 					if x.ack != nil {
 						x.ack()
 					}
-					receivedCount.Add(1)
-				case <-stopCh:
+					r.received.Add(1)
+				case <-r.stop:
 					x.add(-1)
 					return
 				}
 			}
 		}()
 	}
-	return func() {
-			close(stopCh)
-		}, func(timeout time.Duration) bool {
-			done := make(chan struct{})
-			go func() { wg.Wait(); close(done) }()
-			select {
-			case <-done:
-				return true
-			case <-time.After(timeout):
-				return false
-			}
-		}, &receivedCount
+	return r
+}
+
+// arm waits until every receiver that owes a registration has made it. It
+// reports false if one has not within the guard, which means a Send reported a
+// delivery that no receiver took.
+func (r *casterRounds) arm() bool {
+	for ; r.toArm > 0; r.toArm-- {
+		select {
+		case <-r.ready:
+		case <-time.After(casterArmGuard):
+			return false
+		}
+	}
+	return true
+}
+
+// send performs one armed Send and returns its duration and reported count.
+func (r *casterRounds) send(v int) (time.Duration, int, bool) {
+	if !r.arm() {
+		return 0, 0, false
+	}
+	t0 := time.Now()
+	k := r.x.send(v)
+	d := time.Since(t0)
+	if k > 0 {
+		r.toArm = k // exactly the receivers that took the value register again
+		if r.toArm > r.receivers {
+			r.toArm = r.receivers
+		}
+	}
+	return d, k, true
+}
+
+// finish stops the receivers and reports whether they all returned.
+func (r *casterRounds) finish() bool {
+	close(r.stop)
+	done := make(chan struct{})
+	go func() { r.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		return false
+	}
+	if r.x.close != nil {
+		r.x.close()
+	}
+	return true
+}
+
+// casterDelivery is the delivery accounting of one caster measurement.
+type casterDelivery struct {
+	sends, reported, expected int64
+}
+
+func (d *casterDelivery) add(receivers, reported int) {
+	d.sends++
+	d.reported += int64(reported)
+	d.expected += int64(receivers)
+}
+
+// fields returns the record fields: deliveries per Send, deliveries missing
+// (a Send with every receiver registered that reported fewer than all of
+// them), and the difference between what the Sends reported and what the
+// receivers took.
+func (d *casterDelivery) fields(received int64) map[string]any {
+	perSend := 0.0
+	if d.sends > 0 {
+		perSend = float64(d.reported) / float64(d.sends)
+	}
+	missing := d.expected - d.reported
+	if missing < 0 {
+		missing = 0
+	}
+	mismatch := d.reported - received
+	if mismatch < 0 {
+		mismatch = -mismatch
+	}
+	return map[string]any{
+		"delivered_per_send":      perSend,
+		"deliveries_missing":      missing,
+		"exactly_once_violations": mismatch,
+		"checked":                 d.expected,
+	}
 }
 
 func measureCasterThroughput(ctx *measureContext, mk func() casterLike, name string) {
@@ -63,32 +170,48 @@ func measureCasterThroughput(ctx *measureContext, mk func() casterLike, name str
 	for _, receivers := range ctx.profile.CasterScaleSubs {
 		samples := make([]float64, 0, ctx.profile.Reps)
 		lastOps := 0
+		var delivery casterDelivery
+		var received int64
 		for r := 0; r < ctx.profile.Reps; r++ {
-			x := mk()
-			stop, waitDone, _ := startCasterReceivers(x, receivers)
+			rounds := startCasterRounds(mk(), receivers)
 			const warmup = 16
-			w0 := time.Now()
-			for i := 0; i < warmup; i++ {
-				x.send(i + 1)
+			var warm time.Duration
+			ok := true
+			for i := 0; i < warmup && ok; i++ {
+				var d time.Duration
+				d, _, ok = rounds.send(i + 1)
+				warm += d
 			}
-			est := time.Since(w0) / warmup
-			n := calibrateOps(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps, est)
-			s := time.Now()
-			for i := 0; i < n; i++ {
-				x.send(i + 1 + warmup)
+			warmReceived := int64(0)
+			n := calibrateOps(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps, warm/warmup)
+			var total time.Duration
+			if ok {
+				// Every warm-up value has been taken once the receivers that
+				// took the last one have registered again.
+				ok = rounds.arm()
+				warmReceived = rounds.received.Load()
 			}
-			d := time.Since(s)
-			stop()
-			if !waitDone(3 * time.Second) {
+			for i := 0; i < n && ok; i++ {
+				var d time.Duration
+				var k int
+				d, k, ok = rounds.send(i + 1 + warmup)
+				total += d
+				delivery.add(receivers, k)
+			}
+			if ok {
+				ok = rounds.arm()
+			}
+			if !ok {
+				ctx.fail("%s: a Send reported a delivery that no receiver took (receivers=%d)", name, receivers)
+			}
+			if !rounds.finish() {
 				ctx.fail("%s: caster receivers did not stop (receivers=%d)", name, receivers)
 			}
-			if x.close != nil {
-				x.close()
-			}
+			received += rounds.received.Load() - warmReceived
 			lastOps = n
-			samples = append(samples, float64(d)/float64(n))
+			samples = append(samples, float64(total)/float64(n))
 		}
-		ctx.writeMetric(map[string]any{
+		rec := map[string]any{
 			"metric":            "send_ns_op",
 			"family":            "caster",
 			"impl":              name,
@@ -100,50 +223,71 @@ func measureCasterThroughput(ctx *measureContext, mk func() casterLike, name str
 			"scenarios":         scen,
 			"expected_good_fit": goodFit,
 			"exposure_limited":  expLimit,
-		}, samples)
+			"instrumented":      true,
+		}
+		for k, v := range delivery.fields(received) {
+			rec[k] = v
+		}
+		ctx.writeMetric(rec, samples)
 	}
 }
 
 func measureCasterLatency(ctx *measureContext, mk func() casterLike, name string) {
 	scen, goodFit, expLimit := casterAttachmentMeta(name)
 	const receivers = 8
-	x := mk()
-	stop, waitDone, _ := startCasterReceivers(x, receivers)
+	rounds := startCasterRounds(mk(), receivers)
 	const warmup = 32
-	for i := 0; i < warmup; i++ {
-		x.send(i + 1)
+	ok := true
+	for i := 0; i < warmup && ok; i++ {
+		_, _, ok = rounds.send(i + 1)
+	}
+	warmReceived := int64(0)
+	if ok {
+		ok = rounds.arm()
+		warmReceived = rounds.received.Load()
 	}
 	n := ctx.profile.LatencySamples
-	durations := make([]float64, n)
+	durations := make([]float64, 0, n)
 	hist := newHistogram()
-	for i := 0; i < n; i++ {
-		t0 := time.Now()
-		x.send(i + 1 + warmup)
-		d := time.Since(t0)
-		durations[i] = float64(d)
+	var delivery casterDelivery
+	for i := 0; i < n && ok; i++ {
+		var d time.Duration
+		var k int
+		d, k, ok = rounds.send(i + 1 + warmup)
+		if !ok {
+			break
+		}
+		durations = append(durations, float64(d))
 		hist.add(float64(d))
+		delivery.add(receivers, k)
 	}
-	stop()
-	if !waitDone(3 * time.Second) {
+	if ok {
+		ok = rounds.arm()
+	}
+	if !ok {
+		ctx.fail("%s: a Send reported a delivery that no receiver took during the latency run", name)
+	}
+	if !rounds.finish() {
 		ctx.fail("%s: caster receivers did not stop after latency run", name)
 	}
-	if x.close != nil {
-		x.close()
-	}
-	ctx.writeMetric(map[string]any{
+	rec := map[string]any{
 		"metric":            "send_latency_ns",
 		"family":            "caster",
 		"impl":              name,
 		"unit":              "ns",
 		"dims":              map[string]any{"receivers": receivers},
-		"ops":               n,
+		"ops":               len(durations),
 		"histogram":         hist,
 		"lower_is_better":   true,
 		"scenarios":         scen,
 		"expected_good_fit": goodFit,
 		"exposure_limited":  expLimit,
 		"instrumented":      true,
-	}, durations)
+	}
+	for k, v := range delivery.fields(rounds.received.Load() - warmReceived) {
+		rec[k] = v
+	}
+	ctx.writeMetric(rec, durations)
 }
 
 func measureCasterChurn(ctx *measureContext, mk func() casterLike, name string) {

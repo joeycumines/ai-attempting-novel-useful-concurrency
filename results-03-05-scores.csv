@@ -87,19 +87,19 @@ broadcast,GenPubSub50Meta (50-MetaAI),15,Avoid for most uses,false,verified,6,7,
 broadcast,ReliableBeacon (08-MuseSpark),15,Avoid for most uses,false,verified,11,10,0,14,41,,true,false
 broadcast,ChanPubSub58Spark (58-MuseSpark),12,Avoid for most uses,false,verified,5,5,17,2,33,,true,false
 broadcast,BaselineBarrierPubSub (baseline),11,Avoid for most uses,true,verified,7,9,7,10,23,,true,false
-caster,ChanCaster11Meta,94,Strong candidate,false,verified,100,83,,92,,,true,false
-caster,ChanCaster2,86,Strong candidate,false,verified,92,100,,42,,,true,false
-caster,ChanCaster09Gemini,81,Strong candidate,false,verified,83,67,,100,,,true,false
-caster,ChanCaster17Pumped,74,Situational (strengths offset by trade-offs),false,verified,75,75,,67,,,true,false
-caster,ChanCaster14Xing,66,Situational (strengths offset by trade-offs),false,verified,58,92,,50,,,true,false
-caster,ChanCaster58Spark,54,Niche use only,false,verified,67,50,,17,,,true,false
-caster,ChanCaster47Gemini,43,Avoid for most uses,false,verified,42,25,,75,,,true,false
-caster,ChanCaster15Nemotron,37,Avoid for most uses,false,verified,33,17,,83,,,true,false
-caster,ChanCaster,36,Avoid for most uses,false,verified,25,58,,33,,,true,false
-caster,ChanCasterV2_06meta,32,Avoid for most uses,false,verified,50,0,,25,,,true,false
-caster,ChanCaster17FastPath,28,Avoid for most uses,false,verified,17,33,,58,,,true,false
-caster,AdaptiveCaster23Meta,18,Avoid for most uses,false,verified,8,42,,8,,,true,false
-caster,BaselineRendezvousCaster,2,Avoid for most uses,true,verified,0,8,,0,,,true,false
+caster,AdaptiveCaster23Meta,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,BaselineRendezvousCaster,,Not ranked (measurement not valid),true,verified,,,,,,,true,false
+caster,ChanCaster,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster09Gemini,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster11Meta,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster14Xing,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster15Nemotron,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster17FastPath,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster17Pumped,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster2,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster47Gemini,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCaster58Spark,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
+caster,ChanCasterV2_06meta,,Not ranked (measurement not valid),false,verified,,,,,,,true,false
 fanin,BaselineFanIn (baseline),,Not ranked (family of 2),true,verified,,,,,,,true,false
 fanin,EdgeFanIn68Chatgpt (68-ChatGPT),,Not ranked (family of 2),false,verified,,,,,,,true,false
 gather,BaselineGatherBarrier,,Not ranked (family of 2),true,verified,,,,,,,true,false

@@ -144,7 +144,7 @@ function sortedImpls(f, by){
     html += '<div class="finding"><span class="tag">'+esc(familyLabel[f]||f)+' · '+(cov.measured||impls.length)+'/'+(cov.expected||impls.length)+' measured</span>'
       + (isRanked(best)
           ? '<h3>'+esc(best.impl)+'</h3><p>Adoptability <b style="color:var(--cyan)">'+best.score+'</b> — '+esc(best.verdict)+'. '
-          : '<h3>Not ranked</h3><p>'+impls.length+' implementations measured: too few for a percentile score. Compare their measurements and confidence intervals. ')
+          : '<h3>Not ranked</h3><p>'+esc(best.unranked_reason ? 'Reason: '+best.unranked_reason+'. ' : impls.length+' implementations measured: too few for a percentile score. Compare their measurements and confidence intervals. '))
       + (cov.missing && cov.missing.length ? cov.missing.length+' expected impl(s) skipped (see skip list).' : 'Full family coverage.')
       + '</p></div>';
   });

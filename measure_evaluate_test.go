@@ -57,6 +57,69 @@ type gatesRecord struct {
 	NumCPU   int              `json:"num_cpu"`
 	Legs     []gateLeg        `json:"legs"`
 	Fuzz     []gateFuzzTarget `json:"fuzz"`
+
+	// How the tree the gates ran on relates to the tree that was measured.
+	// Filled in when `gates` is given the run (--run); see compareGateCommit.
+	MeasuredCommit string `json:"measured_commit,omitempty"`
+	Comparison     string `json:"comparison,omitempty"` // same-commit | compared | not-compared: <why>
+	// SourceChanged is null unless Comparison is "compared"; an empty list
+	// then means that no file other than results changed.
+	SourceChanged  []string `json:"source_files_changed_since_measurement"`
+	ResultsChanged int      `json:"result_files_changed_since_measurement"`
+}
+
+// isResultFile reports whether a path is something the harness writes or
+// rewires (run artifacts, the landing page, report pages) rather than code,
+// build files or documentation.
+func isResultFile(path string) bool {
+	return strings.HasPrefix(path, "results-") || strings.HasPrefix(path, "report-") || path == "index.html"
+}
+
+// compareGateCommit records what changed between the measured commit and the
+// commit the gates ran on. The usual order is: measure on a clean tree, commit
+// the run, run the gates on that commit. The two commits then differ, and the
+// question that matters is whether any code differs. diff lists the files
+// changed between two commits; it is a parameter so the rule can be tested
+// without a repository.
+func compareGateCommit(rec *gatesRecord, measured string, diff func(a, b string) ([]string, error)) {
+	rec.MeasuredCommit = measured
+	if measured == "" {
+		rec.Comparison = "not-compared: the run records no commit"
+		return
+	}
+	if measured == rec.Commit {
+		rec.Comparison = "same-commit"
+		return
+	}
+	files, err := diff(measured, rec.Commit)
+	if err != nil {
+		rec.Comparison = "not-compared: " + err.Error()
+		return
+	}
+	rec.Comparison = "compared"
+	rec.SourceChanged = []string{}
+	for _, f := range files {
+		if isResultFile(f) {
+			rec.ResultsChanged++
+		} else {
+			rec.SourceChanged = append(rec.SourceChanged, f)
+		}
+	}
+	sort.Strings(rec.SourceChanged)
+}
+
+func gitChangedFiles(a, b string) ([]string, error) {
+	out, err := exec.Command("git", "diff", "--name-only", a, b).Output()
+	if err != nil {
+		return nil, fmt.Errorf("git diff %s %s failed", a, b)
+	}
+	files := []string{}
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
 }
 
 // gateLegOrder is every leg verify.mk can log, in the order it is reported.
@@ -139,7 +202,15 @@ func parseGateLog(leg, text string) (gateLeg, []gateFuzzTarget) {
 				passed++
 			}
 		}
+		// The command is the line verify.fuzz prints before its first
+		// target; the per-target headers are not commands.
+		commands := out.Commands
 		out.Commands = nil
+		for _, c := range commands {
+			if !strings.HasPrefix(c, "Fuzz") {
+				out.Commands = append(out.Commands, c)
+			}
+		}
 		out.Detail = fmt.Sprintf("%d of %d targets passed", passed, len(fuzz))
 		if strings.Contains(text, "verify.fuzz: ok") && passed == len(fuzz) && len(fuzz) > 0 {
 			out.Status = "pass"
@@ -204,6 +275,7 @@ func cmdMeasureGates(args []string) int {
 	fs := flag.NewFlagSet("gates", flag.ContinueOnError)
 	logDir := fs.String("log", "", "directory holding the <leg>.log files written by `make verify VERIFY_LOG=<dir>`")
 	out := fs.String("out", "", "output path (results-NN-06-gates.json)")
+	run := fs.String("run", "", "results JSONL of the run the record belongs to; records what changed between the measured commit and the gated one")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -212,6 +284,16 @@ func cmdMeasureGates(args []string) int {
 		return 2
 	}
 	rec := readGateLogs(*logDir)
+	if *run != "" {
+		data, err := loadReportData(*run)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gates: load %s: %v\n", *run, err)
+			return 1
+		}
+		measured, _ := data.meta["commit"].(string)
+		compareGateCommit(&rec, measured, gitChangedFiles)
+		fmt.Fprintf(os.Stderr, "gates: measured at %s, gated at %s: %s, %d source and %d result files changed\n", measured, rec.Commit, rec.Comparison, len(rec.SourceChanged), rec.ResultsChanged)
+	}
 	raw, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gates: %v\n", err)
@@ -476,8 +558,8 @@ func renderEvaluation(in evaluationInput) string {
 			missing = len(list)
 		}
 		ranked := "ranked"
-		if len(dd.Scores[f]) < minRankedImpls {
-			ranked = "not ranked (fewer than " + strconv.Itoa(minRankedImpls) + ")"
+		if reason, no := dd.Unranked[f]; no {
+			ranked = "not ranked: " + reason
 		}
 		rows = append(rows, []string{f, strconv.Itoa(len(dd.Scores[f])), strconv.Itoa(missing), ranked})
 	}
@@ -495,7 +577,23 @@ func renderEvaluation(in evaluationInput) string {
 		}
 		fmt.Fprintf(&b, "`make verify` at commit `%s`, %s, recorded %s on %s %s/%s with %d logical CPUs.", g.Commit, tree, g.Recorded, g.Go, g.GOOS, g.GOARCH, g.NumCPU)
 		if run := evalStr(meta, "commit"); run != g.Commit {
-			fmt.Fprintf(&b, " The measurements were taken at commit `%s`, which is a different commit.", run)
+			fmt.Fprintf(&b, " The measurements were taken at commit `%s`.", run)
+			switch {
+			case g.Comparison == "compared" && g.MeasuredCommit == run && len(g.SourceChanged) == 0:
+				fmt.Fprintf(&b, " Between the two commits only result, report and site files changed (%d files), so the gates ran on the code that was measured.", g.ResultsChanged)
+			case g.Comparison == "compared" && g.MeasuredCommit == run:
+				shown := g.SourceChanged
+				more := ""
+				if len(shown) > 12 {
+					more = fmt.Sprintf(" and %d more", len(shown)-12)
+					shown = shown[:12]
+				}
+				fmt.Fprintf(&b, " **%d files other than results changed between the two commits**, so the gates did not run on exactly the code that was measured: `%s`%s.", len(g.SourceChanged), strings.Join(shown, "`, `"), more)
+			default:
+				b.WriteString(" That is a different commit, and what changed between the two was not recorded.")
+			}
+		} else {
+			b.WriteString(" That is the commit the measurements were taken at.")
 		}
 		if strings.HasPrefix(g.Stamp, "none") {
 			b.WriteString(" The logs carried no stamp, so the commit and tree state above were read after the gates ran.")
@@ -576,7 +674,7 @@ func renderEvaluation(in evaluationInput) string {
 	dimOrder := []string{"throughput", "latency", "allocations", "churn", "scaling", "stall_resilience"}
 	for _, f := range families {
 		scores := dd.Scores[f]
-		if len(scores) < minRankedImpls {
+		if _, no := dd.Unranked[f]; no {
 			continue
 		}
 		list := make([]implScore, 0, len(scores))
@@ -664,12 +762,25 @@ func renderEvaluation(in evaluationInput) string {
 		}
 	}
 
+	// --- Scenarios against their baselines ---
+	evalScenarioBaselines(&b, in, families)
+
 	// --- Unranked families ---
+	// A family whose measurement is not valid under the run's record contract
+	// is named, with the reason, and its figures are not printed: a table of
+	// them would be read as a comparison.
 	small := []string{}
 	for _, f := range families {
+		reason, no := dd.Unranked[f]
+		if !no {
+			continue
+		}
 		if len(dd.Scores[f]) < minRankedImpls {
 			small = append(small, f)
+			continue
 		}
+		fmt.Fprintf(&b, "## Family %s: not ranked in this run\n\n", f)
+		fmt.Fprintf(&b, "%d implementations were measured, and no score or comparison is given, because %s. The records are in the results file; a run under record contract %s or later measures this family properly.\n\n", len(dd.Scores[f]), reason, casterDeliveryContract)
 	}
 	if len(small) > 0 {
 		fmt.Fprintf(&b, "## Families with fewer than %d implementations\n\n", minRankedImpls)
@@ -786,11 +897,27 @@ func renderEvaluation(in evaluationInput) string {
 	if len(data.skipped) == 0 {
 		b.WriteString("Nothing was skipped.\n\n")
 	} else {
+		// One skip record is written per repetition; identical ones are
+		// reported once with their count.
 		rows = rows[:0]
+		at := map[string]int{}
+		counts := []int{}
 		for _, s := range data.skipped {
-			rows = append(rows, []string{evalStr(s, "family"), evalStr(s, "impl"), evalStr(s, "battery"), evalStr(s, "reason")})
+			row := []string{evalStr(s, "family"), evalStr(s, "impl"), evalStr(s, "battery"), evalStr(s, "reason")}
+			key := strings.Join(row, "\x00")
+			if i, ok := at[key]; ok {
+				counts[i]++
+				continue
+			}
+			at[key] = len(rows)
+			rows = append(rows, row)
+			counts = append(counts, 1)
 		}
-		mdTable(&b, []string{"Family", "Implementation", "Battery", "Reason recorded"}, rows)
+		for i := range rows {
+			rows[i] = append(rows[i], strconv.Itoa(counts[i]))
+		}
+		fmt.Fprintf(&b, "%d skip records, %d distinct.\n\n", len(data.skipped), len(rows))
+		mdTable(&b, []string{"Family", "Implementation", "Battery", "Reason recorded", "Records"}, rows)
 	}
 
 	// --- Noise ---
@@ -833,4 +960,131 @@ func renderEvaluation(in evaluationInput) string {
 	b.WriteString("- A score ranks implementations against each other. It does not say that any of them is correct: correctness is what the gates above and the tests address.\n")
 	b.WriteString("- The batteries measure the workloads they define (see `measurement.md`). A workload that is not among them was not measured.\n")
 	return b.String()
+}
+
+// evalHeadline is the one number a family's implementations are compared on
+// per scenario: the family's throughput metric at 8 on its sweep dimension.
+var evalHeadline = map[string]string{"broadcast": "publish_ns_op", "payload": "publish_ns_op", "caster": "send_ns_op"}
+
+// evalScenarioBaselines writes, for every scenario of a ranked family, how the
+// implementations attached to it as an expected good fit compare with that
+// scenario's baseline. The family score ranks everything in a family in one
+// table, whatever each implementation promises; this is the like-for-like
+// view. "Faster" and "slower" require non-overlapping 95 percent intervals.
+func evalScenarioBaselines(b *strings.Builder, in evaluationInput, families []string) {
+	asList := func(v any) []map[string]any {
+		out := []map[string]any{}
+		list, _ := v.([]any)
+		for _, e := range list {
+			if m, ok := e.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	ranked := map[string]bool{}
+	for _, f := range families {
+		if _, no := in.derived.Unranked[f]; !no && evalHeadline[f] != "" {
+			ranked[f] = true
+		}
+	}
+	type key struct{ family, impl string }
+	records := map[key]map[string]any{}
+	for _, m := range in.data.metrics {
+		family, _ := m["family"].(string)
+		if ranked[family] && m["metric"] == evalHeadline[family] && dimsSubs(m) == 8 {
+			impl, _ := m["impl"].(string)
+			records[key{family, impl}] = m
+		}
+	}
+	attached := map[string][]string{} // scenario -> expected-good-fit implementations
+	for _, a := range asList(in.registry["attachments"]) {
+		if good, _ := a["expected_good_fit"].(bool); good {
+			id, _ := a["scenario"].(string)
+			impl, _ := a["impl"].(string)
+			attached[id] = append(attached[id], impl)
+		}
+	}
+	bounds := func(m map[string]any) (mean, lo, hi float64, ok bool) {
+		mean, ok = m["mean"].(float64)
+		lo, okLo := m["ci95_low"].(float64)
+		hi, okHi := m["ci95_high"].(float64)
+		return mean, lo, hi, ok && okLo && okHi
+	}
+	rows := [][]string{}
+	scenarios := asList(in.registry["scenarios"])
+	sort.SliceStable(scenarios, func(i, j int) bool {
+		ki, _ := scenarios[i]["kind"].(string)
+		kj, _ := scenarios[j]["kind"].(string)
+		if ki != kj {
+			return ki < kj
+		}
+		return evalStr(scenarios[i], "id") < evalStr(scenarios[j], "id")
+	})
+	for _, s := range scenarios {
+		family, _ := s["kind"].(string)
+		if !ranked[family] {
+			continue
+		}
+		id, baseline := evalStr(s, "id"), evalStr(s, "baseline")
+		base, haveBase := records[key{family, baseline}]
+		baseMean, baseLo, baseHi, okBase := 0.0, 0.0, 0.0, false
+		if haveBase {
+			baseMean, baseLo, baseHi, okBase = bounds(base)
+		}
+		type subject struct {
+			impl string
+			mean float64
+		}
+		subjects := []subject{}
+		faster, slower, same := 0, 0, 0
+		for _, impl := range attached[id] {
+			if impl == baseline {
+				continue
+			}
+			m, ok := records[key{family, impl}]
+			if !ok {
+				continue
+			}
+			mean, lo, hi, okM := bounds(m)
+			if !okM {
+				continue
+			}
+			subjects = append(subjects, subject{impl, mean})
+			if !okBase {
+				continue
+			}
+			switch {
+			case hi < baseLo:
+				faster++
+			case lo > baseHi:
+				slower++
+			default:
+				same++
+			}
+		}
+		sort.Slice(subjects, func(i, j int) bool {
+			if subjects[i].mean != subjects[j].mean {
+				return subjects[i].mean < subjects[j].mean
+			}
+			return subjects[i].impl < subjects[j].impl
+		})
+		fastest := []string{}
+		for i := 0; i < len(subjects) && i < 3; i++ {
+			fastest = append(fastest, fmt.Sprintf("%s (%s)", subjects[i].impl, humanNs(subjects[i].mean)))
+		}
+		row := []string{"`" + id + "`", family, baseline, "no record", strconv.Itoa(len(subjects)), "", "", "", strings.Join(fastest, "; ")}
+		if okBase {
+			row[3] = fmt.Sprintf("%s (%s to %s)", humanNs(baseMean), humanNs(baseLo), humanNs(baseHi))
+			row[5], row[6], row[7] = strconv.Itoa(faster), strconv.Itoa(same), strconv.Itoa(slower)
+		}
+		rows = append(rows, row)
+	}
+	if len(rows) == 0 {
+		return
+	}
+	b.WriteString("## Each scenario against its own baseline\n\n")
+	b.WriteString("The family scores rank every implementation of a family in one table, whatever it promises: a ring that drops values and a barrier that waits for every subscriber are scored against each other, and a publisher that blocks behind a stalled subscriber loses the stall dimension even where blocking is the contract. This table compares like with like. For each scenario it takes the implementations attached to it as an expected good fit and compares each with that scenario's baseline on one number: the mean cost of one publish (or send) with 8 subscribers. Faster and slower mean the 95 percent confidence intervals do not overlap.\n\n")
+	b.WriteString("That number is the steady-state cost only. It does not time what distinguishes the scenario (churn, close, replay, a deadline); the tests exercise those and the batteries do not time them per scenario. An implementation attached to several scenarios appears in each.\n\n")
+	mdTable(b, []string{"Scenario", "Family", "Baseline", "Baseline cost (95% interval)", "Good-fit implementations measured", "Faster", "Not distinguishable", "Slower", "Fastest three"}, rows)
 }

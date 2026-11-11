@@ -224,7 +224,9 @@ type implScore struct {
 	// Ranked is false when the family has fewer than minRankedImpls measured
 	// implementations: Score and Dims are then zero and carry no meaning.
 	Ranked bool `json:"ranked"`
-	Peers  int  `json:"peers"` // implementations measured in the family
+	// UnrankedReason says why, in words a reader of the report can act on.
+	UnrankedReason string `json:"unranked_reason,omitempty"`
+	Peers          int    `json:"peers"` // implementations measured in the family
 	// DimsMissing lists the score dimensions this implementation has no
 	// data for. They are left out of the composite, and their Dims entry is
 	// zero.
@@ -244,6 +246,8 @@ type derivedData struct {
 	Observations []map[string]any                `json:"observations"`
 	FamilyOf     map[string]string               `json:"family_of"`
 	Baselines    []string                        `json:"baselines"`
+	// Unranked maps each family that gets no score to the reason.
+	Unranked map[string]string `json:"unranked"`
 }
 
 // minRankedImpls is the smallest family that gets a composite score. Every
@@ -254,6 +258,24 @@ type derivedData struct {
 // below this size are reported with their measurements and confidence
 // intervals only.
 const minRankedImpls = 5
+
+// casterDeliveryContract is the first record contract whose caster send
+// figures measure delivery (see measureGeneratorVersion).
+const casterDeliveryContract = "1.2.0"
+
+// familyRanking reports whether a family of `measured` implementations is
+// scored in a run taken under the record contract `generator`, and if not,
+// why. It is the one place that decision is made: the report, the score CSV,
+// the evaluation and the landing page all read its result.
+func familyRanking(family string, measured int, generator string) (ranked bool, reason string) {
+	if family == "caster" && generatorBefore(generator, casterDeliveryContract) {
+		return false, "the caster batteries of record contract " + generator + " timed Sends that found no receiver registered and delivered nothing, so its send figures do not measure delivery"
+	}
+	if measured < minRankedImpls {
+		return false, fmt.Sprintf("%d implementations measured, fewer than the %d a percentile score needs", measured, minRankedImpls)
+	}
+	return true, ""
+}
 
 func isBaselineName(name string) bool {
 	return strings.Contains(name, "Baseline") || strings.Contains(name, "(baseline)")
@@ -344,6 +366,11 @@ func integrityOf(metrics []map[string]any, impl, family string) (string, float64
 		if v, ok := m["exactly_once_violations"].(float64); ok {
 			violations += v
 		}
+		// A caster Send made with every receiver registered that reported
+		// fewer deliveries than receivers lost a value.
+		if v, ok := m["deliveries_missing"].(float64); ok {
+			violations += v
+		}
 	}
 	if violations > 0 {
 		return "failed", violations
@@ -356,7 +383,9 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 		Scores:   map[string]map[string]implScore{},
 		Coverage: map[string]map[string]any{},
 		FamilyOf: map[string]string{},
+		Unranked: map[string]string{},
 	}
+	generator, _ := data.meta["generator_version"].(string)
 	families := map[string][]string{}
 	for _, m := range data.metrics {
 		fam, _ := m["family"].(string)
@@ -397,7 +426,10 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			"broadcast": "publish_ns_op", "payload": "publish_ns_op", "caster": "send_ns_op", "fanin": "merge_ns_op",
 			"exchange": "exchange_ns_op", "barrier": "send_ns_op",
 		}[family]
-		ranked := len(impls) >= minRankedImpls
+		ranked, unrankedReason := familyRanking(family, len(impls), generator)
+		if !ranked {
+			dd.Unranked[family] = unrankedReason
+		}
 		thrAll := metricMeans(data.metrics, thrMetric, family, thrDims)
 		latAll := metricMeans(data.metrics, map[string]string{
 			"broadcast": "publish_latency_ns", "payload": "publish_latency_ns", "caster": "send_latency_ns",
@@ -521,6 +553,9 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 				verdict = "Do not adopt (integrity failure)"
 			case !ranked:
 				verdict = fmt.Sprintf("Not ranked (family of %d)", len(impls))
+				if len(impls) >= minRankedImpls {
+					verdict = "Not ranked (measurement not valid)"
+				}
 			case score >= 75:
 				verdict = "Strong candidate"
 			case score >= 60:
@@ -567,6 +602,7 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 				Score:           score,
 				Verdict:         verdict,
 				Ranked:          ranked,
+				UnrankedReason:  unrankedReason,
 				Peers:           len(impls),
 				DimsMissing:     dimsMissing,
 				Baseline:        isBaselineName(impl),

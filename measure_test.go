@@ -23,6 +23,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -182,9 +183,39 @@ func cpuModel() string {
 //	       ops_completed value, although the metric is named for it, so the
 //	       stall-resilience dimension of every score in those runs is a
 //	       constant (see results-00-00-readme.md).
-//	1.1.0  ops_completed recorded; exchange and barrier batteries; verify
-//	       rejects a metric record that carries no value.
-const measureGeneratorVersion = "1.1.0"
+//	1.1.0  run 05. ops_completed recorded; exchange and barrier batteries;
+//	       verify rejects a metric record that carries no value.
+//	1.2.0  The caster throughput and latency batteries time a Send only
+//	       once every receiver is registered, and record the deliveries.
+//	       Before this they timed Sends that mostly found no receiver
+//	       registered and delivered nothing, so the caster send figures of
+//	       every earlier contract are not a measurement of delivery, and
+//	       the reports do not rank the caster family of those runs (see
+//	       familyRanking).
+const measureGeneratorVersion = "1.2.0"
+
+// generatorBefore reports whether the record contract `have` is older than
+// `want`. A file without a contract (hand-built records in the tooling tests)
+// counts as current.
+func generatorBefore(have, want string) bool {
+	if have == "" {
+		return false
+	}
+	parse := func(s string) [3]int {
+		var out [3]int
+		for i, part := range strings.SplitN(s, ".", 3) {
+			out[i], _ = strconv.Atoi(part)
+		}
+		return out
+	}
+	h, w := parse(have), parse(want)
+	for i := range h {
+		if h[i] != w[i] {
+			return h[i] < w[i]
+		}
+	}
+	return false
+}
 
 func measureMetaRecords(profile string, seed int64) map[string]any {
 	return map[string]any{

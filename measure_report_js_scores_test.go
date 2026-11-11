@@ -220,7 +220,7 @@ function radarRender(){
   var focus = radarSel.length ? sc[radarSel[0]] : null;
   if (focus) {
     var h = '<div class="small" style="margin-bottom:4px">Breakdown — <b style="color:var(--ink)">'+esc(focus.impl)+'</b> · score <b style="color:var(--cyan)">'+scoreText(focus)+'</b></div>';
-    if (!isRanked(focus)) h += '<div class="small" style="margin:6px 0">This family has '+(focus.peers||'too few')+' measured implementations, too few for percentile dimensions. The axes below are empty by design; use the measurements and their confidence intervals.</div>';
+    if (!isRanked(focus)) h += '<div class="small" style="margin:6px 0">'+(focus.unranked_reason ? 'This family is not ranked in this run: '+esc(focus.unranked_reason)+'. The axes below are empty by design.' : 'This family has '+(focus.peers||'too few')+' measured implementations, too few for percentile dimensions. The axes below are empty by design; use the measurements and their confidence intervals.')+'</div>';
     radarAxes.forEach(function(axis){
       var v = focus.dims[axis.key]||0;
       var none = dimMissing(focus, axis.key) || !isRanked(focus);
