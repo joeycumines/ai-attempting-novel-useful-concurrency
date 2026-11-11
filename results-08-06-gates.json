@@ -1,9 +1,9 @@
 {
   "type": "gates",
   "schema": 1,
-  "commit": "a0a6c62a356c",
+  "commit": "5cd88efa4cb4",
   "dirty_tree": false,
-  "recorded": "2026-11-11T11:33:42Z",
+  "recorded": "2026-11-11T11:48:12Z",
   "stamp": "written by verify.all before its first leg",
   "go": "go1.27.3",
   "goos": "linux",
@@ -27,15 +27,15 @@
       "commands": [
         "go test -count=1 -cpu 1,2,4 ./..."
       ],
-      "detail": "192.348 s"
+      "detail": "186.387 s"
     },
     {
       "leg": "race",
-      "status": "fail",
+      "status": "pass",
       "commands": [
         "go test -race -count=1 ./..."
       ],
-      "detail": "reported a failure;"
+      "detail": "139.884 s"
     },
     {
       "leg": "alloc",
@@ -43,7 +43,7 @@
       "commands": [
         "go test -count=1 -run Alloc -v ./..."
       ],
-      "detail": "31 passing, 0 failing, 0 skipped test results; 0.025 s"
+      "detail": "31 passing, 0 failing, 0 skipped test results; 0.026 s"
     },
     {
       "leg": "fuzz",
@@ -64,91 +64,91 @@
       "target": "FuzzBitmap72Gemini",
       "status": "pass",
       "budget": "10s",
-      "execs": 11290
+      "execs": 56398
     },
     {
       "target": "FuzzUnifiedBroadcaster",
       "status": "pass",
       "budget": "10s",
-      "execs": 1451
+      "execs": 706
     },
     {
       "target": "FuzzBroadcaster58RingModel",
       "status": "pass",
       "budget": "10s",
-      "execs": 135542
+      "execs": 132040
     },
     {
       "target": "FuzzQueuedFanout24FIFO",
       "status": "pass",
       "budget": "10s",
-      "execs": 135802
+      "execs": 127868
     },
     {
       "target": "FuzzReplayCast53RingModel",
       "status": "pass",
       "budget": "10s",
-      "execs": 132380
+      "execs": 131728
     },
     {
       "target": "FuzzRingCaster55Model",
       "status": "pass",
       "budget": "10s",
-      "execs": 140676
+      "execs": 133490
     },
     {
       "target": "FuzzRingFanOut14TwoStageModel",
       "status": "pass",
       "budget": "10s",
-      "execs": 135490
+      "execs": 132431
     },
     {
       "target": "FuzzRingPubSubModel",
       "status": "pass",
       "budget": "10s",
-      "execs": 1723
+      "execs": 10061
     },
     {
       "target": "FuzzScenarioBarrier",
       "status": "pass",
       "budget": "10s",
-      "execs": 69631
+      "execs": 65055
     },
     {
       "target": "FuzzScenarioExchange",
       "status": "pass",
       "budget": "10s",
-      "execs": 73366
+      "execs": 75283
     },
     {
       "target": "FuzzScenarioFaninModel",
       "status": "pass",
       "budget": "10s",
-      "execs": 128801
+      "execs": 125921
     },
     {
       "target": "FuzzScenarioBroadcast",
       "status": "pass",
       "budget": "10s",
-      "execs": 28028
+      "execs": 21854
     },
     {
       "target": "FuzzScenarioCasterScatterGather",
       "status": "pass",
       "budget": "10s",
-      "execs": 40572
+      "execs": 49695
     },
     {
       "target": "FuzzStableRing32QueueModel",
       "status": "pass",
       "budget": "10s",
-      "execs": 139814
+      "execs": 122918
     },
     {
       "target": "FuzzBoundedScatterModel",
       "status": "pass",
       "budget": "10s",
-      "execs": 133598
+      "execs": 127453
     }
   ],
   "measured_commit": "df776172e692",
@@ -156,7 +156,10 @@
   "source_files_changed_since_measurement": [
     "01-readme.md",
     "AGENTS.md",
+    "broadcast_28_flint.go",
     "extraction_audit.md",
+    "horizon_70_meta.go",
+    "horizon_70_meta_test.go",
     "measure_delivery_class_test.go",
     "measure_evaluate_test.go",
     "measure_evaluate_tooling_test.go",
