@@ -454,6 +454,47 @@ func TestLandingPageCoversEveryRunAndReport(t *testing.T) {
 	}
 }
 
+// A run's card says when its rankings are withdrawn, and why. A reader who
+// opens the report of an old run from the landing page has been told.
+func TestLandingPageSaysWhichRunsAreNotRanked(t *testing.T) {
+	page, facts := renderCommittedLandingPage(t)
+	if len(facts.Runs) == 0 {
+		t.Skip("no committed measurement runs")
+	}
+	const whole, delivery = "<strong>Not ranked:</strong>", "<strong>Broadcast and payload not ranked:</strong>"
+	seen := map[string]int{}
+	for _, r := range facts.Runs {
+		start := strings.Index(page, "<h4>Measurement Report (Run "+r.Run+" ")
+		if start < 0 {
+			t.Errorf("run %s has no card", r.Run)
+			continue
+		}
+		card := page[start:]
+		if end := strings.Index(card, `<div class="report-actions">`); end >= 0 {
+			card = card[:end]
+		}
+		hasWhole, hasDelivery := strings.Contains(card, whole), strings.Contains(card, delivery)
+		switch {
+		case generatorBefore(r.Generator, isolationContract):
+			seen["whole"]++
+			if !hasWhole || hasDelivery {
+				t.Errorf("run %s (contract %q) was one process: its card must say the run is not ranked, and only that", r.Run, r.Generator)
+			}
+		case generatorBefore(r.Generator, deliveryClassContract):
+			seen["delivery"]++
+			if hasWhole || !hasDelivery {
+				t.Errorf("run %s (contract %q) did not record delivery: its card must say broadcast and payload are not ranked, and only that", r.Run, r.Generator)
+			}
+		default:
+			seen["current"]++
+			if hasWhole || hasDelivery {
+				t.Errorf("run %s (contract %q) is current: its card says a ranking is withdrawn", r.Run, r.Generator)
+			}
+		}
+	}
+	t.Logf("cards: %v", seen)
+}
+
 // TestCommittedLandingPageIsCurrent fails when index.html is not what the
 // committed files render to: a run, report, tracker row or score changed and
 // the page was not rebuilt.

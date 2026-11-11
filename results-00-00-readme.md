@@ -102,6 +102,15 @@ Runs 01 to 04 also predate the repairs listed in `extraction_audit.md`
 ("Second pass", "Third pass"). Their numbers for the repaired implementations
 describe code that no longer exists.
 
+**A run numbered 08 was taken once before and discarded.** Its settling rule
+read a subscriber's count after 2 ms of quiet, which called one implementation
+that delivers everything (`GenCaster (06-Meta)`) lossy. The rule was replaced
+(50 ms of quiet, and a run that is still receiving after 20 s fails), and the
+run was taken again from a clean tree. The committed run 08 is the second one.
+
+**Gates.** Runs 05 and 08 have a gates record (slot 06). Runs 06 and 07 do
+not: nothing recorded what `make verify` reported for their trees.
+
 **Families with fewer than five measured implementations are not ranked.** They
 are measured, checked for integrity and reported with their raw numbers. See
 `measurement.md`, "Adoptability score".

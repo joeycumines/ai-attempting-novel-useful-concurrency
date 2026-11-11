@@ -805,6 +805,13 @@ which is less than the cost of one channel operation per subscriber.
   receivers within 800 to 1,130 ns and the intervals of 62 of the 78 pairs
   overlap. A group is now ranked only when its headline cost tells at least
   half of its pairs apart; the caster family is unranked in both runs.
+- **`--impl '*'` left five implementations out.** The filter used
+  `path.Match`, in which `*` does not cross a `/`, and five broadcast
+  implementations have one in their names. A full run passes no filter and
+  was not affected; a filtered trial was, silently. `/` is now an ordinary
+  character (`measureGlob`), and a measuring process that is asked for an
+  implementation or battery its family does not have fails the run instead
+  of returning nothing.
 - **The first settling rule misclassified one implementation.** To count
   receives after the timed loop, the battery first waited until the count had
   not moved for 2 ms, for at most 200 ms. `GenCaster (06-Meta)` buffers

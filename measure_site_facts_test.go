@@ -354,6 +354,8 @@ func renderSiteFacts(page string, cat siteCatalog, facts siteFacts) string {
 		}
 		if generatorBefore(r.Generator, isolationContract) {
 			cards.WriteString(`            <li><span class="dot"></span> <strong>Not ranked:</strong> the run was one process, and publishers left spinning by an early stalled-consumer probe kept the CPUs busy for everything measured after it; runs under record contract ` + isolationContract + ` or later measure each battery in a process of its own</li>` + "\n")
+		} else if generatorBefore(r.Generator, deliveryClassContract) {
+			cards.WriteString(`            <li><span class="dot"></span> <strong>Broadcast and payload not ranked:</strong> the throughput battery timed each publish and did not record what was delivered, so a publish that drops was ranked against one that delivers; runs under record contract ` + deliveryClassContract + ` or later record it and rank the two apart</li>` + "\n")
 		}
 		if _, ok := r.file("06"); ok {
 			cards.WriteString(`            <li><span class="dot"></span> <strong>Gates recorded:</strong> the evaluation states what <code>make verify</code> reported</li>` + "\n")

@@ -266,6 +266,12 @@ var harnessRunnables = map[string]string{
 	"TestVerifyRejectsARunThatWasNotIsolated":           "measurement verify tooling",
 	"TestFamiliesOfUnisolatedRunsAreNotRanked":          "measurement tooling",
 	"TestOpBudgetEndsNearItsTarget":                     "measurement battery tooling",
+	"TestLandingPageSaysWhichRunsAreNotRanked":          "measurement evaluation tooling",
+	"TestMeasureGlobTreatsSlashAsOrdinary":              "measurement battery tooling",
+	"TestMeasureUnitThatMatchesNothingFails":            "measurement battery tooling",
+	"TestWarmOpsIsSizedByTheClock":                      "measurement battery tooling",
+	"TestDeliveryFieldsRecordTheShareDelivered":         "measurement battery tooling",
+	"TestEvaluationListsOnlyResidueThatUsesACPU":        "measurement battery tooling",
 }
 
 // implementationSource returns the non-test source file a test file belongs

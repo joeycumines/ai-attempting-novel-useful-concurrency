@@ -322,6 +322,7 @@ footer.site-foot a:hover { color: var(--cyan); }
           </p>
           <ul class="report-features">
             <li><span class="dot"></span> <strong>Newest run:</strong> the scorecards below are read from it</li>
+            <li><span class="dot"></span> <strong>Gates recorded:</strong> the evaluation states what <code>make verify</code> reported</li>
             <li><span class="dot"></span> 25 implementation(s) skipped a battery, each with a recorded reason</li>
           </ul>
         </div>
@@ -343,6 +344,7 @@ footer.site-foot a:hover { color: var(--cyan); }
             2,528 records taken in 669 s at commit <code>7310d5374d01</code> with go1.27.3 on 2 logical CPUs. Coverage <span class="v-strong">verified</span> against <code>results-07-02-registry.json</code>.
           </p>
           <ul class="report-features">
+            <li><span class="dot"></span> <strong>Broadcast and payload not ranked:</strong> the throughput battery timed each publish and did not record what was delivered, so a publish that drops was ranked against one that delivers; runs under record contract 1.4.0 or later record it and rank the two apart</li>
             <li><span class="dot"></span> 25 implementation(s) skipped a battery, each with a recorded reason</li>
           </ul>
         </div>
@@ -493,7 +495,7 @@ footer.site-foot a:hover { color: var(--cyan); }
             Run 08 is the first run whose rankings can be read as rankings. It measured 141 implementations in 8 families, each battery in a process of its own, and found no integrity failure. This report says what the run shows, which of the earlier results were withdrawn and why, and what has not been done. It was written by hand from …
           </p>
           <ul class="report-features">
-            <li><span class="dot"></span> <code>report-03-run-08-analysis.md</code> &middot; 16 KB</li>
+            <li><span class="dot"></span> <code>report-03-run-08-analysis.md</code> &middot; 17 KB</li>
             <li><span class="dot"></span> Written from run 08; it is not regenerated</li>
           </ul>
         </div>
@@ -965,8 +967,16 @@ Several responses claim "0 allocations per send" and allocate when measured: a p
             <tr>
               <td><strong>Run 08</strong></td>
               <td><span class="tag tag-prompt">standard</span></td>
+              <td><code>results-08-06-gates.json</code></td>
+              <td>What make verify reported, and at which commit · 4 KB</td>
+              <td><span class="v-strong">verified</span></td>
+              <td><a href="results-08-06-gates.json" download class="btn">Download JSON</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 08</strong></td>
+              <td><span class="tag tag-prompt">standard</span></td>
               <td><code>results-08-07-evaluation.md</code></td>
-              <td>Evaluation generated from the run&#39;s own files · 27 KB</td>
+              <td>Evaluation generated from the run&#39;s own files · 29 KB</td>
               <td><span class="v-strong">verified</span></td>
               <td><a href="results-08-07-evaluation.md" class="btn">Open Evaluation</a></td>
             </tr>
@@ -1334,7 +1344,7 @@ Several responses claim "0 allocations per send" and allocate when measured: a p
               <td><strong>Analysis</strong></td>
               <td><span class="tag tag-prov">written</span></td>
               <td><code>report-03-run-08-analysis.md</code></td>
-              <td>Analysis of measurement run 08 · 16 KB</td>
+              <td>Analysis of measurement run 08 · 17 KB</td>
               <td>not applicable</td>
               <td><a href="report-03-run-08-analysis.md" class="btn">Open</a></td>
             </tr>
