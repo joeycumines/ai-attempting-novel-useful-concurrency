@@ -229,6 +229,14 @@ type implScore struct {
 	// Ranked is false when the family has fewer than minRankedImpls measured
 	// implementations: Score and Dims are then zero and carry no meaning.
 	Ranked bool `json:"ranked"`
+	// Class is the delivery class the implementation is scored in, for the
+	// families that have them (see deliveryClasses), and empty otherwise.
+	// Score, Dims and Peers are relative to the class, not the family.
+	Class string `json:"class,omitempty"`
+	// DimsUniform lists the dimensions on which every implementation of the
+	// scoring group has the same value. Such a dimension distinguishes none
+	// of them, so it is left out of the composite.
+	DimsUniform []string `json:"dims_uniform"`
 	// UnrankedReason says why, in words a reader of the report can act on.
 	UnrankedReason string `json:"unranked_reason,omitempty"`
 	Peers          int    `json:"peers"` // implementations measured in the family
@@ -271,6 +279,68 @@ const minRankedImpls = 5
 // figures measure delivery (see measureGeneratorVersion).
 const casterDeliveryContract = "1.2.0"
 
+// deliveryClassContract is the first record contract whose broadcast and
+// payload throughput records say what was delivered.
+const deliveryClassContract = "1.4.0"
+
+// The two delivery classes. An implementation is in classDeliversAll when,
+// in every cell and repetition of its family's throughput battery, its
+// subscribers received every value that was published to them, and in
+// classDrops otherwise. The class is measured, not declared: it says what
+// the implementation did with a publisher running as fast as it can against
+// subscribers that do nothing but receive.
+const (
+	classDeliversAll = "delivers-all"
+	classDrops       = "drops"
+)
+
+// deliveryClassLabel is the class as a reader sees it.
+func deliveryClassLabel(class string) string {
+	switch class {
+	case classDeliversAll:
+		return "delivers every value"
+	case classDrops:
+		return "drops or coalesces"
+	}
+	return ""
+}
+
+// hasDeliveryClasses reports whether a family is scored in delivery classes:
+// the families whose implementations differ in whether a publish that
+// returns has been, or will be, received.
+func hasDeliveryClasses(family string) bool {
+	return family == "broadcast" || family == "payload"
+}
+
+// deliveryClasses returns the class of every implementation of a family that
+// has throughput records carrying the delivery fields, and the least
+// delivered fraction over its cells.
+func deliveryClasses(metrics []map[string]any, family string) (class map[string]string, least map[string]float64) {
+	class, least = map[string]string{}, map[string]float64{}
+	for _, m := range metrics {
+		if m["family"] != family || m["metric"] != "publish_ns_op" {
+			continue
+		}
+		impl, _ := m["impl"].(string)
+		frac, ok := m["delivered_fraction"].(float64)
+		if impl == "" || !ok {
+			continue
+		}
+		if old, seen := least[impl]; !seen || frac < old {
+			least[impl] = frac
+		}
+		pubs, _ := m["publishes"].(float64)
+		recv, _ := m["receives"].(float64)
+		all := recv == pubs*float64(dimsSubs(m))
+		if !all {
+			class[impl] = classDrops
+		} else if class[impl] == "" {
+			class[impl] = classDeliversAll
+		}
+	}
+	return class, least
+}
+
 // familyRanking reports whether a family of `measured` implementations is
 // scored in a run taken under the record contract `generator`, and if not,
 // why. It is the one place that decision is made: the report, the score CSV,
@@ -282,6 +352,9 @@ const casterDeliveryContract = "1.2.0"
 func familyRanking(family string, measured int, generator string) (ranked bool, reason, since string) {
 	if family == "caster" && generatorBefore(generator, casterDeliveryContract) {
 		return false, "the caster batteries of record contract " + generator + " timed Sends that found no receiver registered and delivered nothing, so its send figures do not measure delivery", isolationContract
+	}
+	if hasDeliveryClasses(family) && !generatorBefore(generator, isolationContract) && generatorBefore(generator, deliveryClassContract) {
+		return false, "the " + family + " throughput records of record contract " + generator + " give the cost of calling Publish and do not say how much of what was published was received, so its score ranked implementations that discard nearly everything a fast publisher hands them above every implementation that delivers all of it", deliveryClassContract
 	}
 	if generatorBefore(generator, isolationContract) {
 		return false, "a run under record contract " + generator + " was one process, in which the publishers left spinning by the stalled-consumer probes of its eleventh broadcast implementation occupied the CPUs for the rest of the run: the ten implementations measured before them had the machine to themselves, and everything measured after them did not", isolationContract
@@ -296,8 +369,12 @@ func isBaselineName(name string) bool {
 	return strings.Contains(name, "Baseline") || strings.Contains(name, "(baseline)")
 }
 
-// percentileRank returns (fraction of values strictly worse than v) * 100.
-// lowerIsBetter controls which direction is "worse" (we want 100 = best).
+// percentileRank returns the percentile rank of v among values, 100 being
+// best: the share of the other values that are worse than v, with each value
+// tied with v counted as half. (It used to count a tie as nothing, so on a
+// dimension where half the field shares the best value, as half the
+// broadcast family does on stall resilience, the best attainable was 51.)
+// lowerIsBetter controls which direction is "worse".
 func percentileRank(values []float64, v float64, lowerIsBetter bool) int {
 	n := len(values)
 	if n == 0 {
@@ -306,19 +383,33 @@ func percentileRank(values []float64, v float64, lowerIsBetter bool) int {
 	if n == 1 {
 		return 100
 	}
-	worse := 0
+	worse, same := 0, 0
 	for _, o := range values {
-		if lowerIsBetter {
-			if o > v {
-				worse++
-			}
-		} else {
-			if o < v {
-				worse++
-			}
+		switch {
+		case o == v:
+			same++
+		case lowerIsBetter == (o > v):
+			worse++
 		}
 	}
-	return int(math.Round(100 * float64(worse) / float64(n-1)))
+	if same > 0 {
+		same-- // v itself
+	}
+	return int(math.Round(100 * (float64(worse) + 0.5*float64(same)) / float64(n-1)))
+}
+
+// uniformValues reports whether a dimension has the same value for every
+// member of a scoring group of more than one.
+func uniformValues(values []float64) bool {
+	if len(values) < 2 {
+		return false
+	}
+	for _, v := range values[1:] {
+		if v != values[0] {
+			return false
+		}
+	}
+	return true
 }
 
 func metricMeans(metrics []map[string]any, metric, family string, dimsSubsFilter int) map[string]float64 {
@@ -442,11 +533,32 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			"broadcast": "publish_ns_op", "payload": "publish_ns_op", "caster": "send_ns_op", "fanin": "merge_ns_op",
 			"exchange": "exchange_ns_op", "barrier": "send_ns_op",
 		}[family]
-		ranked, unrankedReason, validSince := familyRanking(family, len(impls), generator)
-		if !ranked {
-			dd.Unranked[family] = unrankedReason
-			if validSince != "" {
-				dd.UnrankedSince[family] = validSince
+		// The scoring groups of the family: one, or one per delivery class.
+		type scoreGroup struct {
+			class string
+			impls []string
+		}
+		groups := []scoreGroup{{"", impls}}
+		classOf, leastDelivered := map[string]string{}, map[string]float64{}
+		if hasDeliveryClasses(family) && !generatorBefore(generator, deliveryClassContract) {
+			classOf, leastDelivered = deliveryClasses(data.metrics, family)
+			byClass := map[string][]string{}
+			for _, impl := range impls {
+				byClass[classOf[impl]] = append(byClass[classOf[impl]], impl)
+			}
+			groups = groups[:0]
+			for _, c := range []string{classDeliversAll, classDrops, ""} {
+				if len(byClass[c]) > 0 {
+					groups = append(groups, scoreGroup{c, byClass[c]})
+				}
+			}
+		}
+		delivered8 := map[string]float64{}
+		for _, m := range data.metrics {
+			if m["family"] == family && m["metric"] == "publish_ns_op" && dimsSubs(m) == thrDims {
+				if f, ok := m["delivered_fraction"].(float64); ok {
+					delivered8[m["impl"].(string)] = f
+				}
 			}
 		}
 		thrAll := metricMeans(data.metrics, thrMetric, family, thrDims)
@@ -467,176 +579,211 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			"broadcast": "publish_ns_op", "payload": "publish_ns_op", "caster": "send_ns_op",
 		}[family], family, 64)
 		stallAll := stalledOpsCompleted(data.metrics, family)
-		thrVals, latVals, allocVals, churnVals, stallVals, scaleVals := []float64{}, []float64{}, []float64{}, []float64{}, []float64{}, []float64{}
-		scaleOf := map[string]float64{}
-		for _, impl := range impls {
-			if v, ok := thrAll[impl]; ok {
-				thrVals = append(thrVals, v)
-			}
-			if v, ok := latAll[impl]; ok {
-				latVals = append(latVals, v)
-			}
-			if allocAll != nil {
-				if v, ok := allocAll[impl]; ok {
-					allocVals = append(allocVals, v)
-				}
-			}
-			if v, ok := churnAll[impl]; ok {
-				churnVals = append(churnVals, v)
-			}
-			if v, ok := stallAll[impl]; ok {
-				stallVals = append(stallVals, math.Log10(v+1))
-			}
-			lo, okLo := ns1[impl]
-			hi, okHi := ns64[impl]
-			if okLo && okHi && lo > 0 {
-				scaleOf[impl] = hi / lo
-				scaleVals = append(scaleVals, hi/lo)
-			}
-		}
-
 		dd.Scores[family] = map[string]implScore{}
-		for _, impl := range impls {
-			thr, hasThr := thrAll[impl]
-			lat, hasLat := latAll[impl]
-			alloc, hasAlloc := float64(0), false
-			if allocAll != nil {
-				alloc, hasAlloc = allocAll[impl]
+		anyRanked, firstReason, firstSince := false, "", ""
+		for gi, grp := range groups {
+			impls := grp.impls
+			ranked, unrankedReason, validSince := familyRanking(family, len(impls), generator)
+			if grp.class == "" && len(groups) > 1 {
+				ranked, unrankedReason, validSince = false, "the throughput battery recorded no delivery figures for it (every cell was skipped), so it has no delivery class", ""
+			} else if !ranked && validSince == "" && grp.class != "" {
+				unrankedReason = fmt.Sprintf("%d implementations measured in the delivery class \"%s\", fewer than the %d a percentile score needs", len(impls), deliveryClassLabel(grp.class), minRankedImpls)
 			}
-			churn, hasChurn := churnAll[impl]
-			stall, hasStall := stallAll[impl]
-			scale, hasScale := scaleOf[impl]
-
-			// A dimension the implementation has no data for scores 0 here
-			// and is left out of the composite below. (It used to score 100,
-			// which handed every implementation full marks on any dimension
-			// its family has no battery for.)
-			thrScore, latScore, allocScore, churnScore, stallScore, scaleScore := 0, 0, 0, 0, 0, 0
-			if hasThr {
-				thrScore = percentileRank(thrVals, thr, true)
+			anyRanked = anyRanked || ranked
+			if gi == 0 {
+				firstReason, firstSince = unrankedReason, validSince
 			}
-			if hasLat {
-				latScore = percentileRank(latVals, lat, true)
-			}
-			hasAlloc = allocAll != nil && hasAlloc
-			if hasAlloc {
-				allocScore = percentileRank(allocVals, alloc, true)
-			}
-			if hasChurn {
-				churnScore = percentileRank(churnVals, churn, true)
-			}
-			if hasStall {
-				stallScore = percentileRank(stallVals, math.Log10(stall+1), false)
-			}
-			if hasScale {
-				scaleScore = percentileRank(scaleVals, scale, true)
-			}
-
-			// Weights documented in measurement.md. The composite is the
-			// weighted mean over the dimensions that have data.
-			raw, weight := 0.0, 0.0
-			dimsMissing := []string{}
-			for _, d := range []struct {
-				key   string
-				w     float64
-				score int
-				has   bool
-			}{
-				{"throughput", 0.28, thrScore, hasThr},
-				{"latency", 0.14, latScore, hasLat},
-				{"allocations", 0.14, allocScore, hasAlloc},
-				{"churn", 0.08, churnScore, hasChurn},
-				{"scaling", 0.16, scaleScore, hasScale},
-				{"stall_resilience", 0.20, stallScore, hasStall},
-			} {
-				if !d.has {
-					dimsMissing = append(dimsMissing, d.key)
-					continue
+			thrVals, latVals, allocVals, churnVals, stallVals, scaleVals := []float64{}, []float64{}, []float64{}, []float64{}, []float64{}, []float64{}
+			scaleOf := map[string]float64{}
+			for _, impl := range impls {
+				if v, ok := thrAll[impl]; ok {
+					thrVals = append(thrVals, v)
 				}
-				raw += d.w * float64(d.score)
-				weight += d.w
-			}
-			if weight > 0 {
-				raw /= weight
-			}
-
-			integrity, _ := integrityOf(data.metrics, impl, family)
-			if integrity == "failed" && raw > 50 {
-				raw = 50
-			}
-			score := int(math.Round(raw))
-
-			verdict := "Avoid for most uses"
-			switch {
-			case integrity == "failed":
-				verdict = "Do not adopt (integrity failure)"
-			case !ranked:
-				verdict = fmt.Sprintf("Not ranked (family of %d)", len(impls))
-				if validSince != "" {
-					verdict = "Not ranked (measurement not valid)"
+				if v, ok := latAll[impl]; ok {
+					latVals = append(latVals, v)
 				}
-			case score >= 75:
-				verdict = "Strong candidate"
-			case score >= 60:
-				verdict = "Situational (strengths offset by trade-offs)"
-			case score >= 45:
-				verdict = "Niche use only"
-			}
-
-			scen, goodFit, expLimit := scenariosOf(data.metrics, impl)
-
-			metrics := map[string]any{}
-			if hasThr {
-				thrKey := "publish_ns_op@8"
-				switch family {
-				case "fanin":
-					thrKey = "merge_ns_op@4"
-				case "exchange", "barrier":
-					thrKey = thrMetric + "@8"
+				if allocAll != nil {
+					if v, ok := allocAll[impl]; ok {
+						allocVals = append(allocVals, v)
+					}
 				}
-				metrics[thrKey] = thr
-			}
-			if hasLat {
-				metrics["publish_latency_ns@8"] = lat
-			}
-			if hasAlloc {
-				metrics["publish_allocs_op@8"] = alloc
-			}
-			if hasChurn {
-				metrics["churn_ns_op"] = churn
-			}
-			if hasStall {
-				metrics["stalled_ops_completed"] = stall
-			}
-			if hasScale {
-				metrics["scaling_ratio_64_over_1"] = scale
+				if v, ok := churnAll[impl]; ok {
+					churnVals = append(churnVals, v)
+				}
+				if v, ok := stallAll[impl]; ok {
+					stallVals = append(stallVals, math.Log10(v+1))
+				}
+				lo, okLo := ns1[impl]
+				hi, okHi := ns64[impl]
+				if okLo && okHi && lo > 0 {
+					scaleOf[impl] = hi / lo
+					scaleVals = append(scaleVals, hi/lo)
+				}
 			}
 
-			if !ranked {
-				score, thrScore, latScore, allocScore, churnScore, scaleScore, stallScore = 0, 0, 0, 0, 0, 0, 0
-			}
-			dd.Scores[family][impl] = implScore{
-				Impl:            impl,
-				Family:          family,
-				Score:           score,
-				Verdict:         verdict,
-				Ranked:          ranked,
-				UnrankedReason:  unrankedReason,
-				Peers:           len(impls),
-				DimsMissing:     dimsMissing,
-				Baseline:        isBaselineName(impl),
-				Integrity:       integrity,
-				Dims:            map[string]int{"throughput": thrScore, "latency": latScore, "allocations": allocScore, "churn": churnScore, "scaling": scaleScore, "stall_resilience": stallScore},
-				Metrics:         metrics,
-				Scenarios:       scen,
-				ExpectedGoodFit: goodFit,
-				ExposureLimited: expLimit,
+			for _, impl := range impls {
+				thr, hasThr := thrAll[impl]
+				lat, hasLat := latAll[impl]
+				alloc, hasAlloc := float64(0), false
+				if allocAll != nil {
+					alloc, hasAlloc = allocAll[impl]
+				}
+				churn, hasChurn := churnAll[impl]
+				stall, hasStall := stallAll[impl]
+				scale, hasScale := scaleOf[impl]
+
+				// A dimension the implementation has no data for scores 0 here
+				// and is left out of the composite below. (It used to score 100,
+				// which handed every implementation full marks on any dimension
+				// its family has no battery for.)
+				thrScore, latScore, allocScore, churnScore, stallScore, scaleScore := 0, 0, 0, 0, 0, 0
+				if hasThr {
+					thrScore = percentileRank(thrVals, thr, true)
+				}
+				if hasLat {
+					latScore = percentileRank(latVals, lat, true)
+				}
+				hasAlloc = allocAll != nil && hasAlloc
+				if hasAlloc {
+					allocScore = percentileRank(allocVals, alloc, true)
+				}
+				if hasChurn {
+					churnScore = percentileRank(churnVals, churn, true)
+				}
+				if hasStall {
+					stallScore = percentileRank(stallVals, math.Log10(stall+1), false)
+				}
+				if hasScale {
+					scaleScore = percentileRank(scaleVals, scale, true)
+				}
+
+				// Weights documented in measurement.md. The composite is the
+				// weighted mean over the dimensions that have data.
+				raw, weight := 0.0, 0.0
+				dimsMissing, dimsUniform := []string{}, []string{}
+				for _, d := range []struct {
+					key   string
+					w     float64
+					score int
+					has   bool
+					vals  []float64
+				}{
+					{"throughput", 0.28, thrScore, hasThr, thrVals},
+					{"latency", 0.14, latScore, hasLat, latVals},
+					{"allocations", 0.14, allocScore, hasAlloc, allocVals},
+					{"churn", 0.08, churnScore, hasChurn, churnVals},
+					{"scaling", 0.16, scaleScore, hasScale, scaleVals},
+					{"stall_resilience", 0.20, stallScore, hasStall, stallVals},
+				} {
+					if !d.has {
+						dimsMissing = append(dimsMissing, d.key)
+						continue
+					}
+					if uniformValues(d.vals) {
+						dimsUniform = append(dimsUniform, d.key)
+						continue
+					}
+					raw += d.w * float64(d.score)
+					weight += d.w
+				}
+				if weight > 0 {
+					raw /= weight
+				}
+
+				integrity, _ := integrityOf(data.metrics, impl, family)
+				if integrity == "failed" && raw > 50 {
+					raw = 50
+				}
+				score := int(math.Round(raw))
+
+				verdict := "Avoid for most uses"
+				switch {
+				case integrity == "failed":
+					verdict = "Do not adopt (integrity failure)"
+				case !ranked:
+					verdict = fmt.Sprintf("Not ranked (family of %d)", len(impls))
+					if grp.class != "" {
+						verdict = fmt.Sprintf("Not ranked (class of %d)", len(impls))
+					} else if len(groups) > 1 {
+						verdict = "Not ranked (no delivery figures)"
+					}
+					if validSince != "" {
+						verdict = "Not ranked (measurement not valid)"
+					}
+				case score >= 75:
+					verdict = "Strong candidate"
+				case score >= 60:
+					verdict = "Situational (strengths offset by trade-offs)"
+				case score >= 45:
+					verdict = "Niche use only"
+				}
+
+				scen, goodFit, expLimit := scenariosOf(data.metrics, impl)
+
+				metrics := map[string]any{}
+				if hasThr {
+					thrKey := "publish_ns_op@8"
+					switch family {
+					case "fanin":
+						thrKey = "merge_ns_op@4"
+					case "exchange", "barrier":
+						thrKey = thrMetric + "@8"
+					}
+					metrics[thrKey] = thr
+				}
+				if hasLat {
+					metrics["publish_latency_ns@8"] = lat
+				}
+				if hasAlloc {
+					metrics["publish_allocs_op@8"] = alloc
+				}
+				if hasChurn {
+					metrics["churn_ns_op"] = churn
+				}
+				if hasStall {
+					metrics["stalled_ops_completed"] = stall
+				}
+				if hasScale {
+					metrics["scaling_ratio_64_over_1"] = scale
+				}
+				if f, ok := delivered8[impl]; ok {
+					metrics["delivered_fraction@8"] = f
+				}
+				if f, ok := leastDelivered[impl]; ok {
+					metrics["delivered_fraction_least"] = f
+				}
+
+				if !ranked {
+					score, thrScore, latScore, allocScore, churnScore, scaleScore, stallScore = 0, 0, 0, 0, 0, 0, 0
+				}
+				dd.Scores[family][impl] = implScore{
+					Impl:            impl,
+					Family:          family,
+					Score:           score,
+					Verdict:         verdict,
+					Ranked:          ranked,
+					Class:           grp.class,
+					UnrankedReason:  unrankedReason,
+					Peers:           len(impls),
+					DimsMissing:     dimsMissing,
+					DimsUniform:     dimsUniform,
+					Baseline:        isBaselineName(impl),
+					Integrity:       integrity,
+					Dims:            map[string]int{"throughput": thrScore, "latency": latScore, "allocations": allocScore, "churn": churnScore, "scaling": scaleScore, "stall_resilience": stallScore},
+					Metrics:         metrics,
+					Scenarios:       scen,
+					ExpectedGoodFit: goodFit,
+					ExposureLimited: expLimit,
+				}
 			}
 		}
-	}
-
-	for _, b := range []string{} {
-		_ = b
+		// A family is unranked as a whole when none of its groups is.
+		if !anyRanked {
+			dd.Unranked[family] = firstReason
+			if firstSince != "" {
+				dd.UnrankedSince[family] = firstSince
+			}
+		}
 	}
 
 	// Baselines list.

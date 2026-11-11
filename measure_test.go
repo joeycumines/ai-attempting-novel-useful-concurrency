@@ -209,7 +209,15 @@ func cpuModel() string {
 //	       broadcast implementation shared the machine with them, and the
 //	       ten before it did not. The meta record says how a run was
 //	       isolated; "residue" records say what a unit left running.
-const measureGeneratorVersion = "1.3.0"
+//	1.4.0  The broadcast and payload throughput records say how much of what
+//	       was published the subscribers received (publishes, receives,
+//	       delivered_fraction). Before this the records gave the cost of
+//	       calling Publish and nothing about what became of the value, and
+//	       the family score ranked an implementation that discards 99.9
+//	       percent of what a fast publisher hands it above every
+//	       implementation that delivers all of it. From this contract the
+//	       two are scored in separate delivery classes (see deliveryClasses).
+const measureGeneratorVersion = "1.4.0"
 
 // generatorBefore reports whether the record contract `have` is older than
 // `want`. A file without a contract (hand-built records in the tooling tests)
