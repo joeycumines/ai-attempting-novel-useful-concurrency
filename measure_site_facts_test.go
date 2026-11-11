@@ -50,6 +50,10 @@ func (r siteRun) file(slot string) (siteRunFile, bool) {
 type siteAnalysis struct {
 	Filename, Title, Summary string
 	Size                     int64
+	// ReadsRun is the run ("07") whose results file a Markdown analysis
+	// names first, or empty when it names none. A written analysis is not
+	// regenerated, so the page says which run it was written from.
+	ReadsRun string
 }
 
 type siteBaseline struct {
@@ -170,6 +174,9 @@ func loadSiteFacts(dir string) (siteFacts, error) {
 			a := siteAnalysis{Filename: filepath.Base(path), Size: int64(len(raw))}
 			if strings.HasSuffix(path, ".md") {
 				a.Title, a.Summary = markdownTitleAndSummary(string(raw))
+				if m := siteReadsRunRE.FindSubmatch(raw); m != nil {
+					a.ReadsRun = string(m[1])
+				}
 			} else {
 				a.Title, a.Summary = htmlTitleAndSummary(string(raw[:min(len(raw), 65536)]))
 			}
@@ -184,6 +191,7 @@ func loadSiteFacts(dir string) (siteFacts, error) {
 }
 
 var (
+	siteReadsRunRE  = regexp.MustCompile(`results-(\d\d)-01-results\.jsonl`)
 	siteHTMLTitleRE = regexp.MustCompile(`(?is)<title>(.*?)</title>`)
 	siteHTMLDescRE  = regexp.MustCompile(`(?is)<meta\s+name="description"\s+content="(.*?)"`)
 	siteHTMLParaRE  = regexp.MustCompile(`(?is)<p[^>]*>(.{40,}?)</p>`)
@@ -404,6 +412,20 @@ func renderSiteFacts(page string, cat siteCatalog, facts siteFacts) string {
 		if summary == "" {
 			summary = "No summary is recorded in the file."
 		}
+		reads := `Names no measurement run. It was written by its author at the time and is not regenerated; any figure in it predates run ` + latest.Run
+		if a.ReadsRun != "" {
+			reads = `Written from run ` + esc(a.ReadsRun) + `; it is not regenerated`
+			for _, r := range facts.Runs {
+				if r.Run != a.ReadsRun {
+					continue
+				}
+				if generatorBefore(r.Generator, isolationContract) {
+					reads += `, and the measurements of that run are not valid (see the run's card)`
+				} else if a.ReadsRun != latest.Run {
+					reads += `, and run ` + latest.Run + ` is newer`
+				}
+			}
+		}
 		fmt.Fprintf(&cards, `      <div class="report-card arch">
         <div>
           <span class="report-badge">%s</span>
@@ -413,6 +435,7 @@ func renderSiteFacts(page string, cat siteCatalog, facts siteFacts) string {
           </p>
           <ul class="report-features">
             <li><span class="dot"></span> <code>%s</code> &middot; %s</li>
+            <li><span class="dot"></span> `+reads+`</li>
           </ul>
         </div>
         <div class="report-actions">

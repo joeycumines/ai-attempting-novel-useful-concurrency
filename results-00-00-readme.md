@@ -23,7 +23,7 @@ Slots within a run group:
 | ss | file | what it is |
 |---|---|---|
 | `00` | `results-NN-00-manifest.json` | **the run's manifest — always the first file of the group**: environment fingerprint (machine, OS/arch, Go toolchain, git commit, profile, seed, hostname), duration, record histogram, per-file SHA-256 + byte counts, verification verdicts. |
-| `01` | `results-NN-01-results.jsonl` | JSONL results (schema v1) — one line per meta/metric/trace/skipped/summary record. |
+| `01` | `results-NN-01-results.jsonl` | JSONL results (schema v1) — one line per meta/metric/trace/skipped/residue/summary record. |
 | `02` | `results-NN-02-registry.json` | scenario/case/attachment registry dump at the revision that produced the run. |
 | `03` | `results-NN-03-report.html` | self-contained interactive HTML report (charts, Pathology Lab, coverage matrix, downloads) built from `-01-results.jsonl`. |
 | `04` | `results-NN-04-metrics_wide.csv` | flattened metric records (one row each, all statistical columns). |
@@ -63,25 +63,30 @@ added later. Whether the newest run still covers the live registry is a
 separate question, which `bigbuff-measure index` answers with a note and the
 landing page shows.
 
-**Runs 01 to 04 and later runs are not comparable by score.** Runs 01 to 04
-were written by generator 1.0.0, which had two defects:
+**Run 07 is the first run whose measurements are valid. No family of runs 01
+to 06 is ranked.** Three defects of the measurement were found, each by looking
+at what a suspicious number was made of, and each has its own record contract
+(`generator_version` in the meta record and the manifest):
 
-- its stalled-consumer records carried no `ops_completed`, so the
-  stall-resilience dimension (a fifth of the composite) had no data in any of
-  them; and
-- a dimension with no data scored 100.
+| Contract | Runs | What it fixed |
+|---|---|---|
+| 1.0.0 | 01 to 04 | Nothing; the starting point. Its stalled-consumer records carried no `ops_completed`, and a dimension with no data scored 100, so every implementation had full marks for stall resilience. |
+| 1.1.0 | 05 | `ops_completed` is recorded, a dimension without data is left out of the composite, `verify` rejects a metric record without its value, and families of fewer than five are not ranked. Exchange and barrier batteries. |
+| 1.2.0 | 06 | The caster batteries time a `Send` only once every receiver is registered, and count the deliveries. Before, they timed Sends that found no receiver and delivered nothing (2 to 8 ns each). |
+| 1.3.0 | 07 on | Every battery of every implementation is measured in a process of its own. Before, the run was one process, and the publishers left spinning by the stall probes of the eleventh broadcast implementation held both CPUs for the rest of it. Throughput repetitions are sized by the clock. |
 
-Together these gave every implementation full marks for stall resilience. From
-generator 1.1.0 the value is recorded, a dimension without data is left out of
-the composite and shown as such, and `verify` rejects a metric record that
-lacks the value it is named for. The reports and score files of runs 01 to 04
-were regenerated with the corrected scoring, so what they show today is the
-composite over the dimensions those runs do have data for. Their measurements
-are unchanged.
+The third is why nothing before run 07 is ranked: ten implementations were
+measured on an idle machine and everything else was not, and the effect was
+not small (`Latest3260Terra`: 10 ns per publish at every subscriber count in
+run 06, 173 to 450 ns at 4 to 256 subscribers measured alone). The reports,
+score files and evaluations of runs 01 to 06 were regenerated; they show every
+measurement those runs took, with the verdict `Not ranked (measurement not
+valid)` and the reason. The JSONL files are unchanged. `measurement.md`
+("Process isolation", "Adoptability score") has the detail.
 
 Runs 01 to 04 also predate the repairs listed in `extraction_audit.md`
-("Second pass") and the exchange and barrier batteries. Their numbers for the
-repaired implementations describe code that no longer exists.
+("Second pass", "Third pass"). Their numbers for the repaired implementations
+describe code that no longer exists.
 
 **Families with fewer than five measured implementations are not ranked.** They
 are measured, checked for integrity and reported with their raw numbers. See
@@ -124,6 +129,9 @@ git add results-*-*.* index.html
 
 - Run sequences are allocated by `make` (highest existing `rr` + 1); override
   with `MEASURE_RUN=N`.
+- A run is one process per battery per implementation, and `verify` rejects a
+  run that says otherwise. `run --in-process` exists for debugging a battery
+  and does not produce a run.
 - Measure from a clean, committed tree, so the commit in the run's meta record
   is the code that ran. Commit the run before `make measure-gates`, so the
   gates record also names a clean tree.
