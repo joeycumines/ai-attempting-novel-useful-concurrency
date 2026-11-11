@@ -556,6 +556,9 @@ func measureBroadcastStalledConsumer(ctx *measureContext, factory func() Broadca
 	case <-time.After(ctx.profile.StalledDeadline):
 		outcome = "publisher_blocked"
 	}
+	// Read at the deadline. Releasing the fast subscribers below can let a
+	// blocked publisher run on, and that progress is not what is measured.
+	opsCompleted := opsDone.Load()
 	cancelFast()
 	drained := make(chan struct{})
 	go func() { wg.Wait(); close(drained) }()
@@ -610,6 +613,7 @@ func measureBroadcastStalledConsumer(ctx *measureContext, factory func() Broadca
 		"unit":                  "ops",
 		"dims":                  map[string]any{"stalled_subscribers": 1, "fast_subscribers": fastSubs},
 		"ops_planned":           r,
+		"ops_completed":         opsCompleted,
 		"outcome":               outcome,
 		"fast_min_delivered":    fastMin,
 		"approx_retained_bytes": retained,

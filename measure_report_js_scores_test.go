@@ -199,7 +199,8 @@ function radarRender(){
     if (!isRanked(focus)) h += '<div class="small" style="margin:6px 0">This family has '+(focus.peers||'too few')+' measured implementations, too few for percentile dimensions. The axes below are empty by design; use the measurements and their confidence intervals.</div>';
     radarAxes.forEach(function(axis){
       var v = focus.dims[axis.key]||0;
-      h += '<div class="srow"><div class="dim">'+esc(axis.label)+'</div><div class="strack"><div class="sfill" style="width:'+v+'%"></div></div><div class="mono" style="text-align:right">'+v+'</div></div>';
+      var none = dimMissing(focus, axis.key) || !isRanked(focus);
+      h += '<div class="srow"><div class="dim">'+esc(axis.label)+'</div><div class="strack"><div class="sfill" style="width:'+(none?0:v)+'%"></div></div><div class="mono" style="text-align:right">'+(none?'no data':v)+'</div></div>';
     });
     if (focus.integrity === 'failed') h += '<div class="small" style="color:var(--red);margin-top:6px">Integrity failure — score capped at 50.</div>';
     rowsBox.innerHTML = h;

@@ -85,6 +85,8 @@ var familyOrder = ['broadcast','caster','scatter','gather','payload','fanin','ex
    Reports generated before that rule existed have no such field and count as ranked. */
 function isRanked(s){ return !s || s.ranked !== false; }
 function scoreText(s){ return isRanked(s) ? String(s.score) : 'not ranked'; }
+/* A dimension with no data for this implementation is left out of its score. */
+function dimMissing(s, key){ return !!(s && s.dims_missing && s.dims_missing.indexOf(key) >= 0); }
 var familiesPresent = familyOrder.filter(function(f){ return (derived.scores && derived.scores[f] && Object.keys(derived.scores[f]).length) || metrics.some(function(m){return m.family===f;}); });
 function derivedFamily(f){ return (derived.scores && derived.scores[f]) || {}; }
 function sortedImpls(f, by){

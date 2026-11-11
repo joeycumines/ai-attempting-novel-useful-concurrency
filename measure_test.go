@@ -168,12 +168,22 @@ func cpuModel() string {
 	return runtime.GOARCH
 }
 
+// measureGeneratorVersion identifies the record contract of a results file.
+//
+//	1.0.0  runs 01 to 04. The stalled-consumer records carry no
+//	       ops_completed value, although the metric is named for it, so the
+//	       stall-resilience dimension of every score in those runs is a
+//	       constant (see results-00-00-readme.md).
+//	1.1.0  ops_completed recorded; exchange and barrier batteries; verify
+//	       rejects a metric record that carries no value.
+const measureGeneratorVersion = "1.1.0"
+
 func measureMetaRecords(profile string, seed int64) map[string]any {
 	return map[string]any{
 		"type":              "meta",
 		"schema":            measureSchemaVersion,
 		"generator":         "bigbuff-measure",
-		"generator_version": "1.0.0",
+		"generator_version": measureGeneratorVersion,
 		"timestamp":         time.Now().UTC().Format(time.RFC3339Nano),
 		"go":                runtime.Version(),
 		"goos":              runtime.GOOS,

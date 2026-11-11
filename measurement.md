@@ -213,6 +213,27 @@ failure caps the score at 50. A 100 means *best measured on these axes within th
 family*, not “use everywhere” — read the radar chart, the pathology panel, and the
 registry remarks.
 
+Three rules that hold from generator 1.1.0 (run 05) on, and why:
+
+- **The composite is the weighted mean over the dimensions that have data.** A
+  dimension an implementation has no data for (its family has no such battery, or
+  the sweep did not reach 64 subscribers) is listed in `dims_missing`, shown as
+  "no data", empty in the scores CSV, and left out. Before, such a dimension
+  scored 100: every caster, which has no allocation or stall battery, started
+  with 34 of 100 points for free, and the verdict thresholds are absolute.
+- **A family with fewer than 5 measured implementations has no score.** A
+  percentile rank over n subjects takes n values; between two, the faster is 100
+  and the other 0 whatever separates them. Scatter, gather, fan-in, exchange and
+  barrier are reported with their measurements and confidence intervals, with
+  verdict `Not ranked (family of N)`. An integrity failure is still reported.
+- **Stall resilience now has data.** In runs 01 to 04 (generator 1.0.0) the
+  stalled-consumer records did not carry the `ops_completed` value the metric is
+  named for, so that dimension, a fifth of the weight, was a constant 100 for
+  every implementation. `verify` now rejects a metric record without a value.
+
+Scores are therefore not comparable between runs 01 to 04 and later runs, and a
+score is never comparable between families or between profiles.
+
 ## Verification semantics
 
 `verify` fails (non-zero exit) unless: the `meta` record is present and well-formed;

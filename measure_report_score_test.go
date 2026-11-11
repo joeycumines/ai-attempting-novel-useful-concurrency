@@ -114,3 +114,41 @@ func TestExchangePairingViolations(t *testing.T) {
 		}
 	}
 }
+
+// A dimension without data is left out of the composite; it does not score
+// full marks. Stall resilience is read from ops_completed.
+func TestScoreUsesOnlyDimensionsWithData(t *testing.T) {
+	var metrics []map[string]any
+	names := []string{"A", "B", "C", "D", "E"}
+	for i, impl := range names {
+		metrics = append(metrics,
+			map[string]any{"type": "metric", "family": "broadcast", "impl": impl, "metric": "publish_ns_op",
+				"dims": map[string]any{"subs": float64(8)}, "mean": float64(100 * (i + 1))},
+			// Stall resilience runs the other way: the slowest publisher
+			// completes the most operations.
+			map[string]any{"type": "metric", "family": "broadcast", "impl": impl, "metric": "stalled_consumer_ops_completed",
+				"ops_completed": float64(10 * i)},
+		)
+	}
+	dd := deriveReport(&reportData{metrics: metrics}, nil)
+	a, e := dd.Scores["broadcast"]["A"], dd.Scores["broadcast"]["E"]
+	if a.Dims["throughput"] != 100 || a.Dims["stall_resilience"] != 0 || e.Dims["throughput"] != 0 || e.Dims["stall_resilience"] != 100 {
+		t.Fatalf("dimensions: A %v, E %v", a.Dims, e.Dims)
+	}
+	// Only throughput (.28) and stall resilience (.20) have data.
+	if want := 58; a.Score != want { // 100*.28 / .48
+		t.Errorf("A scored %d, want %d: the four dimensions without data must not contribute", a.Score, want)
+	}
+	if want := 42; e.Score != want { // 100*.20 / .48
+		t.Errorf("E scored %d, want %d", e.Score, want)
+	}
+	wantMissing := []string{"latency", "allocations", "churn", "scaling"}
+	if len(a.DimsMissing) != len(wantMissing) {
+		t.Fatalf("A is missing %v, want %v", a.DimsMissing, wantMissing)
+	}
+	for i, key := range wantMissing {
+		if a.DimsMissing[i] != key {
+			t.Errorf("A is missing %v, want %v", a.DimsMissing, wantMissing)
+		}
+	}
+}
