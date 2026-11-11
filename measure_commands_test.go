@@ -382,6 +382,8 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 		missing:   map[string][]string{},
 	}
 	families := map[string]map[string]bool{}
+	valueless := map[string]int{} // metric name -> records carrying no value
+	generator := ""
 	for _, set := range sets {
 		v.expected[set.family] = len(set.names)
 		families[set.family] = map[string]bool{}
@@ -410,7 +412,12 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 		typ, _ := rec["type"].(string)
 		if typ == "meta" {
 			v.seenMeta = true
+			generator, _ = rec["generator_version"].(string)
 			continue
+		}
+		if typ == "metric" && !metricRecordHasValue(rec) {
+			name, _ := rec["metric"].(string)
+			valueless[name]++
 		}
 		family, _ := rec["family"].(string)
 		impl, _ := rec["impl"].(string)
@@ -462,6 +469,22 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 	if v.badRecords > 0 {
 		fail++
 	}
+	if len(valueless) > 0 {
+		names := make([]string, 0, len(valueless))
+		for name, n := range valueless {
+			names = append(names, fmt.Sprintf("%s (%d)", name, n))
+		}
+		sort.Strings(names)
+		if generator == "1.0.0" {
+			// Known defect of the 1.0.0 record contract; reported, and not a
+			// failure, so that the committed runs keep verifying as what
+			// they are.
+			fmt.Fprintf(out, "  note: metric records without a value (generator 1.0.0): %s\n", strings.Join(names, ", "))
+		} else {
+			fmt.Fprintf(out, "  metric records without a value: %s\n", strings.Join(names, ", "))
+			fail++
+		}
+	}
 	for _, set := range sets {
 		family := set.family
 		miss := v.missing[family]
@@ -479,6 +502,21 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 	}
 	fmt.Fprintf(out, "verify: PASS\n")
 	return 0
+}
+
+// metricRecordHasValue reports whether a metric record carries the number it
+// is named for: a mean (sampled metrics), ops_completed (stalled-consumer
+// probes) or violations with checked (torn-read probes).
+func metricRecordHasValue(rec map[string]any) bool {
+	if _, ok := rec["mean"].(float64); ok {
+		return true
+	}
+	if _, ok := rec["ops_completed"].(float64); ok {
+		return true
+	}
+	_, hasViolations := rec["violations"].(float64)
+	_, hasChecked := rec["checked"].(float64)
+	return hasViolations && hasChecked
 }
 
 func cmdMeasureVerify(args []string) int {

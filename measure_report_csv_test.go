@@ -79,10 +79,19 @@ func writeReportCSVs(metricsPath, scoresPath string, data *reportData, derived d
 				}
 				return fmt.Sprint(v)
 			}
+			// A dimension the implementation has no data for is empty too.
+			dim := func(key string) string {
+				for _, missing := range s.DimsMissing {
+					if missing == key {
+						return ""
+					}
+				}
+				return num(s.Dims[key])
+			}
 			row := []string{
 				family, s.Impl, num(s.Score), s.Verdict, fmt.Sprint(s.Baseline), s.Integrity,
-				num(s.Dims["throughput"]), num(s.Dims["latency"]), num(s.Dims["allocations"]),
-				num(s.Dims["churn"]), num(s.Dims["scaling"]), num(s.Dims["stall_resilience"]),
+				dim("throughput"), dim("latency"), dim("allocations"),
+				dim("churn"), dim("scaling"), dim("stall_resilience"),
 				fmt.Sprint(s.ExpectedGoodFit), fmt.Sprint(s.ExposureLimited),
 			}
 			if err := sw.Write(row); err != nil {

@@ -212,8 +212,12 @@ type implScore struct {
 	Verdict string `json:"verdict"`
 	// Ranked is false when the family has fewer than minRankedImpls measured
 	// implementations: Score and Dims are then zero and carry no meaning.
-	Ranked          bool           `json:"ranked"`
-	Peers           int            `json:"peers"` // implementations measured in the family
+	Ranked bool `json:"ranked"`
+	Peers  int  `json:"peers"` // implementations measured in the family
+	// DimsMissing lists the score dimensions this implementation has no
+	// data for. They are left out of the composite, and their Dims entry is
+	// zero.
+	DimsMissing     []string       `json:"dims_missing"`
 	Baseline        bool           `json:"baseline"`
 	Integrity       string         `json:"integrity"` // "verified" | "failed" | "insufficient-data"
 	Dims            map[string]int `json:"dims"`
@@ -426,8 +430,6 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			if okLo && okHi && lo > 0 {
 				scaleOf[impl] = hi / lo
 				scaleVals = append(scaleVals, hi/lo)
-			} else {
-				scaleOf[impl] = 1
 			}
 		}
 
@@ -441,36 +443,60 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			}
 			churn, hasChurn := churnAll[impl]
 			stall, hasStall := stallAll[impl]
-			scale, hasScale := scaleOf[impl], true
+			scale, hasScale := scaleOf[impl]
 
-			thrScore := 100
+			// A dimension the implementation has no data for scores 0 here
+			// and is left out of the composite below. (It used to score 100,
+			// which handed every implementation full marks on any dimension
+			// its family has no battery for.)
+			thrScore, latScore, allocScore, churnScore, stallScore, scaleScore := 0, 0, 0, 0, 0, 0
 			if hasThr {
 				thrScore = percentileRank(thrVals, thr, true)
 			}
-			latScore := 100
 			if hasLat {
 				latScore = percentileRank(latVals, lat, true)
 			}
-			allocScore := 100
-			if allocAll != nil && hasAlloc {
+			hasAlloc = allocAll != nil && hasAlloc
+			if hasAlloc {
 				allocScore = percentileRank(allocVals, alloc, true)
 			}
-			churnScore := 100
 			if hasChurn {
 				churnScore = percentileRank(churnVals, churn, true)
 			}
-			stallScore := 100
 			if hasStall {
 				stallScore = percentileRank(stallVals, math.Log10(stall+1), false)
 			}
-			scaleScore := 100
-			if hasScale && len(scaleVals) > 0 {
+			if hasScale {
 				scaleScore = percentileRank(scaleVals, scale, true)
 			}
 
-			// Weights documented in measurement.md.
-			raw := 0.28*float64(thrScore) + 0.14*float64(latScore) + 0.14*float64(allocScore) +
-				0.08*float64(churnScore) + 0.16*float64(scaleScore) + 0.20*float64(stallScore)
+			// Weights documented in measurement.md. The composite is the
+			// weighted mean over the dimensions that have data.
+			raw, weight := 0.0, 0.0
+			dimsMissing := []string{}
+			for _, d := range []struct {
+				key   string
+				w     float64
+				score int
+				has   bool
+			}{
+				{"throughput", 0.28, thrScore, hasThr},
+				{"latency", 0.14, latScore, hasLat},
+				{"allocations", 0.14, allocScore, hasAlloc},
+				{"churn", 0.08, churnScore, hasChurn},
+				{"scaling", 0.16, scaleScore, hasScale},
+				{"stall_resilience", 0.20, stallScore, hasStall},
+			} {
+				if !d.has {
+					dimsMissing = append(dimsMissing, d.key)
+					continue
+				}
+				raw += d.w * float64(d.score)
+				weight += d.w
+			}
+			if weight > 0 {
+				raw /= weight
+			}
 
 			integrity, _ := integrityOf(data.metrics, impl, family)
 			if integrity == "failed" && raw > 50 {
@@ -508,7 +534,7 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			if hasLat {
 				metrics["publish_latency_ns@8"] = lat
 			}
-			if allocAll != nil && hasAlloc {
+			if hasAlloc {
 				metrics["publish_allocs_op@8"] = alloc
 			}
 			if hasChurn {
@@ -531,6 +557,7 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 				Verdict:         verdict,
 				Ranked:          ranked,
 				Peers:           len(impls),
+				DimsMissing:     dimsMissing,
 				Baseline:        isBaselineName(impl),
 				Integrity:       integrity,
 				Dims:            map[string]int{"throughput": thrScore, "latency": latScore, "allocations": allocScore, "churn": churnScore, "scaling": scaleScore, "stall_resilience": stallScore},

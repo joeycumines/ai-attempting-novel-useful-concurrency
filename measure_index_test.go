@@ -85,7 +85,7 @@ func TestIndexVerifiesEachRunAgainstItsOwnRegistry(t *testing.T) {
 	}
 	const meta = `{"type":"meta","profile":"quick"}` + "\n"
 	record := func(impl string) string {
-		return `{"type":"metric","family":"broadcast","impl":"` + impl + `","metric":"m"}` + "\n"
+		return `{"type":"metric","family":"broadcast","impl":"` + impl + `","metric":"m","mean":1}` + "\n"
 	}
 	// Run 01 measured everything its registry defined. Run 02 carries no
 	// dump. Neither covers the live registry, which is irrelevant to them.
@@ -172,6 +172,39 @@ func TestCommittedRunsAreIndexed(t *testing.T) {
 		committed, _ := os.ReadFile(m)
 		if !sameManifest(filepath.Join(dir, m), committed) {
 			t.Errorf("%s is stale: run 'make measure-index' and commit the result", m)
+		}
+	}
+}
+
+// A metric record must carry the number it is named for. Runs made by
+// generator 1.0.0 are known not to (their stalled-consumer records have no
+// ops_completed); that is reported as a note and does not fail them.
+func TestVerifyRejectsMetricRecordsWithoutAValue(t *testing.T) {
+	sets := []expectedImplSet{{"broadcast", []string{"A"}}}
+	run := func(generator, record string) (int, string) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "results-01-01-results.jsonl")
+		meta := `{"type":"meta","profile":"quick","generator_version":"` + generator + `"}` + "\n"
+		if err := os.WriteFile(path, []byte(meta+record+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var out strings.Builder
+		return verifyResultsAgainst(path, sets, "a test registry", &out), out.String()
+	}
+	const valueless = `{"type":"metric","family":"broadcast","impl":"A","metric":"stalled_consumer_ops_completed","outcome":"completed"}`
+	const withOps = `{"type":"metric","family":"broadcast","impl":"A","metric":"stalled_consumer_ops_completed","ops_completed":0}`
+	const withMean = `{"type":"metric","family":"broadcast","impl":"A","metric":"publish_ns_op","mean":12.5}`
+	const tornReads = `{"type":"metric","family":"broadcast","impl":"A","metric":"torn_reads","violations":0,"checked":500}`
+
+	if rc, out := run(measureGeneratorVersion, valueless); rc == 0 || !strings.Contains(out, "metric records without a value: stalled_consumer_ops_completed (1)") {
+		t.Errorf("current generator, valueless record: rc=%d\n%s", rc, out)
+	}
+	if rc, out := run("1.0.0", valueless); rc != 0 || !strings.Contains(out, "note: metric records without a value (generator 1.0.0)") {
+		t.Errorf("generator 1.0.0, valueless record: rc=%d\n%s", rc, out)
+	}
+	for name, rec := range map[string]string{"ops_completed of zero": withOps, "mean": withMean, "torn reads": tornReads} {
+		if rc, out := run(measureGeneratorVersion, rec); rc != 0 || strings.Contains(out, "without a value") {
+			t.Errorf("%s: rc=%d\n%s", name, rc, out)
 		}
 	}
 }

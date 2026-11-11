@@ -283,7 +283,8 @@ function downloadBlob(name, content, mime){
       Object.keys(derivedFamily(f)).forEach(function(impl){
         var s = derivedFamily(f)[impl];
         var n = function(v){ return isRanked(s) ? v : ''; };
-        lines.push([f, impl, n(s.score), s.verdict, s.baseline, s.integrity, n(s.dims.throughput), n(s.dims.latency), n(s.dims.allocations), n(s.dims.churn), n(s.dims.scaling), n(s.dims.stall_resilience), s.expected_good_fit, s.exposure_limited].map(csvEscape).join(','));
+        var dm = function(k){ return dimMissing(s, k) ? '' : n(s.dims[k]); };
+        lines.push([f, impl, n(s.score), s.verdict, s.baseline, s.integrity, dm('throughput'), dm('latency'), dm('allocations'), dm('churn'), dm('scaling'), dm('stall_resilience'), s.expected_good_fit, s.exposure_limited].map(csvEscape).join(','));
       });
     });
     downloadBlob('bigbuff-scores.csv', lines.join('\n')+'\n', 'text/csv');
