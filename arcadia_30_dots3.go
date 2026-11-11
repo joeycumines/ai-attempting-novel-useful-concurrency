@@ -62,6 +62,10 @@ package bigbuff
 //     available until some later Send.
 //  8. Len is capped at the capacity (an overrun subscriber's lag is not a
 //     count of buffered values).
+//  9. The SubscribeContext iterator has unsubscribed by the time it returns.
+//     On cancellation the removal ran only on the context's AfterFunc
+//     goroutine, so the iterator could return (it polls ctx itself) with its
+//     subscription still registered.
 //
 // The "Hot-Path Allocations" table below is the response's claim. Send
 // allocates once per call (the slot entry); see the tests.
@@ -602,10 +606,13 @@ func (a *Arcadia[V]) SubscribeContext(ctx context.Context) iter.Seq[V] {
 	stop := context.AfterFunc(ctx, func() { a.Unsubscribe(sub) })
 
 	return func(yield func(V) bool) {
+		// Always unsubscribe here, even if the AfterFunc has already been
+		// started: it runs on its own goroutine and may not have removed the
+		// subscription yet. Unsubscribe is idempotent, and once this call
+		// returns the subscription is gone whichever of the two removed it.
 		defer func() {
-			if stop() {
-				a.Unsubscribe(sub)
-			}
+			stop()
+			a.Unsubscribe(sub)
 		}()
 
 		for {

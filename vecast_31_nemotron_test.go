@@ -9,6 +9,7 @@ import (
 	"cmp"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -366,9 +367,10 @@ func TestVecast_CloseDuringSends(t *testing.T) {
 // and leave, against a publisher. The publisher must never be stranded by a
 // departure, and one Send must never reach a subscriber twice.
 func TestVecast_ChurnAgainstSends(t *testing.T) {
-	const rounds, churners = 4000, 4
+	const cycles, churners = 1500, 4
 	v := NewVecast[int]()
 	stop := make(chan struct{})
+	var completed atomic.Int64
 	var wg sync.WaitGroup
 	for range churners {
 		wg.Add(1)
@@ -390,6 +392,7 @@ func TestVecast_ChurnAgainstSends(t *testing.T) {
 					}
 				}
 				v.Unsubscribe(s)
+				completed.Add(1)
 			}
 		}()
 	}
@@ -410,7 +413,10 @@ func TestVecast_ChurnAgainstSends(t *testing.T) {
 	published := make(chan struct{})
 	go func() {
 		defer close(published)
-		for i := range rounds {
+		// Until the churning subscribers have completed the required number
+		// of join/receive/leave cycles; each iteration blocks in a handoff
+		// to the steady subscriber.
+		for i := 0; completed.Load() < cycles; i++ {
 			if v.Send(i) < 1 {
 				t.Error("Send did not reach the steady subscriber")
 				return

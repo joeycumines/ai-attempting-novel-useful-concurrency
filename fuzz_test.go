@@ -21,11 +21,12 @@ func FuzzUnifiedBroadcaster(f *testing.F) {
 			return
 		}
 
-		// Representative architectures for this legacy op-stream fuzz. Every
-		// implementation in AllBroadcasters is fuzzed exhaustively by
-		// FuzzScenarioBroadcast / FuzzScenarioCasterScatterGather (driven by
-		// the scenario attachments); this target keeps a fast, historically
-		// stable subset so seed-corpus runs in `go test` stay quick.
+		// Representative architectures for this legacy op-stream fuzz, which
+		// runs every listed implementation on every input. The broad targets
+		// are FuzzScenarioBroadcast (one broadcast implementation per input,
+		// chosen by the input from every scenario attachment) and
+		// FuzzScenarioCasterScatterGather; this one keeps a small fixed
+		// subset so seed-corpus runs in `go test` stay quick.
 		factories := []func() Broadcaster{
 			func() Broadcaster { return newRingPubSubAdapter() },
 			func() Broadcaster { return newPhasePubSubAdapter() },

@@ -80,10 +80,13 @@ type ChanPubSub47Gemini[C ~chan V, V any] struct {
 	subscribers atomic.Int32
 
 	// Lock-free binary-tree channel barrier for the pong phase:
-	//   - pongRem counts remaining participants (Wait calls or mid-Send unsubscribes)
+	//   - pongRem counts remaining participants: one per subscriber (a Wait
+	//     call or a mid-Send unsubscribe) plus one for the sender, which
+	//     takes its place when the ping phase has ended
 	//   - waiters counts goroutines parked in <-pongGate
 	//   - pongWake propagates O(log2 N) parallel wakeups across pongGate
-	//   - pongExit counts participants finishing Wait; the last signals pongDone
+	//   - pongExit counts subscribers finishing Wait (or withdrawing); the
+	//     last signals pongDone. The sender is not counted here.
 	pongRem  atomic.Int32
 	waiters  atomic.Int32
 	pongWake atomic.Int32

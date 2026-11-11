@@ -297,6 +297,24 @@ func TestArcadia_SubscribeContext(t *testing.T) {
 	}
 }
 
+// TestArcadia_IteratorHasUnsubscribedWhenItReturns is the regression test
+// for repair 9. With an already cancelled context the removal is queued on
+// the context's AfterFunc goroutine; the iterator used to return without it.
+func TestArcadia_IteratorHasUnsubscribedWhenItReturns(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for round := range 200 {
+		a := NewArcadia[int](4)
+		values := a.SubscribeContext(ctx)
+		for v := range values {
+			t.Fatalf("round %d: a cancelled iterator yielded %d", round, v)
+		}
+		if n := a.Subscribers(); n != 0 {
+			t.Fatalf("round %d: Subscribers = %d after the iterator returned, want 0", round, n)
+		}
+	}
+}
+
 func TestArcadia_AsChannel(t *testing.T) {
 	a := NewArcadia[int](8)
 	s := a.Subscribe()
