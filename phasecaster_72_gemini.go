@@ -159,13 +159,11 @@ type slot72Gemini[V any] struct {
 	_pad  [128 - 8 - 16 - 8]byte
 }
 
-// slotBank72Gemini manages 64 contiguous subscriber slots indexed via 64-bit hardware bitmaps.
+// slotBank72Gemini manages 64 contiguous subscriber slots indexed via 64-bit
+// hardware bitmaps. The bitmaps themselves live in the caster's contiguous
+// activeMasks and allocMasks arrays (see PhaseCaster72Gemini).
 type slotBank72Gemini[V any] struct {
-	activeMask atomic.Uint64 // Set bits indicate subscribed, non-canceling slots
-	_pad0      [120]byte
-	allocMask  atomic.Uint64 // Set bits indicate allocated slots
-	_pad1      [120]byte
-	slots      [slotsPerBank72Gemini]slot72Gemini[V]
+	slots [slotsPerBank72Gemini]slot72Gemini[V]
 }
 
 // Subscription72Gemini is a 16-byte value-type capability handle passed in CPU registers
@@ -212,6 +210,22 @@ type PhaseCaster72Gemini[V any] struct {
 	// Pre-allocated slot banks for O(active) TZCNT/BLSR bit-scan traversal.
 	banks []slotBank72Gemini[V]
 
+	// Per-bank bitmaps, one word per bank, each array contiguous so that the
+	// bitmap kernels (bitmap_72_gemini*.go) can scan them: activeMasks has a
+	// bit set for each subscribed, non-cancelling slot and is snapshotted and
+	// counted by every broadcast (scanActiveBanks72Gemini); allocMasks has a
+	// bit set for each allocated slot and is searched by Subscribe
+	// (findNonFullBank72Gemini).
+	//
+	// Completion-phase repair. The response describes the kernels as these
+	// two hot paths, but its final source kept each mask inside its padded
+	// bank struct, where the kernels cannot reach, and never called them.
+	// Hoisting the masks is what its partial second listing set out to do.
+	// The cost is that neighbouring banks' masks now share cache lines; the
+	// before and after measurements are in extraction_audit.md.
+	activeMasks []atomic.Uint64
+	allocMasks  []atomic.Uint64
+
 	// maskScratch is the per-broadcast activeMask snapshot; turnstile-guarded.
 	maskScratch []uint64
 }
@@ -231,6 +245,8 @@ func NewPhaseCaster72Gemini[V any](maxSubscribers int) *PhaseCaster72Gemini[V] {
 		bcastTurnstile: make(chan struct{}, 1),
 		doneCh:         make(chan struct{}),
 		banks:          make([]slotBank72Gemini[V], numBanks),
+		activeMasks:    make([]atomic.Uint64, numBanks),
+		allocMasks:     make([]atomic.Uint64, numBanks),
 		maskScratch:    make([]uint64, numBanks),
 	}
 	c.bcastTurnstile <- struct{}{}
@@ -390,45 +406,52 @@ func (c *PhaseCaster72Gemini[V]) subscribeWithChan(callerCh chan V, useInternal,
 		}
 	}
 
-	// Step 2: Claim a free slot across banks using hardware TZCNT on inverted allocMask.
-	for bIdx := range c.banks {
+	// Step 2: Claim a free slot. findNonFullBank72Gemini returns the lowest
+	// bank whose allocMask has a clear bit (-1 when every bank is full); the
+	// slot within it is found with TZCNT on the inverted mask. A bank that
+	// filled up, or a lost CAS, sends the search round again: each such
+	// retry means another subscriber made progress.
+	for {
+		bIdx := findNonFullBank72Gemini(c.allocMasks, 0)
+		if bIdx < 0 {
+			break
+		}
 		bank := &c.banks[bIdx]
-		for {
-			mask := bank.allocMask.Load()
-			freeBits := ^mask
-			if freeBits == 0 {
-				break
+		allocMask := &c.allocMasks[bIdx]
+		mask := allocMask.Load()
+		freeBits := ^mask
+		if freeBits == 0 {
+			continue
+		}
+		sIdx := uint32(bits.TrailingZeros64(freeBits))
+		bit := uint64(1) << sIdx
+		if allocMask.CompareAndSwap(mask, mask|bit) {
+			sl := &bank.slots[sIdx]
+			oldState := sl.state.Load()
+			if unpackSlotStatus72Gemini(oldState) != slotFree72Gemini {
+				c.subActive(1)
+				c.poison("bigbuff: invariant violation: allocated slot not in slotFree state")
 			}
-			sIdx := uint32(bits.TrailingZeros64(freeBits))
-			bit := uint64(1) << sIdx
-			if bank.allocMask.CompareAndSwap(mask, mask|bit) {
-				sl := &bank.slots[sIdx]
-				oldState := sl.state.Load()
-				if unpackSlotStatus72Gemini(oldState) != slotFree72Gemini {
-					c.subActive(1)
-					c.poison("bigbuff: invariant violation: allocated slot not in slotFree state")
-				}
-				gen := unpackSlotGen72Gemini(oldState)
-				if gen == 0 {
-					gen = 1
-				}
-				if useInternal {
-					sl.ch = sl.internalCh
-				} else {
-					sl.ch = callerCh
-				}
-				sl.plain = plain
-				// Release store on sl.state establishes happens-before for sl.ch write.
-				sl.state.Store(packSlot72Gemini(gen, slotIdle72Gemini, 0))
-				bank.activeMask.Or(bit)
+			gen := unpackSlotGen72Gemini(oldState)
+			if gen == 0 {
+				gen = 1
+			}
+			if useInternal {
+				sl.ch = sl.internalCh
+			} else {
+				sl.ch = callerCh
+			}
+			sl.plain = plain
+			// Release store on sl.state establishes happens-before for sl.ch write.
+			sl.state.Store(packSlot72Gemini(gen, slotIdle72Gemini, 0))
+			c.activeMasks[bIdx].Or(bit)
 
-				globalIdx := uint32(bIdx*slotsPerBank72Gemini) + sIdx
-				return Subscription72Gemini[V]{
-					caster:  c,
-					slotIdx: globalIdx,
-					gen:     gen,
-				}, nil
-			}
+			globalIdx := uint32(bIdx*slotsPerBank72Gemini) + sIdx
+			return Subscription72Gemini[V]{
+				caster:  c,
+				slotIdx: globalIdx,
+				gen:     gen,
+			}, nil
 		}
 	}
 
@@ -454,8 +477,8 @@ func (s Subscription72Gemini[V]) Unsubscribe() {
 	if int(bIdx) >= len(c.banks) {
 		c.poison("bigbuff: invariant violation: out-of-bounds subscription slot index")
 	}
-	bank := &c.banks[bIdx]
-	sl := &bank.slots[sIdx]
+	sl := &c.banks[bIdx].slots[sIdx]
+	activeMask, allocMask := &c.activeMasks[bIdx], &c.allocMasks[bIdx]
 	bit := uint64(1) << sIdx
 	nextGen := nextSlotGen72Gemini(s.gen)
 
@@ -474,9 +497,9 @@ func (s Subscription72Gemini[V]) Unsubscribe() {
 			// Fast path: subscriber is between broadcasts (an owed late ack, if any, dies with the slot).
 			// Transition directly to slotFree72Gemini before releasing allocMask.
 			if sl.state.CompareAndSwap(st, packSlot72Gemini(nextGen, slotFree72Gemini, 0)) {
-				bank.activeMask.And(^bit)
+				activeMask.And(^bit)
 				sl.ch = nil
-				bank.allocMask.And(^bit)
+				allocMask.And(^bit)
 				c.subActive(1)
 				return
 			}
@@ -485,9 +508,9 @@ func (s Subscription72Gemini[V]) Unsubscribe() {
 			// Subscriber already received the value in Phase 0 of BroadcastPhased,
 			// and is now departing before calling Ack(). Compensate both active AND inFlight!
 			if sl.state.CompareAndSwap(st, packSlot72Gemini(nextGen, slotFree72Gemini, 0)) {
-				bank.activeMask.And(^bit)
+				activeMask.And(^bit)
 				sl.ch = nil
-				bank.allocMask.And(^bit)
+				allocMask.And(^bit)
 				c.subActiveAndInFlight(1, 1, epoch)
 				return
 			}
@@ -498,7 +521,7 @@ func (s Subscription72Gemini[V]) Unsubscribe() {
 			ch := sl.ch
 			if sl.state.CompareAndSwap(st, packSlot72Gemini(s.gen, slotCanceling72Gemini, epoch)) {
 				// Hide from future broadcast snapshots immediately.
-				bank.activeMask.And(^bit)
+				activeMask.And(^bit)
 
 				// Compensating Mid-Flight Drain Loop:
 				// Drain <-ch if the broadcaster is parked in ch <- v, or yield briefly if
@@ -515,7 +538,7 @@ func (s Subscription72Gemini[V]) Unsubscribe() {
 				// Broadcaster has stored slotCancelAck72Gemini and will never touch sl.ch again.
 				sl.ch = nil
 				sl.state.Store(packSlot72Gemini(nextGen, slotFree72Gemini, 0))
-				bank.allocMask.And(^bit)
+				allocMask.And(^bit)
 				c.subActive(1)
 				return
 			}
@@ -640,7 +663,9 @@ func (c *PhaseCaster72Gemini[V]) broadcastInternal(ctx context.Context, v V, has
 		c.poison(fmt.Sprintf("bigbuff: invariant violation: non-zero inFlight (%d) at broadcast start", unpackInFlight72Gemini(cur)))
 	}
 
-	// Snapshot active bitmaps across banks and count participating slots via POPCNT.
+	// Snapshot active bitmaps across banks and count participating slots via
+	// POPCNT (the bitmap kernel: assembly on amd64 and arm64 outside race
+	// builds, the reference loop otherwise).
 	// Integration repair: the snapshot buffer is owned by the caster and
 	// guarded by the broadcast turnstile (exactly one broadcaster holds it).
 	// As generated, casters with more than four banks allocated this slice
@@ -648,12 +673,7 @@ func (c *PhaseCaster72Gemini[V]) broadcastInternal(ctx context.Context, v V, has
 	// subscribers.
 	masks := c.maskScratch
 
-	totalTargets := 0
-	for bIdx := range c.banks {
-		m := c.banks[bIdx].activeMask.Load()
-		masks[bIdx] = m
-		totalTargets += bits.OnesCount64(m)
-	}
+	totalTargets := scanActiveBanks72Gemini(masks, c.activeMasks)
 
 	newEpoch64 := c.fullEpoch.Add(1)
 	epoch32 := uint32(newEpoch64)
