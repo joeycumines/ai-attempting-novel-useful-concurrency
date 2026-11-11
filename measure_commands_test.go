@@ -893,3 +893,27 @@ func indexJSONL(path string) (map[string]int, map[string]any, map[string]any) {
 	}
 	return counts, meta, summary
 }
+
+// registryDumpForResults returns the registry dump a results file is read
+// against when none is named: the dump in its own run group (slot 02), else
+// the dump of the nearest earlier run group, with a note saying so. It
+// returns "" when the file is not part of the run log or no dump exists at or
+// before its run. `index` applies the same rule when it verifies.
+func registryDumpForResults(resultsPath string) (path, note string) {
+	dir, base := filepath.Dir(resultsPath), filepath.Base(resultsPath)
+	m := regexp.MustCompile(`^results-([0-9]{2})-01-results\.jsonl$`).FindStringSubmatch(base)
+	if m == nil {
+		return "", ""
+	}
+	run, _ := strconv.Atoi(m[1])
+	for rr := run; rr >= 1; rr-- {
+		p := filepath.Join(dir, fmt.Sprintf("results-%02d-02-registry.json", rr))
+		if fileExists(p) {
+			if rr != run {
+				note = " (nearest earlier registry dump; this run group has none)"
+			}
+			return p, note
+		}
+	}
+	return "", ""
+}

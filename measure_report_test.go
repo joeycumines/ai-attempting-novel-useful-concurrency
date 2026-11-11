@@ -26,7 +26,7 @@ func cmdMeasureReport(args []string) int {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	in := fs.String("in", "", "bigbuff-measure results file (default: newest results-*-01-results.jsonl)")
 	out := fs.String("out", "", "output HTML report path (default: same run group, -03-report.html)")
-	registryPath := fs.String("registry", "", "registry JSON (default: dumped live from the test binary)")
+	registryPath := fs.String("registry", "", "registry JSON (default: the dump of the run group the results belong to, else the nearest earlier run's, else the live registry)")
 	csvMetrics := fs.String("csv-metrics", "", "optional output path for the metrics_wide CSV")
 	csvScores := fs.String("csv-scores", "", "optional output path for the scores CSV")
 	csvDir := fs.String("csv", "", "deprecated alias: write <dir>/metrics_wide.csv and <dir>/scores.csv")
@@ -47,6 +47,17 @@ func cmdMeasureReport(args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "report: load %s: %v\n", *in, err)
 		return 1
+	}
+	// A run is reported against the registry it was made from, for the same
+	// reason it is verified against it: the fit, exposure and baseline flags
+	// shown beside a measurement must be the ones that held when it was taken.
+	if *registryPath == "" {
+		if p, note := registryDumpForResults(*in); p != "" {
+			*registryPath = p
+			fmt.Fprintf(os.Stderr, "report: registry %s%s\n", filepath.Base(p), note)
+		} else {
+			fmt.Fprintf(os.Stderr, "report: no registry dump at or before this run; using the live registry\n")
+		}
 	}
 	registry := map[string]any{}
 	if *registryPath != "" {

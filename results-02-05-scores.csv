@@ -1,116 +1,116 @@
 family,impl,score,verdict,baseline,integrity,throughput,latency,allocations,churn,scaling,stall_resilience,expected_good_fit,exposure_limited
-broadcast,RingPubSub TrySend (18-ChatGPT),91,Strong candidate,false,verified,100,100,46,86,95,100,true,false
-broadcast,EpochCast41Sonnet/lossy (41-Sonnet),89,Strong candidate,false,verified,99,97,46,70,99,100,true,false
-broadcast,RingFanOut14Xing (14-Xing),86,Strong candidate,false,verified,92,88,46,79,97,100,true,false
-broadcast,RingCaster55Haiku (55-ClaudeHaiku),85,Strong candidate,false,verified,97,99,38,61,88,100,true,false
-broadcast,BaselineAsyncFanout (baseline),83,Strong candidate,true,verified,95,92,46,30,92,100,true,false
-broadcast,Relay29Nemotron (29-Nemotron),81,Strong candidate,false,verified,89,95,18,87,82,100,true,false
-broadcast,Broadcast42Spark (42-MuseSpark),80,Strong candidate,false,verified,88,84,8,91,96,100,true,false
-broadcast,ReplayCast53Gpt6Sol (53-GPT-6-Sol),79,Strong candidate,false,verified,86,89,18,67,93,100,true,false
-broadcast,Broadcaster58Spark (58-MuseSpark),78,Strong candidate,false,verified,84,76,18,96,87,100,true,false
-broadcast,ChanFeed (04-DeepSeek),78,Strong candidate,false,verified,93,79,18,66,83,100,true,false
-broadcast,EpochCasterGemini (09-Gemini),78,Strong candidate,false,verified,96,91,18,25,84,100,true,false
-broadcast,EpochCaster (13-OpenRouter),76,Strong candidate,false,verified,83,75,46,62,67,100,true,true
-broadcast,RingPubSub (18-ChatGPT),76,Strong candidate,false,verified,79,66,46,84,70,100,true,false
-broadcast,GenCaster (06-Meta),75,Strong candidate,false,verified,87,70,8,92,80,100,true,true
-broadcast,PhantomCast44Qwen (44-Qwen),75,Strong candidate,false,verified,91,86,18,45,71,100,true,false
-broadcast,RingFanout (45-ChatGPT),74,Situational (strengths offset by trade-offs),false,verified,78,71,46,57,68,100,true,false
-broadcast,Beacon (01-baseline),72,Situational (strengths offset by trade-offs),false,verified,82,83,1,38,89,100,true,false
-broadcast,Arcadia (30-dots3),71,Situational (strengths offset by trade-offs),false,verified,80,93,18,1,79,100,true,false
-broadcast,RingBeacon (08-MuseSpark),70,Situational (strengths offset by trade-offs),false,verified,70,82,3,33,100,100,true,true
-broadcast,WatchCaster48Grok (48-Grok),70,Situational (strengths offset by trade-offs),false,verified,53,87,18,95,78,100,true,false
-broadcast,ChanBeacon (07-Qwen),69,Situational (strengths offset by trade-offs),false,verified,71,63,8,54,91,100,true,false
-broadcast,SeqCaster23Meta (23-MetaAI),68,Situational (strengths offset by trade-offs),false,verified,51,96,46,3,86,100,true,false
-broadcast,ChanFanout (12-OpenRouter),67,Situational (strengths offset by trade-offs),false,verified,75,55,3,68,76,100,true,false
-broadcast,ChanRing26Kimi (26-Kimi),67,Situational (strengths offset by trade-offs),false,verified,74,80,18,12,75,100,true,false
-broadcast,ChanRing47Gemini (47-Gemini),67,Situational (strengths offset by trade-offs),false,verified,67,68,8,82,72,100,true,false
-broadcast,BaselineQueuedFanout (baseline),66,Situational (strengths offset by trade-offs),true,verified,66,74,41,59,43,100,true,false
-broadcast,Carillon (21-ClaudeHaiku),66,Situational (strengths offset by trade-offs),false,verified,76,72,46,80,14,100,true,false
-broadcast,ChanLatest (03-ChatGPT),65,Situational (strengths offset by trade-offs),false,verified,63,51,46,64,51,100,true,false
-broadcast,BaselineFanout (standard),63,Situational (strengths offset by trade-offs),true,verified,59,59,46,18,64,100,true,false
-broadcast,ChanRelay TrySend (20-Arena),62,Situational (strengths offset by trade-offs),false,verified,64,54,46,53,34,100,true,false
-broadcast,SelectBroadcaster49Qwen (49-Qwen),62,Situational (strengths offset by trade-offs),false,verified,61,78,3,34,66,100,true,true
-broadcast,RelayPubSub (19-ChatGPT),61,Situational (strengths offset by trade-offs),false,verified,43,38,46,97,58,100,true,false
-broadcast,SelectCaster37Gemini (37-Gemini),61,Situational (strengths offset by trade-offs),false,verified,62,57,46,58,30,100,true,false
-broadcast,SlabCaster40Gemini/drop-oldest (40-Gemini),61,Situational (strengths offset by trade-offs),false,verified,72,62,46,55,9,100,true,true
-broadcast,QueuedFanout24Meta (24-MetaAI),59,Niche use only,false,verified,54,64,39,47,33,100,true,true
-broadcast,ShardCast39Mistral/latest (39-Mistral),58,Niche use only,false,verified,57,61,46,63,11,100,true,false
-broadcast,ChanHub TrySend (15-Nemotron),57,Niche use only,false,verified,68,58,46,7,16,100,true,false
-broadcast,ChanCascade52Opus (52-ClaudeOpus),56,Niche use only,false,verified,34,33,46,99,47,100,true,false
-broadcast,ChanPubSub57DeepSeek (57-DeepSeek),56,Niche use only,false,verified,39,29,46,74,55,100,true,true
-broadcast,ChanRotor (17-Gemini),56,Niche use only,false,verified,28,42,46,75,59,100,true,false
-broadcast,BaselineLatestBroadcast (baseline),55,Niche use only,true,verified,55,53,46,11,32,100,true,false
-broadcast,ChanPubSub (Baseline),55,Niche use only,true,verified,38,34,46,83,42,100,true,false
-broadcast,EpochTape (10-Gemini),55,Niche use only,false,verified,45,67,37,100,0,100,true,false
-broadcast,ChanReplay51DeepSeek (51-DeepSeek),54,Niche use only,false,verified,33,30,43,72,54,100,true,true
-broadcast,PhasePubSub (19-ChatGPT),54,Niche use only,false,verified,46,45,46,93,7,100,true,false
-broadcast,Fanout45ChatGPT/buffered (45-ChatGPT),53,Niche use only,false,verified,58,50,46,42,1,100,true,false
-broadcast,SlotPubSub43Grok (43-Grok),52,Niche use only,false,verified,32,24,46,76,46,100,true,true
-broadcast,ChanHub (15-Nemotron),51,Niche use only,false,verified,49,49,46,28,12,100,true,true
-broadcast,ChanHub46Grok (46-Grok),51,Niche use only,false,verified,50,46,17,17,41,100,true,false
-broadcast,BaselineBufferedBroadcast (baseline),50,Niche use only,true,verified,41,32,18,16,61,100,true,false
-broadcast,ChanRelay (20-Arena),49,Niche use only,false,verified,37,37,45,41,25,100,true,false
-broadcast,Fanout45ChatGPT/sync (45-ChatGPT),49,Niche use only,false,verified,42,43,46,49,5,100,true,false
-broadcast,SenseCaster (25-ClaudeHaiku),49,Niche use only,false,verified,16,22,46,78,57,100,true,false
-broadcast,BaselineBoundedReplay (baseline),47,Niche use only,true,verified,47,47,18,37,8,100,true,false
-broadcast,EpochBroadcast54Terra (54-GPT-6.1-Terra),47,Niche use only,false,verified,29,8,8,88,63,100,true,true
-broadcast,Fanout56MaiCode (56-MaiCode),45,Niche use only,false,verified,36,28,46,51,3,100,true,true
-broadcast,SelectFanout (38-ChatGPT),45,Niche use only,false,verified,30,25,46,39,24,100,true,false
-broadcast,ChanGathererPubSub (05-Qwen),43,Avoid for most uses,false,verified,20,16,46,89,13,100,true,false
-broadcast,ChanPubSub14Xing,43,Avoid for most uses,false,verified,25,11,46,26,39,100,true,false
-broadcast,ShardCaster36Meta (36-MetaAI),43,Avoid for most uses,false,verified,14,26,46,50,29,100,true,false
-broadcast,Broadcast28Flint (28-Flint),42,Avoid for most uses,false,verified,26,39,46,5,17,100,true,false
-broadcast,Multicast27Mistral (27-Mistral),42,Avoid for most uses,false,verified,5,36,46,43,36,100,true,false
-broadcast,ChanMultiCast34Lightning (34-Lightning),41,Avoid for most uses,false,verified,7,41,46,46,20,100,true,true
-broadcast,ChanPubSub10Gemini,41,Avoid for most uses,false,verified,18,12,46,21,37,100,true,false
-broadcast,ChanPubSub16DeepSeek,40,Avoid for most uses,false,verified,21,9,46,22,28,100,true,false
-broadcast,BaselineBarrierPubSub (baseline),39,Avoid for most uses,true,verified,11,17,8,29,62,100,true,false
-broadcast,ChanPubSub09Gemini,39,Avoid for most uses,false,verified,13,7,46,20,38,100,true,false
-broadcast,ChanPubSub47Gemini (47-Gemini),39,Avoid for most uses,false,verified,8,20,42,71,18,100,true,true
-broadcast,ChanPubSubV2_06meta,39,Avoid for most uses,false,verified,17,18,46,24,21,100,true,true
-broadcast,EpochPubSub (11-meta),39,Avoid for most uses,false,verified,24,0,8,36,50,100,true,false
-broadcast,ChanPubSub17Gemini,35,Avoid for most uses,false,verified,22,1,46,14,4,100,true,false
-broadcast,GenPubSub50Meta (50-MetaAI),35,Avoid for most uses,false,verified,4,14,18,9,53,100,true,false
-broadcast,ReliableBeacon (08-MuseSpark),34,Avoid for most uses,false,verified,12,5,0,32,45,100,true,false
-broadcast,Vecast (31-Nemotron),34,Avoid for most uses,false,verified,0,4,7,8,74,100,true,true
-broadcast,ChanPubSubPacked (22-ChatGPT),33,Avoid for most uses,false,verified,3,13,46,4,22,100,true,false
-broadcast,ChanMulticast33North (33-North),32,Avoid for most uses,false,verified,9,21,18,0,26,100,true,false
-broadcast,ChanPubSub58Spark (58-MuseSpark),32,Avoid for most uses,false,verified,1,3,18,13,49,100,true,false
-caster,ChanCaster17FastPath,95,Strong candidate,false,verified,100,83,100,67,100,100,true,false
-caster,ChanCaster11Meta,86,Strong candidate,false,verified,58,92,100,92,100,100,true,false
-caster,ChanCaster09Gemini,85,Strong candidate,false,verified,92,17,100,83,100,100,true,false
-caster,ChanCaster2,84,Strong candidate,false,verified,75,67,100,50,100,100,true,false
-caster,ChanCaster17Pumped,82,Strong candidate,false,verified,67,58,100,58,100,100,true,false
-caster,ChanCasterV2_06meta,82,Strong candidate,false,verified,83,42,100,42,100,100,true,false
-caster,ChanCaster47Gemini,77,Strong candidate,false,verified,17,100,100,100,100,100,true,false
-caster,ChanCaster58Spark,75,Strong candidate,false,verified,42,75,100,33,100,100,true,false
-caster,ChanCaster15Nemotron,72,Situational (strengths offset by trade-offs),false,verified,33,50,100,75,100,100,true,false
-caster,ChanCaster14Xing,66,Situational (strengths offset by trade-offs),false,verified,50,8,100,17,100,100,true,false
-caster,ChanCaster,64,Situational (strengths offset by trade-offs),false,verified,25,33,100,25,100,100,true,false
-caster,AdaptiveCaster23Meta,56,Niche use only,false,verified,8,25,100,0,100,100,true,false
-caster,BaselineRendezvousCaster,51,Niche use only,true,verified,0,0,100,8,100,100,true,false
-gather,BaselineGatherBarrier,100,Strong candidate,true,verified,100,100,100,100,100,100,true,false
-gather,ChanGatherer,92,Strong candidate,false,verified,100,100,100,0,100,100,true,false
-payload,EpochTape_c64,94,Strong candidate,false,verified,100,100,100,78,72,100,true,false
-payload,ChanFeed_drop_c64,90,Strong candidate,false,verified,83,89,100,50,100,100,true,false
-payload,RingFanOut14Xing_c64,89,Strong candidate,false,verified,94,94,100,44,78,100,true,false
-payload,ChanBeacon_c64,83,Strong candidate,false,verified,61,67,100,100,89,100,true,false
-payload,ChanFanout_c64,83,Strong candidate,false,verified,72,78,100,39,94,100,true,false
-payload,BaselineAsyncFanout_c64,81,Strong candidate,true,verified,89,61,100,33,67,100,true,false
-payload,Broadcaster58Spark_c64,81,Strong candidate,false,verified,78,56,100,56,83,100,true,false
-payload,EpochCasterGemini_c64,74,Situational (strengths offset by trade-offs),false,verified,50,83,100,72,56,100,true,false
-payload,GenCaster,74,Situational (strengths offset by trade-offs),false,verified,56,50,100,94,61,100,true,false
-payload,RingBeacon_c64,73,Situational (strengths offset by trade-offs),false,verified,67,44,100,83,44,100,true,false
-payload,Beacon,69,Situational (strengths offset by trade-offs),false,verified,44,72,100,61,50,100,true,false
-payload,RingPubSub_c64,62,Situational (strengths offset by trade-offs),false,verified,39,39,100,89,28,100,true,false
-payload,ChanLatest,54,Niche use only,false,verified,28,28,100,67,17,100,true,false
-payload,EpochCaster13Crouton_r64,51,Niche use only,false,verified,22,33,100,17,33,100,true,false
-payload,BaselineFanout_c64,50,Niche use only,true,verified,33,22,100,6,22,100,true,false
-payload,ChanFeed_block_c64,48,Niche use only,false,verified,17,17,100,11,39,100,true,false
-payload,ChanRelay_w16,41,Avoid for most uses,false,verified,6,11,100,22,11,100,true,false
-payload,ChanHub_c16,39,Avoid for most uses,false,verified,11,6,100,0,6,100,true,false
-payload,ChanRelay_sync,36,Avoid for most uses,false,verified,0,0,100,28,0,100,true,false
-scatter,ChanScatter,100,Strong candidate,false,verified,100,100,100,100,100,100,true,false
-scatter,BaselineScatterQueue,97,Strong candidate,true,verified,100,100,100,67,100,100,true,false
-scatter,BaselineBoundedScatterQueue (baseline),50,Do not adopt (integrity failure),true,failed,100,100,100,33,100,100,true,false
-scatter,StableRing32Nano (32-Nano),50,Do not adopt (integrity failure),false,failed,100,100,100,0,100,100,true,false
+broadcast,RingPubSub TrySend (18-ChatGPT),88,Strong candidate,false,verified,100,100,46,86,95,,true,false
+broadcast,EpochCast41Sonnet/lossy (41-Sonnet),86,Strong candidate,false,verified,99,97,46,70,99,,true,false
+broadcast,RingFanOut14Xing (14-Xing),83,Strong candidate,false,verified,92,88,46,79,97,,true,false
+broadcast,RingCaster55Haiku (55-ClaudeHaiku),82,Strong candidate,false,verified,97,99,38,61,88,,true,false
+broadcast,BaselineAsyncFanout (baseline),79,Strong candidate,true,verified,95,92,46,30,92,,true,false
+broadcast,Relay29Nemotron (29-Nemotron),76,Strong candidate,false,verified,89,95,18,87,82,,true,false
+broadcast,Broadcast42Spark (42-MuseSpark),75,Strong candidate,false,verified,88,84,8,91,96,,true,false
+broadcast,ReplayCast53Gpt6Sol (53-GPT-6-Sol),74,Situational (strengths offset by trade-offs),false,verified,86,89,18,67,93,,true,false
+broadcast,Broadcaster58Spark (58-MuseSpark),73,Situational (strengths offset by trade-offs),false,verified,84,76,18,96,87,,true,false
+broadcast,ChanFeed (04-DeepSeek),73,Situational (strengths offset by trade-offs),false,verified,93,79,18,66,83,,true,false
+broadcast,EpochCasterGemini (09-Gemini),72,Situational (strengths offset by trade-offs),false,verified,96,91,18,25,84,,true,false
+broadcast,EpochCaster (13-OpenRouter),70,Situational (strengths offset by trade-offs),false,verified,83,75,46,62,67,,true,true
+broadcast,RingPubSub (18-ChatGPT),70,Situational (strengths offset by trade-offs),false,verified,79,66,46,84,70,,true,false
+broadcast,GenCaster (06-Meta),69,Situational (strengths offset by trade-offs),false,verified,87,70,8,92,80,,true,true
+broadcast,PhantomCast44Qwen (44-Qwen),69,Situational (strengths offset by trade-offs),false,verified,91,86,18,45,71,,true,false
+broadcast,RingFanout (45-ChatGPT),67,Situational (strengths offset by trade-offs),false,verified,78,71,46,57,68,,true,false
+broadcast,Beacon (01-baseline),65,Situational (strengths offset by trade-offs),false,verified,82,83,1,38,89,,true,false
+broadcast,Arcadia (30-dots3),63,Situational (strengths offset by trade-offs),false,verified,80,93,18,1,79,,true,false
+broadcast,RingBeacon (08-MuseSpark),63,Situational (strengths offset by trade-offs),false,verified,70,82,3,33,100,,true,true
+broadcast,WatchCaster48Grok (48-Grok),62,Situational (strengths offset by trade-offs),false,verified,53,87,18,95,78,,true,false
+broadcast,ChanBeacon (07-Qwen),61,Situational (strengths offset by trade-offs),false,verified,71,63,8,54,91,,true,false
+broadcast,SeqCaster23Meta (23-MetaAI),60,Situational (strengths offset by trade-offs),false,verified,51,96,46,3,86,,true,false
+broadcast,ChanRing26Kimi (26-Kimi),59,Niche use only,false,verified,74,80,18,12,75,,true,false
+broadcast,ChanRing47Gemini (47-Gemini),59,Niche use only,false,verified,67,68,8,82,72,,true,false
+broadcast,BaselineQueuedFanout (baseline),58,Niche use only,true,verified,66,74,41,59,43,,true,false
+broadcast,Carillon (21-ClaudeHaiku),58,Niche use only,false,verified,76,72,46,80,14,,true,false
+broadcast,ChanFanout (12-OpenRouter),58,Niche use only,false,verified,75,55,3,68,76,,true,false
+broadcast,ChanLatest (03-ChatGPT),56,Niche use only,false,verified,63,51,46,64,51,,true,false
+broadcast,BaselineFanout (standard),54,Niche use only,true,verified,59,59,46,18,64,,true,false
+broadcast,ChanRelay TrySend (20-Arena),52,Niche use only,false,verified,64,54,46,53,34,,true,false
+broadcast,SelectBroadcaster49Qwen (49-Qwen),52,Niche use only,false,verified,61,78,3,34,66,,true,true
+broadcast,SelectCaster37Gemini (37-Gemini),52,Niche use only,false,verified,62,57,46,58,30,,true,false
+broadcast,RelayPubSub (19-ChatGPT),51,Niche use only,false,verified,43,38,46,97,58,,true,false
+broadcast,SlabCaster40Gemini/drop-oldest (40-Gemini),51,Niche use only,false,verified,72,62,46,55,9,,true,true
+broadcast,QueuedFanout24Meta (24-MetaAI),48,Niche use only,false,verified,54,64,39,47,33,,true,true
+broadcast,ShardCast39Mistral/latest (39-Mistral),47,Niche use only,false,verified,57,61,46,63,11,,true,false
+broadcast,ChanHub TrySend (15-Nemotron),46,Niche use only,false,verified,68,58,46,7,16,,true,false
+broadcast,ChanCascade52Opus (52-ClaudeOpus),45,Niche use only,false,verified,34,33,46,99,47,,true,false
+broadcast,ChanPubSub57DeepSeek (57-DeepSeek),45,Niche use only,false,verified,39,29,46,74,55,,true,true
+broadcast,ChanRotor (17-Gemini),45,Niche use only,false,verified,28,42,46,75,59,,true,false
+broadcast,BaselineLatestBroadcast (baseline),44,Avoid for most uses,true,verified,55,53,46,11,32,,true,false
+broadcast,ChanPubSub (Baseline),44,Avoid for most uses,true,verified,38,34,46,83,42,,true,false
+broadcast,EpochTape (10-Gemini),44,Avoid for most uses,false,verified,45,67,37,100,0,,true,false
+broadcast,PhasePubSub (19-ChatGPT),43,Avoid for most uses,false,verified,46,45,46,93,7,,true,false
+broadcast,ChanReplay51DeepSeek (51-DeepSeek),42,Avoid for most uses,false,verified,33,30,43,72,54,,true,true
+broadcast,Fanout45ChatGPT/buffered (45-ChatGPT),42,Avoid for most uses,false,verified,58,50,46,42,1,,true,false
+broadcast,SlotPubSub43Grok (43-Grok),40,Avoid for most uses,false,verified,32,24,46,76,46,,true,true
+broadcast,ChanHub (15-Nemotron),39,Avoid for most uses,false,verified,49,49,46,28,12,,true,true
+broadcast,ChanHub46Grok (46-Grok),38,Avoid for most uses,false,verified,50,46,17,17,41,,true,false
+broadcast,BaselineBufferedBroadcast (baseline),37,Avoid for most uses,true,verified,41,32,18,16,61,,true,false
+broadcast,SenseCaster (25-ClaudeHaiku),37,Avoid for most uses,false,verified,16,22,46,78,57,,true,false
+broadcast,ChanRelay (20-Arena),36,Avoid for most uses,false,verified,37,37,45,41,25,,true,false
+broadcast,Fanout45ChatGPT/sync (45-ChatGPT),36,Avoid for most uses,false,verified,42,43,46,49,5,,true,false
+broadcast,EpochBroadcast54Terra (54-GPT-6.1-Terra),34,Avoid for most uses,false,verified,29,8,8,88,63,,true,true
+broadcast,BaselineBoundedReplay (baseline),33,Avoid for most uses,true,verified,47,47,18,37,8,,true,false
+broadcast,SelectFanout (38-ChatGPT),32,Avoid for most uses,false,verified,30,25,46,39,24,,true,false
+broadcast,Fanout56MaiCode (56-MaiCode),31,Avoid for most uses,false,verified,36,28,46,51,3,,true,true
+broadcast,ChanGathererPubSub (05-Qwen),29,Avoid for most uses,false,verified,20,16,46,89,13,,true,false
+broadcast,ChanPubSub14Xing,29,Avoid for most uses,false,verified,25,11,46,26,39,,true,false
+broadcast,Broadcast28Flint (28-Flint),28,Avoid for most uses,false,verified,26,39,46,5,17,,true,false
+broadcast,Multicast27Mistral (27-Mistral),28,Avoid for most uses,false,verified,5,36,46,43,36,,true,false
+broadcast,ShardCaster36Meta (36-MetaAI),28,Avoid for most uses,false,verified,14,26,46,50,29,,true,false
+broadcast,ChanMultiCast34Lightning (34-Lightning),26,Avoid for most uses,false,verified,7,41,46,46,20,,true,true
+broadcast,ChanPubSub10Gemini,26,Avoid for most uses,false,verified,18,12,46,21,37,,true,false
+broadcast,ChanPubSub16DeepSeek,25,Avoid for most uses,false,verified,21,9,46,22,28,,true,false
+broadcast,BaselineBarrierPubSub (baseline),24,Avoid for most uses,true,verified,11,17,8,29,62,,true,false
+broadcast,ChanPubSub47Gemini (47-Gemini),24,Avoid for most uses,false,verified,8,20,42,71,18,,true,true
+broadcast,ChanPubSubV2_06meta,24,Avoid for most uses,false,verified,17,18,46,24,21,,true,true
+broadcast,ChanPubSub09Gemini,23,Avoid for most uses,false,verified,13,7,46,20,38,,true,false
+broadcast,EpochPubSub (11-meta),23,Avoid for most uses,false,verified,24,0,8,36,50,,true,false
+broadcast,GenPubSub50Meta (50-MetaAI),19,Avoid for most uses,false,verified,4,14,18,9,53,,true,false
+broadcast,ChanPubSub17Gemini,18,Avoid for most uses,false,verified,22,1,46,14,4,,true,false
+broadcast,Vecast (31-Nemotron),18,Avoid for most uses,false,verified,0,4,7,8,74,,true,true
+broadcast,ReliableBeacon (08-MuseSpark),17,Avoid for most uses,false,verified,12,5,0,32,45,,true,false
+broadcast,ChanPubSubPacked (22-ChatGPT),16,Avoid for most uses,false,verified,3,13,46,4,22,,true,false
+broadcast,ChanMulticast33North (33-North),15,Avoid for most uses,false,verified,9,21,18,0,26,,true,false
+broadcast,ChanPubSub58Spark (58-MuseSpark),15,Avoid for most uses,false,verified,1,3,18,13,49,,true,false
+caster,ChanCaster17FastPath,90,Strong candidate,false,verified,100,83,,67,,,true,false
+caster,ChanCaster11Meta,73,Situational (strengths offset by trade-offs),false,verified,58,92,,92,,,true,false
+caster,ChanCaster09Gemini,70,Situational (strengths offset by trade-offs),false,verified,92,17,,83,,,true,false
+caster,ChanCaster2,69,Situational (strengths offset by trade-offs),false,verified,75,67,,50,,,true,false
+caster,ChanCasterV2_06meta,65,Situational (strengths offset by trade-offs),false,verified,83,42,,42,,,true,false
+caster,ChanCaster17Pumped,63,Situational (strengths offset by trade-offs),false,verified,67,58,,58,,,true,false
+caster,ChanCaster47Gemini,54,Niche use only,false,verified,17,100,,100,,,true,false
+caster,ChanCaster58Spark,50,Niche use only,false,verified,42,75,,33,,,true,false
+caster,ChanCaster15Nemotron,44,Avoid for most uses,false,verified,33,50,,75,,,true,false
+caster,ChanCaster14Xing,33,Avoid for most uses,false,verified,50,8,,17,,,true,false
+caster,ChanCaster,27,Avoid for most uses,false,verified,25,33,,25,,,true,false
+caster,AdaptiveCaster23Meta,11,Avoid for most uses,false,verified,8,25,,0,,,true,false
+caster,BaselineRendezvousCaster,1,Avoid for most uses,true,verified,0,0,,8,,,true,false
+gather,BaselineGatherBarrier,,Not ranked (family of 2),true,verified,,,,,,,true,false
+gather,ChanGatherer,,Not ranked (family of 2),false,verified,,,,,,,true,false
+payload,EpochTape_c64,91,Strong candidate,false,verified,100,100,,78,72,,true,false
+payload,ChanFeed_drop_c64,84,Strong candidate,false,verified,83,89,,50,100,,true,false
+payload,RingFanOut14Xing_c64,84,Strong candidate,false,verified,94,94,,44,78,,true,false
+payload,ChanFanout_c64,75,Strong candidate,false,verified,72,78,,39,94,,true,false
+payload,ChanBeacon_c64,74,Situational (strengths offset by trade-offs),false,verified,61,67,,100,89,,true,false
+payload,Broadcaster58Spark_c64,72,Situational (strengths offset by trade-offs),false,verified,78,56,,56,83,,true,false
+payload,BaselineAsyncFanout_c64,71,Situational (strengths offset by trade-offs),true,verified,89,61,,33,67,,true,false
+payload,EpochCasterGemini_c64,61,Situational (strengths offset by trade-offs),false,verified,50,83,,72,56,,true,false
+payload,GenCaster,61,Situational (strengths offset by trade-offs),false,verified,56,50,,94,61,,true,false
+payload,RingBeacon_c64,58,Niche use only,false,verified,67,44,,83,44,,true,false
+payload,Beacon,53,Niche use only,false,verified,44,72,,61,50,,true,false
+payload,RingPubSub_c64,42,Avoid for most uses,false,verified,39,39,,89,28,,true,false
+payload,ChanLatest,30,Avoid for most uses,false,verified,28,28,,67,17,,true,false
+payload,EpochCaster13Crouton_r64,26,Avoid for most uses,false,verified,22,33,,17,33,,true,false
+payload,BaselineFanout_c64,25,Avoid for most uses,true,verified,33,22,,6,22,,true,false
+payload,ChanFeed_block_c64,22,Avoid for most uses,false,verified,17,17,,11,39,,true,false
+payload,ChanRelay_w16,10,Avoid for most uses,false,verified,6,11,,22,11,,true,false
+payload,ChanHub_c16,7,Avoid for most uses,false,verified,11,6,,0,6,,true,false
+payload,ChanRelay_sync,3,Avoid for most uses,false,verified,0,0,,28,0,,true,false
+scatter,BaselineBoundedScatterQueue (baseline),,Do not adopt (integrity failure),true,failed,,,,,,,true,false
+scatter,BaselineScatterQueue,,Not ranked (family of 4),true,verified,,,,,,,true,false
+scatter,ChanScatter,,Not ranked (family of 4),false,verified,,,,,,,true,false
+scatter,StableRing32Nano (32-Nano),,Do not adopt (integrity failure),false,failed,,,,,,,true,false

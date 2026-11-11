@@ -110,3 +110,34 @@ in a test that merely avoids the path.
 ## Measurement
 
 Measurement methodology, profiles and the committed run log (`results-*-*-*`) are documented in `measurement.md`; consult it rather than duplicating its contents here.
+
+Policy that the documentation of the mechanics does not carry:
+
+- **Reported facts are generated, not written.** The run manifests, the
+  evaluation of a run (`results-NN-07-evaluation.md`), the gates record
+  (`results-NN-06-gates.json`) and the landing page (`index.html`) are produced
+  by the harness from the committed files and are never edited by hand. A count
+  typed into prose goes stale the next time anything changes, and did. If a
+  fact about a run is worth stating, make the generator state it. Written
+  analysis is a separate kind of file (`report-NN-*.md`), names the run it
+  reads, and is expected to age.
+- **A run is judged against the registry it was made from**, never against
+  today's. Adding an implementation must not turn an old run into a failure,
+  and must not let an old run pass for covering it.
+- **Do not rank a family that is too small to rank.** Scores here are
+  percentiles within a family. With a handful of members a percentile is an
+  artifact of the head count (two members score 0 and 100 on every dimension
+  whatever the numbers are), so small families are measured, checked for
+  integrity and reported unranked. Do not lower the threshold to make a table
+  look fuller.
+- **A dimension nobody was measured on is not a perfect score.** It is left out
+  of the composite and shown as having no data. The opposite convention once
+  gave every implementation full marks for stall resilience.
+- **Say what was executed and where.** A cross-compiled or cross-vetted file
+  has not run. Emulating a routine is not running the program, and neither says
+  anything about memory ordering on real hardware. `make verify-arm64` exists
+  so that the arm64 assembly can be executed on a machine that can execute it,
+  and fails where it cannot rather than passing vacuously.
+- **Record the gates with the run.** A statement that the suite passed is worth
+  what its record is worth: which commit, whether the tree was clean, which
+  legs ran, what each reported. `make measure-gates` writes that record.

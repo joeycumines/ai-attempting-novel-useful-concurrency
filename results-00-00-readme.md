@@ -28,6 +28,8 @@ Slots within a run group:
 | `03` | `results-NN-03-report.html` | self-contained interactive HTML report (charts, Pathology Lab, coverage matrix, downloads) built from `-01-results.jsonl`. |
 | `04` | `results-NN-04-metrics_wide.csv` | flattened metric records (one row each, all statistical columns). |
 | `05` | `results-NN-05-scores.csv` | per-family adoptability scores, dimension breakdowns and verdicts. |
+| `06` | `results-NN-06-gates.json` | what `make verify` reported for the tree the run belongs to: commit, whether the tree was clean, each leg's commands and outcome, each fuzz target's budget and executions. Written by `make measure-gates`. |
+| `07` | `results-NN-07-evaluation.md` | the evaluation of the run, generated from slots 01, 02 and 06. It states facts and recommends nothing. |
 
 ## Enumeration contract
 
@@ -47,37 +49,51 @@ implements exactly this walk to (re)write the manifests.
 
 ## Committed runs
 
-| run | profile | contents | records | verification | date (UTC) |
-|---|---|---|---|---|---|
-| `01` | standard | full artifact set (`01`–`05`): JSONL, registry dump, interactive report, CSVs | 2013 | **PASS at the revision it was produced from**; re-verification against the current registry fails (see note) | 2026-11-09 |
-| `02` | quick | JSONL, interactive report and CSVs (no registry dump) | 1479 | **PASS at the revision it was produced from**; re-verification against the current registry fails (see note) | 2026-11-09 |
-| `03` | quick | full artifact set (`01`–`05`): JSONL, registry dump, interactive report, CSVs | 1659 | **PASS at the revision it was produced from** (9581dec, which added the fan-in family); re-verification against the current registry fails (see note) | 2026-11-10 |
-| `04` | quick | full artifact set (`01`–`05`): JSONL, registry dump, interactive report, CSVs | 1755 | **PASS** (run 2723ed4; responses 62 and 71–74 integrated) | 2026-11-10 |
+The table of runs is on the landing page (`index.html`), which is generated
+from the manifests, and in each manifest. It is deliberately not repeated here:
+this file used to carry one by hand and it went stale. What a reader needs to
+know that the manifests do not say:
 
-Machine (all runs): 2-core Intel Xeon @ 2.60 GHz, linux/amd64, go1.27.3,
-GOMAXPROCS=2 — see each manifest's fingerprint block for the exact values and
-the git commit each run was produced from.
+**Each run is verified against the registry it was made from.** That is the
+dump in its own slot 02, which records the implementations a run made from it
+must cover. The manifest names it in `verified_against`. Run 02 has no dump of
+its own and is verified against run 01's, the nearest earlier one; its manifest
+says so. A run therefore keeps its verdict when implementations or families are
+added later. Whether the newest run still covers the live registry is a
+separate question, which `bigbuff-measure index` answers with a note and the
+landing page shows.
 
-**Re-verification note.** `make measure-index` re-verifies every committed run
-against the *current* registry, and exits non-zero if any run fails. A run
-fails as soon as the registry gains an implementation or a family the run did
-not measure: runs `01` and `02` lack the fan-in family, and run `03` lacks the
-six broadcast attachments added with responses 62 and 71–74. All three
-manifests therefore say `verified: false`. That is the honest verdict for them
-*today*; it does not invalidate them at their own revisions. Run `04` verifies
-clean and is the current committed artifact.
+**Runs 01 to 04 and later runs are not comparable by score.** Runs 01 to 04
+were written by generator 1.0.0, which had two defects:
 
-Two consequences worth knowing before relying on the tooling:
+- its stalled-consumer records carried no `ops_completed`, so the
+  stall-resilience dimension (a fifth of the composite) had no data in any of
+  them; and
+- a dimension with no data scored 100.
 
-- `make measure` (`measure.pipeline`) runs the index step before the site
-  step, so with any stale run committed it stops with an error *after* writing
-  the new run's artifacts and manifests but *before* `site.build`. Run
-  `make site` afterwards, then `make measure-index` once more so the manifests
-  record the report files as the site step leaves them. Run `04` was produced
-  that way.
-- Quick-profile runs are not decision-grade. See
-  `report-02-completion-evaluation.md` for how far two quick runs of the same
-  code disagree.
+Together these gave every implementation full marks for stall resilience. From
+generator 1.1.0 the value is recorded, a dimension without data is left out of
+the composite and shown as such, and `verify` rejects a metric record that
+lacks the value it is named for. The reports and score files of runs 01 to 04
+were regenerated with the corrected scoring, so what they show today is the
+composite over the dimensions those runs do have data for. Their measurements
+are unchanged.
+
+Runs 01 to 04 also predate the repairs listed in `extraction_audit.md`
+("Second pass") and the exchange and barrier batteries. Their numbers for the
+repaired implementations describe code that no longer exists.
+
+**Families with fewer than five measured implementations are not ranked.** They
+are measured, checked for integrity and reported with their raw numbers. See
+`measurement.md`, "Adoptability score".
+
+**Quick-profile runs are for checking that the pipeline works**, not for
+choosing between implementations: three repetitions per cell. Each
+evaluation file reports the run's own within-run variation.
+
+**Machine (all runs):** 2 logical CPUs (Intel Xeon @ 2.60 GHz, shared),
+linux/amd64, go1.27.3, GOMAXPROCS=2. Each manifest's fingerprint block has the
+exact values and the commit. Nothing has been measured with more parallelism.
 
 **Provenance note (honest fingerprint).** Run 01 predates the commit that
 landed the harness: when it executed, the harness existed only in the working
@@ -96,25 +112,26 @@ refresh, later the same day) ran after `887a4d8` and records it faithfully.
 ## Refreshing or adding a run
 
 ```sh
-make measure            # allocate next rr, run → verify → registry → report → index
-# ... or pick a profile explicitly:
-make measure-quick      # runs with the next free rr
+make measure            # next rr: run → verify → registry → report + CSVs → evaluation → site
+make measure-quick      # the same with the quick profile
 make measure-standard
-make measure-report     # refresh the report (+ CSVs) for the newest run
-make measure-index      # rewrite every results-NN-00-manifest.json
-git add results-*-*.*   # commit runs explicitly; they are plain tracked files
+make measure-gates      # run `make verify`, record it as slot 06 of the newest run, regenerate slot 07
+make measure-report     # rebuild the report (+ CSVs) of the newest run
+make measure-evaluate   # rebuild the evaluation of the newest run
+make site               # wire the reports, re-index every manifest, write index.html
+git add results-*-*.* index.html
 ```
 
 - Run sequences are allocated by `make` (highest existing `rr` + 1); override
   with `MEASURE_RUN=N`.
-- Manifests are regenerated by `make measure-index`, never hand-edited. The
-  command verifies every run's JSONL and exits non-zero on any failure. Because
-  the log is append-only against a *changing* registry, an old run can flip to
-  `verified: false` when new families or batteries land (see the note above);
-  that is the current verdict, not a rewrite of history — the per-file SHA-256
-  and byte counts in each manifest always describe the committed artifacts
-  exactly. A re-index with no artifact changes dirties only the `generated`
-  timestamp inside each manifest.
+- Measure from a clean, committed tree, so the commit in the run's meta record
+  is the code that ran. Commit the run before `make measure-gates`, so the
+  gates record also names a clean tree.
+- Manifests are regenerated by `make site` (or `make measure-index`), never
+  hand-edited. The command verifies every run and exits non-zero if one fails.
+  `TestCommittedRunsAreIndexed` and `TestCommittedLandingPageIsCurrent` fail
+  when the committed manifests or landing page do not match the committed
+  files, so a stale index does not pass `make all`.
 - `make clean` deliberately does not touch these committed artifacts.
 - The `full` profile is regenerable on demand (`make measure-full`) and is not
   committed.
