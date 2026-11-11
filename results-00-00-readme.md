@@ -63,9 +63,10 @@ added later. Whether the newest run still covers the live registry is a
 separate question, which `bigbuff-measure index` answers with a note and the
 landing page shows.
 
-**Run 07 is the first run whose measurements are valid. No family of runs 01
-to 06 is ranked.** Three defects of the measurement were found, each by looking
-at what a suspicious number was made of, and each has its own record contract
+**Run 08 is the first run whose rankings mean what they say. No family of runs
+01 to 06 is ranked, and the broadcast and payload families of run 07 are not
+either.** Four defects of the measurement were found, each by looking at what a
+suspicious number was made of, and each has its own record contract
 (`generator_version` in the meta record and the manifest):
 
 | Contract | Runs | What it fixed |
@@ -73,7 +74,20 @@ at what a suspicious number was made of, and each has its own record contract
 | 1.0.0 | 01 to 04 | Nothing; the starting point. Its stalled-consumer records carried no `ops_completed`, and a dimension with no data scored 100, so every implementation had full marks for stall resilience. |
 | 1.1.0 | 05 | `ops_completed` is recorded, a dimension without data is left out of the composite, `verify` rejects a metric record without its value, and families of fewer than five are not ranked. Exchange and barrier batteries. |
 | 1.2.0 | 06 | The caster batteries time a `Send` only once every receiver is registered, and count the deliveries. Before, they timed Sends that found no receiver and delivered nothing (2 to 8 ns each). |
-| 1.3.0 | 07 on | Every battery of every implementation is measured in a process of its own. Before, the run was one process, and the publishers left spinning by the stall probes of the eleventh broadcast implementation held both CPUs for the rest of it. Throughput repetitions are sized by the clock. |
+| 1.3.0 | 07 | Every battery of every implementation is measured in a process of its own. Before, the run was one process, and the publishers left spinning by the stall probes of the eleventh broadcast implementation held both CPUs for the rest of it. Throughput repetitions are sized by the clock. |
+| 1.4.0 | 08 on | The broadcast and payload throughput records say how much of what was published the subscribers received, and the two families are scored in two delivery classes: implementations that delivered everything, and implementations that dropped or coalesced. Before, the record gave the cost of calling Publish only, and in run 07 the eight top broadcast places went to implementations that delivered 0.1 to 79 percent of their values. A tie counts as half a place in a percentile rank, and a dimension on which a whole class has one value is left out. |
+
+One more rule came out of comparing runs 07 and 08: a group whose members the
+measurement cannot tell apart is not ranked. The caster family's 13
+implementations lie within 800 to 1,130 ns with overlapping intervals, and the
+two runs ordered them differently. It is reported with its measurements and
+the verdict `Not ranked (not distinguishable)` in both runs. In run 08 the
+same rule withholds the ranking of the payload implementations that drop.
+
+The fourth is why the broadcast and payload tables of run 07 are withdrawn. Its
+measurements are sound (they were taken in isolation); what was wrong was ranking a publish that delivers against one that
+does not on the cost of the call. Run 07's evaluation and report now say `Not
+ranked (measurement not valid)` for those two families, with the reason.
 
 The third is why nothing before run 07 is ranked: ten implementations were
 measured on an idle machine and everything else was not, and the effect was

@@ -773,6 +773,48 @@ runs because the numbers were plausible.
   up to 75 µs each. Repetitions are now sized by the clock after a timed
   warm-up.
 
+### Fourth pass: what the broadcast ranking was ranking
+
+Run 07 was the first run taken in isolation, and its broadcast table was read
+before being reported. Every row at the top had the same stall-resilience
+figure, 51, and the fastest of them published in 27 ns with 8 subscribers,
+which is less than the cost of one channel operation per subscriber.
+
+- **Defect 17: the throughput battery did not record what was delivered.** It
+  timed `Publish` against draining subscribers and wrote the cost of the call.
+  It did not count receives. Counted, the eight "Strong candidates" of run 07
+  delivered between 0.1 and 79 percent of what was published at 8 subscribers,
+  and each of the implementations that delivered everything ranked below all
+  eight. This is the broadcast form of the caster defect of the third pass
+  (Sends that found no receiver), with one difference: there the batteries
+  were wrong about the implementations, and here the implementations do what
+  they say (a ring overwrites, a latest-value cell coalesces) and the table
+  was wrong to rank them with implementations that do not. Record contract
+  1.4.0: `publishes`, `receives` and `delivered_fraction` on every broadcast
+  and payload throughput record; the two families scored in two delivery
+  classes; the per-scenario comparison confined to the baseline's class;
+  broadcast and payload of run 07 withdrawn from ranking.
+- **The stall-resilience figure of 51** was the percentile rank counting a tie
+  as nothing: 47 of 94 implementations complete the stalled-consumer probe, so
+  each beat 47 of the other 93. No broadcast implementation could score above
+  about 90. A tie now counts as half a place, and a dimension on which a whole
+  scoring group is tied is left out of its composite.
+- **The caster ranking did not reproduce.** Runs 07 and 08 have the same
+  caster batteries. Run 07 put `ChanCaster2` first and `ChanCaster09Gemini`
+  second; run 08 put them 4th and 7th. The 13 implementations send to 8
+  receivers within 800 to 1,130 ns and the intervals of 62 of the 78 pairs
+  overlap. A group is now ranked only when its headline cost tells at least
+  half of its pairs apart; the caster family is unranked in both runs.
+- **The first settling rule misclassified one implementation.** To count
+  receives after the timed loop, the battery first waited until the count had
+  not moved for 2 ms, for at most 200 ms. `GenCaster (06-Meta)` buffers
+  without bound and delivers everything; with 256 subscribers its backlog was
+  still draining at 200 ms, and one take recorded it as delivering 96 percent,
+  which put it in the dropping class. That take was discarded and is not a
+  committed run. The count is now read after 50 ms without a receive, and a
+  cell still receiving after 20 s fails the run. Class membership was then
+  identical in three takes.
+
 ### Not done
 
 - arm64 assembly (#64 fence, #72 bitmap) has run under an emulator, one

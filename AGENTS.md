@@ -148,6 +148,19 @@ Policy that the documentation of the mechanics does not carry:
   before that. Two batteries here measured something else for five runs: one
   timed Sends that delivered nothing, one sized repetitions from publishes that
   reached no running subscriber.
+- **A cost is a cost of something. Record the something.** A publish that
+  returns in 30 ns may have delivered its value, queued it, or thrown it away.
+  The broadcast throughput battery recorded the 30 ns and not which, and for
+  seven runs the top of the family was the implementations that throw most
+  away. A battery that times an operation must also count what the operation
+  achieved (values delivered, items dispatched, pairs exchanged), and a
+  ranking must only set against each other subjects that achieved the same
+  thing. When one table holds subjects with different contracts, split it.
+- **Do not rank what the measurement cannot separate.** A percentile rank
+  turns any set of numbers into an order, including thirteen numbers whose
+  confidence intervals all overlap. Before publishing an order, check that a
+  second run gives the same one, and withhold it when the intervals say it
+  will not.
 - **Say what was executed and where.** A cross-compiled or cross-vetted file
   has not run. Emulating a routine is not running the program, and neither says
   anything about memory ordering on real hardware. `make verify-arm64` exists

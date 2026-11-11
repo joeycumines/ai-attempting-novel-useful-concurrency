@@ -721,6 +721,31 @@ func renderEvaluation(in evaluationInput) string {
 					names[i] = s.Impl
 				}
 				fmt.Fprintf(&b, "Not ranked: %s. They are: %s.\n\n", list[0].UnrankedReason, mdCell(strings.Join(names, "; ")))
+				// The measurements a score would have been built on, by
+				// publish cost, so that the class can still be read.
+				byCost := append([]implScore{}, list...)
+				cost := func(s implScore) float64 {
+					if v, ok := s.Metrics["publish_ns_op@8"].(float64); ok {
+						return v
+					}
+					return math.Inf(1)
+				}
+				sort.SliceStable(byCost, func(i, j int) bool { return cost(byCost[i]) < cost(byCost[j]) })
+				rows = rows[:0]
+				for _, s := range byCost {
+					c, at8, least := "no record", "no record", "no record"
+					if v := cost(s); !math.IsInf(v, 1) {
+						c = humanNs(v)
+					}
+					if v, ok := s.Metrics["delivered_fraction@8"].(float64); ok {
+						at8 = evalPercent(v)
+					}
+					if v, ok := s.Metrics["delivered_fraction_least"].(float64); ok {
+						least = evalPercent(v)
+					}
+					rows = append(rows, []string{s.Impl, c, at8, least})
+				}
+				mdTable(&b, []string{"Implementation", "Publish cost, 8 subscribers", "Delivered, 8 subscribers", "Delivered, least over all cells"}, rows)
 				continue
 			}
 			missingAll := []string{}
@@ -854,8 +879,8 @@ func renderEvaluation(in evaluationInput) string {
 		fmt.Fprintf(&b, "Implementations measured: %s. No score or comparison is given, because %s. The records are in the results file; a run under record contract %s or later measures this properly.\n\n", strings.Join(counts, ", "), reason, dd.UnrankedSince[list[0]])
 	}
 	if len(small) > 0 {
-		fmt.Fprintf(&b, "## Families with fewer than %d implementations\n\n", minRankedImpls)
-		b.WriteString("These get no score: a percentile rank among two to four subjects only restates their order. The measurements follow, as mean and 95 percent confidence half-width over the repetitions.\n\n")
+		b.WriteString("## Families that are not ranked\n\n")
+		fmt.Fprintf(&b, "These get no score, for one of two reasons. A family of fewer than %d: a percentile rank among two to four subjects only restates their order. A family whose members the measurement does not separate: when the 95 percent intervals of most of them overlap, their order changes from run to run, and a rank would report the noise. The reason is given under each. The measurements follow, as mean and 95 percent confidence half-width over the repetitions.\n\n", minRankedImpls)
 		for _, f := range small {
 			type col struct{ metric, dims string }
 			cols := []col{}
@@ -895,6 +920,7 @@ func renderEvaluation(in evaluationInput) string {
 			}
 			sort.Strings(impls)
 			fmt.Fprintf(&b, "### %s\n\n", f)
+			fmt.Fprintf(&b, "Not ranked: %s.\n\n", dd.Unranked[f])
 			header := append([]string{"Metric"}, impls...)
 			rows = rows[:0]
 			for _, c := range cols {
