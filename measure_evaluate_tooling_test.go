@@ -241,7 +241,7 @@ func TestEvaluationComparesEachScenarioWithItsBaseline(t *testing.T) {
 		"scenarios":   []any{map[string]any{"id": "handoff", "kind": "caster", "baseline": "BaselineC"}},
 		"attachments": []any{attach("handoff", "C1", true)},
 	}
-	for generator, wantRow := range map[string]bool{"1.1.0": false, casterDeliveryContract: true} {
+	for generator, wantRow := range map[string]bool{"1.1.0": false, casterDeliveryContract: false, isolationContract: true} {
 		data := &reportData{meta: map[string]any{"generator_version": generator}, metrics: caster}
 		b.Reset()
 		evalScenarioBaselines(&b, evaluationInput{data: data, registry: registry, derived: deriveReport(data, registry)}, []string{"caster"})

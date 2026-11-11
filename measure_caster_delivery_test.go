@@ -211,7 +211,7 @@ func TestCasterFamilyOfOlderContractsIsNotRanked(t *testing.T) {
 		metrics = append(metrics, map[string]any{"type": "metric", "family": "caster", "impl": "C" + string(rune('a'+i)),
 			"metric": "send_ns_op", "dims": map[string]any{"receivers": 8.0}, "mean": float64(10 + i)})
 	}
-	for generator, wantRanked := range map[string]bool{"1.0.0": false, "1.1.0": false, casterDeliveryContract: true, "1.10.0": true, "2.0.0": true} {
+	for generator, wantRanked := range map[string]bool{"1.0.0": false, "1.1.0": false, casterDeliveryContract: false, isolationContract: true, "1.10.0": true, "2.0.0": true} {
 		dd := deriveReport(&reportData{meta: map[string]any{"generator_version": generator}, metrics: metrics}, nil)
 		s := dd.Scores["caster"]["Ca"]
 		if s.Ranked != wantRanked {

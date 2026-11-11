@@ -184,7 +184,7 @@ func TestVerifyRejectsMetricRecordsWithoutAValue(t *testing.T) {
 	run := func(generator, record string) (int, string) {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "results-01-01-results.jsonl")
-		meta := `{"type":"meta","profile":"quick","generator_version":"` + generator + `"}` + "\n"
+		meta := `{"type":"meta","profile":"quick","isolation":"` + measureIsolationPerUnit + `","generator_version":"` + generator + `"}` + "\n"
 		if err := os.WriteFile(path, []byte(meta+record+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}

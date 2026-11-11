@@ -80,6 +80,87 @@ func calibrateOps(target time.Duration, minOps, maxOps int, est time.Duration) i
 	return n
 }
 
+// opBudget sizes a timed repetition by the clock instead of by an estimate
+// taken before it: the caller runs batches of operations until the target
+// time has passed, with at least minOps and at most maxOps operations.
+//
+// The throughput batteries of the families whose subscribers run freely
+// (broadcast, payload) used to estimate the cost of a publish from 16
+// publishes made straight after subscribing, before any drain goroutine had
+// run, and fix the operation count from that. For an implementation whose
+// publish is cheap until its subscribers are awake the estimate was the cheap
+// cost, the count went to maxOps, and a repetition then ran for as long as
+// maxOps publishes at the real cost took: 400,000 publishes at 75 µs is half
+// a minute, where the target is 60 ms. Worse, how much of such a repetition
+// was spent in the cheap regime depended on when the scheduler first ran the
+// subscribers. A repetition sized by the clock ends close to its target
+// whatever the cost turns out to be, and warmOps before it brings the
+// subscribers up.
+//
+// The clock is read once per batch. A batch doubles (to at most 4096
+// operations) while batches take under 1/32 of the target and halves when one
+// takes over 1/8 of it, so the reads cost nothing measurable per operation
+// and a cost that jumps mid-repetition overruns by one batch at most.
+type opBudget struct {
+	target         time.Duration
+	minOps, maxOps int
+	start, last    time.Time
+	n, batch       int
+	elapsed        time.Duration
+}
+
+const opBudgetMinBatch, opBudgetMaxBatch = 16, 4096
+
+func newOpBudget(target time.Duration, minOps, maxOps int) *opBudget {
+	now := time.Now()
+	return &opBudget{target: target, minOps: minOps, maxOps: maxOps, batch: opBudgetMinBatch, start: now, last: now}
+}
+
+// next returns the half-open range of operation indexes to run now, or
+// ok == false when the repetition is over. The caller must run every index of
+// a range it is given before calling next again.
+func (b *opBudget) next() (from, to int, ok bool) {
+	now := time.Now()
+	if b.n > 0 {
+		b.elapsed = now.Sub(b.start)
+		if (b.elapsed >= b.target && b.n >= b.minOps) || b.n >= b.maxOps {
+			return 0, 0, false
+		}
+		switch took := now.Sub(b.last); {
+		case took < b.target/32 && b.batch < opBudgetMaxBatch:
+			b.batch *= 2
+		case took > b.target/8 && b.batch > opBudgetMinBatch:
+			b.batch /= 2
+		}
+	}
+	b.last = now
+	from, to = b.n, b.n+b.batch
+	if to > b.maxOps {
+		to = b.maxOps
+	}
+	b.n = to
+	return from, to, true
+}
+
+// done returns the operations run and the time they took. It is valid once
+// next has returned ok == false.
+func (b *opBudget) done() (ops int, elapsed time.Duration) { return b.n, b.elapsed }
+
+// warmOps runs op for an eighth of the repetition target (and at least 16
+// times) without timing it, and returns how many times it ran. The first
+// publishes after subscribing reach subscribers that the scheduler has not
+// run yet; timing has to start after they have.
+func warmOps(target time.Duration, maxOps int, op func(i int)) int {
+	budget := newOpBudget(target/8, opBudgetMinBatch, maxOps)
+	for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+		for i := from; i < to; i++ {
+			op(i)
+		}
+	}
+	n, _ := budget.done()
+	return n
+}
+
 // drainGroup owns the drain goroutines for one measurement instance.
 type drainGroup struct {
 	ctx       context.Context
@@ -111,12 +192,18 @@ func startBroadcastDrains(b Broadcaster, n int) (g *drainGroup, err error) {
 	for i := 0; i < n; i++ {
 		subs[i] = b.Subscribe()
 	}
+	// The caller gets the group back once every drain goroutine is running,
+	// so that what it does next is not done to subscribers the scheduler has
+	// not started yet.
+	var started sync.WaitGroup
+	started.Add(n)
 	g.wg.Add(n)
 	for i := 0; i < n; i++ {
 		i := i
 		s := subs[i]
 		go func() {
 			defer g.wg.Done()
+			started.Done()
 			defer func() {
 				if g.skipUnsub.Load() {
 					// A parked publisher means Unsubscribe may never return
@@ -134,6 +221,7 @@ func startBroadcastDrains(b Broadcaster, n int) (g *drainGroup, err error) {
 			}
 		}()
 	}
+	started.Wait()
 	return g, nil
 }
 
@@ -227,19 +315,14 @@ func measureBroadcastThroughput(ctx *measureContext, factory func() Broadcaster,
 				_ = closeWithWatchdog(b, 2*time.Second)
 				continue
 			}
-			// warmup + per-op estimate from 16 timed publishes
-			const warmup = 16
-			w0 := time.Now()
-			for i := 0; i < warmup; i++ {
-				b.Publish(i + 1)
+			warmup := warmOps(ctx.profile.TargetPerRep, ctx.profile.MaxOps, func(i int) { b.Publish(i + 1) })
+			budget := newOpBudget(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps)
+			for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+				for i := from; i < to; i++ {
+					b.Publish(i + 1 + warmup)
+				}
 			}
-			est := time.Since(w0) / warmup
-			n := calibrateOps(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps, est)
-			s := time.Now()
-			for i := 0; i < n; i++ {
-				b.Publish(i + 1 + warmup)
-			}
-			d := time.Since(s)
+			n, d := budget.done()
 			clean := g.stop(3 * time.Second)
 			lastOps = n
 			if !clean {
@@ -670,7 +753,13 @@ func measureBroadcastZeroSubscriber(ctx *measureContext, factory func() Broadcas
 // skip record is a verification failure (checked by measure verify / at the
 // end of run).
 func runBroadcastBatteries(ctx *measureContext) {
-	for _, factory := range AllBroadcasters() {
+	for i, factory := range AllBroadcasters() {
+		if ctx.exact && ctx.broadcastIndex >= 0 && i != ctx.broadcastIndex {
+			// A measuring process is told which factory is its
+			// implementation, so that it does not construct and close the
+			// other ones to learn their names before it measures.
+			continue
+		}
 		probe := factory()
 		name := probe.Name()
 		closeWithWatchdog(probe, 2*time.Second)

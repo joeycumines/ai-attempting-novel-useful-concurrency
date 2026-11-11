@@ -249,6 +249,13 @@ var harnessRunnables = map[string]string{
 	"TestCasterBatteriesFailOnAPhantomDelivery":         "measurement tooling",
 	"TestCasterTraceShowsDeliveries":                    "measurement tooling",
 	"TestCasterFamilyOfOlderContractsIsNotRanked":       "measurement tooling",
+	"TestMeasurePlanCoversEveryUnit":                    "measurement run tooling (process isolation)",
+	"TestMeasureRunIsolatesEachUnit":                    "measurement run tooling (process isolation)",
+	"TestMeasureRunRecordsNoResidueForACleanUnit":       "measurement run tooling (process isolation)",
+	"TestMeasureRunReportsADeadMeasuringProcess":        "measurement run tooling (process isolation)",
+	"TestVerifyRejectsARunThatWasNotIsolated":           "measurement verify tooling",
+	"TestFamiliesOfUnisolatedRunsAreNotRanked":          "measurement tooling",
+	"TestOpBudgetEndsNearItsTarget":                     "measurement battery tooling",
 }
 
 // implementationSource returns the non-test source file a test file belongs

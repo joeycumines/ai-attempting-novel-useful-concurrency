@@ -322,6 +322,11 @@ func cmdMeasureRun(args []string) int {
 	batteryGlob := fs.String("battery", "", "only run batteries matching this glob (or substring), e.g. broadcast.*")
 	seed := fs.Int64("seed", 1, "seed recorded in metadata (batteries are deterministic; the seed is informational)")
 	noVerify := fs.Bool("no-verify", false, "skip post-run coverage verification")
+	inProcess := fs.Bool("in-process", false, "measure everything in this one process (for debugging a battery; such a run does not verify)")
+	unitFamily := fs.String("unit-family", "", "internal: the family of the one unit this process measures")
+	unitImpl := fs.String("unit-impl", "", "internal: the implementation of the one unit this process measures")
+	unitBattery := fs.String("unit-battery", "", "internal: the battery of the one unit this process measures")
+	unitIndex := fs.Int("unit-index", -1, "internal: the position of that implementation in its family")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -329,6 +334,9 @@ func cmdMeasureRun(args []string) int {
 	if !ok {
 		fmt.Fprintf(os.Stderr, "bigbuff-measure: unknown profile %q (want quick|standard|full)\n", *profileName)
 		return 2
+	}
+	if *unitFamily != "" {
+		return runMeasureUnit(measureUnit{*unitFamily, *unitImpl, *unitBattery, *unitIndex}, profile, *seed, *out)
 	}
 
 	ctx := &measureContext{
@@ -344,17 +352,20 @@ func cmdMeasureRun(args []string) int {
 		return 1
 	}
 	ctx.out = w
-	ctx.write(measureMetaRecords(profile.Name, *seed))
+	isolation := measureIsolationPerUnit
+	if *inProcess {
+		isolation = "none"
+	}
+	ctx.write(measureMetaRecords(profile.Name, *seed, isolation))
 
-	fmt.Fprintf(os.Stderr, "bigbuff-measure: profile=%s out=%s\n", profile.Name, *out)
-	runBroadcastBatteries(ctx)
-	runCasterBatteries(ctx)
-	runScatterBatteries(ctx)
-	runGatherBatteries(ctx)
-	runPayloadBatteries(ctx)
-	runFaninBatteries(ctx)
-	runExchangeBatteries(ctx)
-	runBarrierBatteries(ctx)
+	fmt.Fprintf(os.Stderr, "bigbuff-measure: profile=%s out=%s isolation=%s\n", profile.Name, *out, isolation)
+	if *inProcess {
+		for _, fam := range measureFamilies() {
+			fam.run(ctx)
+		}
+	} else {
+		runMeasureIsolated(ctx)
+	}
 
 	dur := time.Since(ctx.started)
 	ctx.write(map[string]any{
@@ -374,6 +385,9 @@ func cmdMeasureRun(args []string) int {
 	fmt.Fprintf(os.Stderr, "bigbuff-measure: wrote %d records in %s (skipped=%d failures=%d)\n",
 		w.records, dur.Round(time.Millisecond), ctx.skipped, len(ctx.failures))
 
+	if len(ctx.failures) > 0 {
+		return 1
+	}
 	if *noVerify {
 		return 0
 	}
@@ -412,7 +426,7 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 	}
 	families := map[string]map[string]bool{}
 	valueless := map[string]int{} // metric name -> records carrying no value
-	generator := ""
+	generator, isolation := "", ""
 	for _, set := range sets {
 		v.expected[set.family] = len(set.names)
 		families[set.family] = map[string]bool{}
@@ -442,6 +456,7 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 		if typ == "meta" {
 			v.seenMeta = true
 			generator, _ = rec["generator_version"].(string)
+			isolation, _ = rec["isolation"].(string)
 			continue
 		}
 		if typ == "metric" && !metricRecordHasValue(rec) {
@@ -496,6 +511,14 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 		fail++
 	}
 	if v.badRecords > 0 {
+		fail++
+	}
+	if generator != "" && !generatorBefore(generator, isolationContract) && isolation != measureIsolationPerUnit {
+		// A run measured in one process is not a run: what one unit leaves
+		// running is still running while the next is timed (see
+		// measure_isolate_test.go). Runs older than the contract are what
+		// they are, and the reports do not rank them.
+		fmt.Fprintf(out, "  not isolated: the meta record says isolation=%q, and record contract %s requires %q\n", isolation, generator, measureIsolationPerUnit)
 		fail++
 	}
 	if len(valueless) > 0 {

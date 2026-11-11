@@ -770,17 +770,34 @@ func renderEvaluation(in evaluationInput) string {
 	// is named, with the reason, and its figures are not printed: a table of
 	// them would be read as a comparison.
 	small := []string{}
+	invalid := map[string][]string{} // reason -> families
+	reasons := []string{}
 	for _, f := range families {
 		reason, no := dd.Unranked[f]
 		if !no {
 			continue
 		}
-		if len(dd.Scores[f]) < minRankedImpls {
+		if dd.UnrankedSince[f] == "" {
 			small = append(small, f)
 			continue
 		}
-		fmt.Fprintf(&b, "## Family %s: not ranked in this run\n\n", f)
-		fmt.Fprintf(&b, "%d implementations were measured, and no score or comparison is given, because %s. The records are in the results file; a run under record contract %s or later measures this family properly.\n\n", len(dd.Scores[f]), reason, casterDeliveryContract)
+		if invalid[reason] == nil {
+			reasons = append(reasons, reason)
+		}
+		invalid[reason] = append(invalid[reason], f)
+	}
+	for _, reason := range reasons {
+		list := invalid[reason]
+		counts := make([]string, len(list))
+		for i, f := range list {
+			counts[i] = fmt.Sprintf("%s (%d)", f, len(dd.Scores[f]))
+		}
+		if len(list) == 1 {
+			fmt.Fprintf(&b, "## Family %s: not ranked in this run\n\n", list[0])
+		} else {
+			fmt.Fprintf(&b, "## Families %s: not ranked in this run\n\n", strings.Join(list, ", "))
+		}
+		fmt.Fprintf(&b, "Implementations measured: %s. No score or comparison is given, because %s. The records are in the results file; a run under record contract %s or later measures this properly.\n\n", strings.Join(counts, ", "), reason, dd.UnrankedSince[list[0]])
 	}
 	if len(small) > 0 {
 		fmt.Fprintf(&b, "## Families with fewer than %d implementations\n\n", minRankedImpls)
@@ -891,6 +908,7 @@ func renderEvaluation(in evaluationInput) string {
 	if !hasOps {
 		b.WriteString("This results file does not record how many publishes completed, so the stall-resilience dimension of its scores is a constant.\n\n")
 	}
+	evalResidue(&b, data)
 
 	// --- Skipped ---
 	b.WriteString("## Skipped\n\n")
@@ -960,6 +978,52 @@ func renderEvaluation(in evaluationInput) string {
 	b.WriteString("- A score ranks implementations against each other. It does not say that any of them is correct: correctness is what the gates above and the tests address.\n")
 	b.WriteString("- The batteries measure the workloads they define (see `measurement.md`). A workload that is not among them was not measured.\n")
 	return b.String()
+}
+
+// evalResidue lists the units that left a goroutine using a CPU in their
+// measuring process: a publisher that waits for the stalled subscriber by
+// spinning. A blocked publisher that is parked costs nothing and is not
+// listed.
+func evalResidue(b *strings.Builder, data *reportData) {
+	if generator, _ := data.meta["generator_version"].(string); generatorBefore(generator, isolationContract) {
+		return
+	}
+	type key struct{ family, impl string }
+	worst := map[key]float64{}
+	batteries := map[key][]string{}
+	for _, r := range data.residue {
+		cores, _ := r["cpu_cores"].(float64)
+		if cores < 0.5 {
+			continue
+		}
+		family, _ := r["family"].(string)
+		impl, _ := r["impl"].(string)
+		battery, _ := r["battery"].(string)
+		k := key{family, impl}
+		worst[k] = math.Max(worst[k], cores)
+		batteries[k] = append(batteries[k], battery)
+	}
+	if len(worst) == 0 {
+		b.WriteString("No battery left a goroutine using a CPU in its measuring process: every publisher that was still blocked was parked.\n\n")
+		return
+	}
+	keys := make([]key, 0, len(worst))
+	for k := range worst {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].family != keys[j].family {
+			return keys[i].family < keys[j].family
+		}
+		return keys[i].impl < keys[j].impl
+	})
+	rows := [][]string{}
+	for _, k := range keys {
+		sort.Strings(batteries[k])
+		rows = append(rows, []string{k.family, k.impl, strings.Join(batteries[k], ", "), fmt.Sprintf("%.2f", worst[k])})
+	}
+	b.WriteString("A blocked publisher is not always an idle one. After these batteries the measuring process was still using at least half a CPU with nothing left to do: the publisher waits for the subscriber that never reads by spinning, and goes on using a CPU until the process ends. Each battery runs in a process of its own, so this costs the other measurements nothing; in a program it would.\n\n")
+	mdTable(b, []string{"Family", "Implementation", "Batteries that left it", "CPUs in use afterwards"}, rows)
 }
 
 // evalHeadline is the one number a family's implementations are compared on

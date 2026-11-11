@@ -144,6 +144,15 @@ func (w *measureWriter) write(rec map[string]any) error {
 	return nil
 }
 
+// writeRaw appends one already-encoded record.
+func (w *measureWriter) writeRaw(line []byte) error {
+	if _, err := w.f.Write(append(append([]byte(nil), line...), '\n')); err != nil {
+		return err
+	}
+	w.records++
+	return nil
+}
+
 func (w *measureWriter) close() error { return w.f.Close() }
 
 // --- Environment metadata ---
@@ -192,7 +201,15 @@ func cpuModel() string {
 //	       every earlier contract are not a measurement of delivery, and
 //	       the reports do not rank the caster family of those runs (see
 //	       familyRanking).
-const measureGeneratorVersion = "1.2.0"
+//	1.3.0  Every battery of every implementation is measured in a process
+//	       of its own (measure_isolate_test.go). Before this the run was one
+//	       process, and a stalled-consumer probe of an implementation whose
+//	       Send waits by spinning left publishers that kept both CPUs busy
+//	       for the rest of the run: everything measured after the eleventh
+//	       broadcast implementation shared the machine with them, and the
+//	       ten before it did not. The meta record says how a run was
+//	       isolated; "residue" records say what a unit left running.
+const measureGeneratorVersion = "1.3.0"
 
 // generatorBefore reports whether the record contract `have` is older than
 // `want`. A file without a contract (hand-built records in the tooling tests)
@@ -217,8 +234,9 @@ func generatorBefore(have, want string) bool {
 	return false
 }
 
-func measureMetaRecords(profile string, seed int64) map[string]any {
+func measureMetaRecords(profile string, seed int64, isolation string) map[string]any {
 	return map[string]any{
+		"isolation":         isolation,
 		"type":              "meta",
 		"schema":            measureSchemaVersion,
 		"generator":         "bigbuff-measure",
@@ -297,14 +315,21 @@ type measureContext struct {
 	profile     measureProfile
 	implGlob    string
 	batteryGlob string
-	out         *measureWriter
-	seed        int64
-	started     time.Time
-	skipped     int
-	failures    []string
+	exact       bool // implGlob and batteryGlob are names, not patterns
+	// broadcastIndex is the position of the implementation in
+	// AllBroadcasters when exact is set and the caller knows it; -1 if not.
+	broadcastIndex int
+	out            *measureWriter
+	seed           int64
+	started        time.Time
+	skipped        int
+	failures       []string
 }
 
 func (c *measureContext) implAllowed(name string) bool {
+	if c.exact {
+		return name == c.implGlob
+	}
 	if c.implGlob == "" {
 		return true
 	}
@@ -316,6 +341,9 @@ func (c *measureContext) implAllowed(name string) bool {
 }
 
 func (c *measureContext) batteryAllowed(id string) bool {
+	if c.exact {
+		return id == c.batteryGlob
+	}
 	if c.batteryGlob == "" {
 		return true
 	}

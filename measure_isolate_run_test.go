@@ -1,0 +1,328 @@
+package bigbuff
+
+import (
+	"bufio"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
+// readMeasureRecords returns the records of a results file by type.
+func readMeasureRecords(t *testing.T, path string) map[string][]map[string]any {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	out := map[string][]map[string]any{}
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1<<20), 64<<20)
+	for sc.Scan() {
+		var rec map[string]any
+		if err := json.Unmarshal(sc.Bytes(), &rec); err != nil {
+			t.Fatalf("malformed record %q: %v", sc.Text(), err)
+		}
+		typ, _ := rec["type"].(string)
+		out[typ] = append(out[typ], rec)
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// The plan is the run: every battery of every implementation of every family
+// is one unit, and nothing is in it twice.
+func TestMeasurePlanCoversEveryUnit(t *testing.T) {
+	plan := measurePlan(&measureContext{})
+	seen := map[measureUnit]bool{}
+	perFamily := map[string]map[string]bool{}
+	batteries := map[string]bool{}
+	for _, u := range plan {
+		key := measureUnit{u.family, u.impl, u.battery, 0}
+		if seen[key] {
+			t.Errorf("unit planned twice: %s", u)
+		}
+		seen[key] = true
+		if !strings.HasPrefix(u.battery, u.family+".") {
+			t.Errorf("battery %s planned for family %s", u.battery, u.family)
+		}
+		if perFamily[u.family] == nil {
+			perFamily[u.family] = map[string]bool{}
+		}
+		perFamily[u.family][u.impl] = true
+		batteries[u.battery] = true
+	}
+	for _, b := range measureBatteries {
+		if !batteries[b.ID] {
+			t.Errorf("battery %s is in no unit", b.ID)
+		}
+	}
+	for _, set := range expectedImplSets() {
+		for _, name := range set.names {
+			if !perFamily[set.family][name] {
+				t.Errorf("%s implementation %q is in no unit", set.family, name)
+			}
+			for _, b := range measureBatteries {
+				if strings.HasPrefix(b.ID, set.family+".") && !seen[measureUnit{set.family, name, b.ID, 0}] {
+					t.Errorf("no unit for %s of %q", b.ID, name)
+				}
+			}
+		}
+		if got, want := len(perFamily[set.family]), len(set.names); got != want {
+			t.Errorf("family %s: %d implementations planned, %d expected by verify", set.family, got, want)
+		}
+	}
+	// The globs narrow the plan as they narrow a run.
+	narrow := measurePlan(&measureContext{implGlob: "BaselineFanout (standard)", batteryGlob: "broadcast.c*"})
+	if len(narrow) != 1 || narrow[0].battery != "broadcast.churn" || narrow[0].impl != "BaselineFanout (standard)" {
+		t.Errorf("narrowed plan = %v", narrow)
+	}
+	// A broadcast unit carries the position of its factory, and that factory
+	// is the one with the unit's name.
+	factories := AllBroadcasters()
+	for _, u := range plan {
+		if u.family != "broadcast" || u.battery != "broadcast.throughput" {
+			continue
+		}
+		p := factories[u.index]()
+		if p.Name() != u.impl {
+			t.Errorf("unit %s has index %d, which is %q", u, u.index, p.Name())
+		}
+		closeWithWatchdog(p, 2*time.Second)
+	}
+}
+
+// What a unit leaves running stays in the unit's process. The stalled-consumer
+// probe of EpochCaster (13-OpenRouter) ends with its publisher spinning; run
+// in this process it would use a CPU until the test binary exits, which is
+// what it did to every run before record contract 1.3.0.
+func TestMeasureRunIsolatesEachUnit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts measuring processes")
+	}
+	const impl = "EpochCaster (13-OpenRouter)"
+	out := filepath.Join(t.TempDir(), "results.jsonl")
+	before := runtime.NumGoroutine()
+	if rc := cmdMeasureRun([]string{"--profile", "quick", "--impl", impl, "--battery", "broadcast.stalled_consumer", "--no-verify", "--out", out}); rc != 0 {
+		t.Fatalf("run exited %d", rc)
+	}
+	for i := 0; i < 200 && runtime.NumGoroutine() > before; i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if after := runtime.NumGoroutine(); after > before {
+		t.Errorf("the run left %d goroutine(s) in the parent process", after-before)
+	}
+	recs := readMeasureRecords(t, out)
+	if n := len(recs["meta"]); n != 1 || recs["meta"][0]["isolation"] != measureIsolationPerUnit || recs["meta"][0]["generator_version"] != measureGeneratorVersion {
+		t.Errorf("meta records: %v", recs["meta"])
+	}
+	if n := len(recs["unit_summary"]); n != 0 {
+		t.Errorf("%d unit summaries reached the results file; they are for the parent only", n)
+	}
+	if n := len(recs["summary"]); n != 1 || recs["summary"][0]["failures"] != 0.0 {
+		t.Errorf("summary records: %v", recs["summary"])
+	}
+	blocked := false
+	for _, m := range recs["metric"] {
+		if m["impl"] != impl {
+			t.Errorf("record of another implementation: %v", m["impl"])
+		}
+		if m["metric"] == "stalled_consumer_ops_completed" && m["outcome"] == "publisher_blocked" {
+			blocked = true
+		}
+	}
+	if !blocked {
+		t.Fatalf("no publisher_blocked record for %s: %v", impl, recs["metric"])
+	}
+	if len(recs["residue"]) != 1 {
+		t.Fatalf("residue records: %v", recs["residue"])
+	}
+	res := recs["residue"][0]
+	if res["impl"] != impl || res["battery"] != "broadcast.stalled_consumer" || res["goroutines"].(float64) < 1 {
+		t.Errorf("residue record: %v", res)
+	}
+	if _, ok := processCPUTime(); ok {
+		// A parked publisher uses no CPU; this one spins. The bound is loose
+		// because the test may share the machine with others.
+		if cores, _ := res["cpu_cores"].(float64); cores < 0.2 {
+			t.Errorf("the blocked publisher used %.2f CPUs; it was expected to spin", cores)
+		}
+	}
+}
+
+// A unit that leaves nothing behind writes no residue record.
+func TestMeasureRunRecordsNoResidueForACleanUnit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts measuring processes")
+	}
+	out := filepath.Join(t.TempDir(), "results.jsonl")
+	if rc := cmdMeasureRun([]string{"--profile", "quick", "--impl", "BaselineFanout (standard)", "--battery", "broadcast.zero_subscriber", "--no-verify", "--out", out}); rc != 0 {
+		t.Fatalf("run exited %d", rc)
+	}
+	recs := readMeasureRecords(t, out)
+	if len(recs["residue"]) != 0 {
+		t.Errorf("residue records: %v", recs["residue"])
+	}
+	if len(recs["metric"]) != 1 || recs["metric"][0]["metric"] != "zero_subscriber_ns_op" {
+		t.Errorf("metric records: %v", recs["metric"])
+	}
+}
+
+// A measuring process that dies is a failure of the run, the run says which
+// unit it was, and the units after it are still measured.
+func TestMeasureRunReportsADeadMeasuringProcess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts measuring processes")
+	}
+	const impl = "BaselineFanout (standard)"
+	t.Setenv(measureCrashUnitEnv, "broadcast/"+impl+"/broadcast.churn")
+	out := filepath.Join(t.TempDir(), "results.jsonl")
+	if rc := cmdMeasureRun([]string{"--profile", "quick", "--impl", impl, "--battery", "broadcast.[cz]*", "--no-verify", "--out", out}); rc == 0 {
+		t.Fatalf("a run with a dead measuring process exited 0")
+	}
+	recs := readMeasureRecords(t, out)
+	if len(recs["summary"]) != 1 {
+		t.Fatalf("summary records: %v", recs["summary"])
+	}
+	sum := recs["summary"][0]
+	msgs, _ := sum["failure_msg"].([]any)
+	if sum["failures"] != 1.0 || len(msgs) != 1 || !strings.Contains(msgs[0].(string), "broadcast.churn of "+impl) || !strings.Contains(msgs[0].(string), measureCrashUnitEnv) {
+		t.Errorf("summary: %v", sum)
+	}
+	after := false
+	for _, m := range recs["metric"] {
+		if m["metric"] == "churn_ns_op" {
+			t.Errorf("the dead unit has a record: %v", m)
+		}
+		if m["metric"] == "zero_subscriber_ns_op" {
+			after = true
+		}
+	}
+	if !after {
+		t.Errorf("the unit after the dead one was not measured: %v", recs["metric"])
+	}
+}
+
+// A run that was not isolated does not verify from the contract that
+// requires it on; older runs are what they are.
+func TestVerifyRejectsARunThatWasNotIsolated(t *testing.T) {
+	sets := []expectedImplSet{{"broadcast", []string{"A"}}}
+	const record = `{"type":"metric","family":"broadcast","impl":"A","metric":"publish_ns_op","mean":12.5}`
+	verify := func(meta string) (int, string) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "results-01-01-results.jsonl")
+		if err := os.WriteFile(path, []byte(meta+"\n"+record+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var out strings.Builder
+		return verifyResultsAgainst(path, sets, "a test registry", &out), out.String()
+	}
+	for _, c := range []struct {
+		name, meta string
+		pass       bool
+	}{
+		{"current contract, isolated", `{"type":"meta","generator_version":"` + measureGeneratorVersion + `","isolation":"` + measureIsolationPerUnit + `"}`, true},
+		{"current contract, one process", `{"type":"meta","generator_version":"` + measureGeneratorVersion + `","isolation":"none"}`, false},
+		{"current contract, not stated", `{"type":"meta","generator_version":"` + measureGeneratorVersion + `"}`, false},
+		{"contract before isolation", `{"type":"meta","generator_version":"1.2.0"}`, true},
+	} {
+		rc, out := verify(c.meta)
+		if (rc == 0) != c.pass {
+			t.Errorf("%s: rc=%d\n%s", c.name, rc, out)
+		}
+		if !c.pass && !strings.Contains(out, "not isolated") {
+			t.Errorf("%s: the failure does not say why:\n%s", c.name, out)
+		}
+	}
+}
+
+// No family of a run made in one process is ranked, whatever its size, and
+// the reason says from which contract on a run is valid.
+func TestFamiliesOfUnisolatedRunsAreNotRanked(t *testing.T) {
+	metrics := []map[string]any{}
+	for i := range minRankedImpls + 1 {
+		metrics = append(metrics, map[string]any{"type": "metric", "family": "broadcast", "impl": "B" + string(rune('a'+i)),
+			"metric": "publish_ns_op", "dims": map[string]any{"subs": 8.0}, "mean": float64(10 + i)})
+	}
+	for i := range 2 {
+		metrics = append(metrics, map[string]any{"type": "metric", "family": "gather", "impl": "G" + string(rune('a'+i)),
+			"metric": "wait_ns_op", "dims": map[string]any{"senders": 8.0}, "mean": float64(10 + i)})
+	}
+	for generator, isolated := range map[string]bool{"1.0.0": false, "1.2.0": false, isolationContract: true, "1.4.0": true} {
+		dd := deriveReport(&reportData{meta: map[string]any{"generator_version": generator}, metrics: metrics}, nil)
+		b, g := dd.Scores["broadcast"]["Ba"], dd.Scores["gather"]["Ga"]
+		if b.Ranked != isolated {
+			t.Errorf("generator %s: broadcast ranked = %v, want %v", generator, b.Ranked, isolated)
+		}
+		if g.Ranked {
+			t.Errorf("generator %s: a family of two is ranked", generator)
+		}
+		wantSmall := "Not ranked (family of 2)"
+		if !isolated {
+			wantSmall = "Not ranked (measurement not valid)"
+			if b.Verdict != wantSmall || b.Score != 0 || !strings.Contains(b.UnrankedReason, "one process") {
+				t.Errorf("generator %s: broadcast score %+v", generator, b)
+			}
+			if dd.UnrankedSince["broadcast"] != isolationContract || dd.UnrankedSince["gather"] != isolationContract {
+				t.Errorf("generator %s: valid since %v", generator, dd.UnrankedSince)
+			}
+		} else if len(dd.UnrankedSince) != 0 {
+			t.Errorf("generator %s: valid since %v, want none", generator, dd.UnrankedSince)
+		}
+		if g.Verdict != wantSmall {
+			t.Errorf("generator %s: gather verdict %q, want %q", generator, g.Verdict, wantSmall)
+		}
+	}
+}
+
+// A repetition sized by the clock ends near its target whatever an operation
+// costs, and however the cost changes while it runs.
+func TestOpBudgetEndsNearItsTarget(t *testing.T) {
+	const target = 20 * time.Millisecond
+	run := func(minOps, maxOps int, cost func(i int) time.Duration) (int, time.Duration, time.Duration) {
+		start := time.Now()
+		budget := newOpBudget(target, minOps, maxOps)
+		last := -1
+		for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+			if from != last+1 || to <= from {
+				t.Fatalf("range [%d,%d) after index %d", from, to, last)
+			}
+			for i := from; i < to; i++ {
+				if d := cost(i); d > 0 {
+					time.Sleep(d)
+				}
+			}
+			last = to - 1
+		}
+		n, d := budget.done()
+		if n != last+1 {
+			t.Fatalf("done reports %d operations, %d were run", n, last+1)
+		}
+		return n, d, time.Since(start)
+	}
+	// Free operations: stops at maxOps.
+	if n, _, _ := run(64, 100000, func(int) time.Duration { return 0 }); n < 64 || n > 100000 {
+		t.Errorf("free operations: ran %d", n)
+	}
+	// Slow operations: the minimum count is honoured, then it stops.
+	if n, d, _ := run(8, 1000000, func(int) time.Duration { return 2 * time.Millisecond }); n < 8 || n > 64 || d < target {
+		t.Errorf("slow operations: ran %d in %s", n, d)
+	}
+	// Cheap at first, then 500 µs each: an estimate taken from the cheap
+	// start would run all million. The budget must stop within a few targets.
+	n, d, wall := run(64, 1000000, func(i int) time.Duration {
+		if i < 3000 {
+			return 0
+		}
+		return 500 * time.Microsecond
+	})
+	if d < target || wall > 2*time.Second {
+		t.Errorf("cost jump: ran %d operations in %s (wall %s); the target is %s", n, d, wall, target)
+	}
+}
