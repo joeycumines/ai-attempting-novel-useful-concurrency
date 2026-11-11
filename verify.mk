@@ -24,6 +24,13 @@
 #                 target per invocation, hence the loop.
 #   verify.bench  Every benchmark matching VERIFY_BENCH. Produces numbers; it
 #                 only fails if a benchmark fails or does not terminate.
+#   verify.arm64  Runs the tests of the implementations that ship arm64
+#                 assembly (VERIFY_ARM64_RUN) as an arm64 binary. On an arm64
+#                 host that is a plain `go test`; elsewhere it needs a
+#                 user-mode emulator (VERIFY_ARM64_EXEC, default qemu-aarch64
+#                 from PATH) and FAILS when there is none, because the whole
+#                 point is that the assembly executes. Not part of
+#                 `make verify` for that reason.
 #
 # Configuration & Overrides
 # ---
@@ -36,9 +43,11 @@
 #   VERIFY_BENCHTIME  -benchtime                               (default: 200x)
 #   VERIFY_ARCHES     extra GOARCH values to vet               (default: arm64 386)
 #   VERIFY_LOG        if set, a directory; each leg also writes <leg>.log there
+#   VERIFY_ARM64_EXEC emulator used to run arm64 test binaries (default: qemu-aarch64 if on PATH)
+#   VERIFY_ARM64_RUN  -run regexp for verify.arm64             (default: 64-GLM and 72-Gemini tests)
 #
 # Cross-architecture vet type-checks and assembles the per-architecture files;
-# it does not execute them.
+# it does not execute them. verify.arm64 does.
 
 # WARNING: Must be before any includes (same contract as the root Makefile).
 VERIFY_MK := $(abspath $(lastword $(MAKEFILE_LIST)))
@@ -53,6 +62,8 @@ VERIFY_BENCH ?= .
 VERIFY_BENCHTIME ?= 200x
 VERIFY_ARCHES ?= arm64 386
 VERIFY_LOG ?=
+VERIFY_ARM64_EXEC ?= $(shell command -v qemu-aarch64 2>/dev/null || command -v qemu-aarch64-static 2>/dev/null)
+VERIFY_ARM64_RUN ?= Beacon|Watcher|Bitmap72|PhaseCaster72|SymExchanger|TestScenarioBarrier|TestScenarioExchange|/.*(64-GLM|72-Gemini)
 
 # $(call verify_tee,<leg>) expands to a pipeline suffix that copies the leg's
 # output into $(VERIFY_LOG)/<leg>.log when VERIFY_LOG is set. Recipes that use
@@ -100,6 +111,24 @@ verify.fuzz: ## Fuzz every target matching VERIFY_FUZZ for VERIFY_FUZZTIME each.
 .PHONY: verify.bench
 verify.bench: ## Run benchmarks matching VERIFY_BENCH (numbers, not a gate).
 	@$(VERIFY_SH) go test -run=NONE -bench '$(VERIFY_BENCH)' -benchtime=$(VERIFY_BENCHTIME) -benchmem -count=1 -timeout $(VERIFY_TIMEOUT) . $(call verify_tee,bench)
+
+.PHONY: verify.arm64
+verify.arm64: ## Execute the tests of the arm64-assembly implementations as an arm64 binary (native, or under VERIFY_ARM64_EXEC).
+	@$(VERIFY_SH) { \
+	  if [ "$$(go env GOHOSTARCH)" = arm64 ]; then \
+	    echo '== native arm64'; \
+	    go test -count=1 -cpu $(VERIFY_CPUS) -run '$(VERIFY_ARM64_RUN)' -timeout $(VERIFY_TIMEOUT) .; \
+	  elif [ -n '$(VERIFY_ARM64_EXEC)' ]; then \
+	    echo '== GOARCH=arm64 under $(VERIFY_ARM64_EXEC)'; \
+	    GOARCH=arm64 go test -exec '$(VERIFY_ARM64_EXEC)' -count=1 -cpu $(VERIFY_CPUS) -run '$(VERIFY_ARM64_RUN)' -timeout $(VERIFY_TIMEOUT) .; \
+	  else \
+	    echo 'verify.arm64: this host is not arm64 and no emulator was found.'; \
+	    echo 'verify.arm64: install qemu-user (qemu-aarch64) or set VERIFY_ARM64_EXEC=<emulator>.'; \
+	    echo 'verify.arm64: FAILED (the arm64 assembly was not executed)'; \
+	    exit 1; \
+	  fi; \
+	  echo 'verify.arm64: ok'; \
+	} $(call verify_tee,arm64)
 
 .PHONY: verify.all
 verify.all: verify.vet verify.test verify.race verify.alloc verify.fuzz ## Every correctness gate (not benchmarks).

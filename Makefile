@@ -173,5 +173,8 @@ measure-ci: measure.ci ## CI gate: quick profile + verification.
 .PHONY: verify
 verify: verify.all ## Correctness gates beyond `make all`: vet (race + cross-arch), tests at several GOMAXPROCS, race detector, allocation assertions, fuzzing.
 
+.PHONY: verify-arm64
+verify-arm64: verify.arm64 ## Execute the arm64-assembly implementations' tests as an arm64 binary (needs an arm64 host or qemu-aarch64).
+
 .PHONY: verify-bench
 verify-bench: verify.bench ## Run the Go benchmarks (VERIFY_BENCH=<regexp>, VERIFY_BENCHTIME=<n>x).
