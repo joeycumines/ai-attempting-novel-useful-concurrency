@@ -31,7 +31,7 @@ func measureBatteriesByID() map[string]measureBattery {
 
 func cmdMeasureList(args []string) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
-	fam := fs.String("family", "", "only list one family (broadcast|caster|scatter|gather|payload|fanin)")
+	fam := fs.String("family", "", "only list one family (broadcast|caster|scatter|gather|payload|fanin|exchange|barrier)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -145,9 +145,6 @@ func registryDump() (map[string]any, error) {
 	addAll("gather", gatherAttachments)
 	addAll("payload", payloadAttachments)
 	addAll("fanin", faninAttachments)
-	// Exchange and barrier scenarios have tests, benchmarks and fuzz targets
-	// but no measurement battery; they are dumped so the registry file is
-	// complete, and verify does not expect JSONL records for them.
 	addAll("exchange", exchangeAttachments)
 	addAll("barrier", barrierAttachments)
 	// The coverage contract: which implementations a measurement run made
@@ -327,6 +324,8 @@ func cmdMeasureRun(args []string) int {
 	runGatherBatteries(ctx)
 	runPayloadBatteries(ctx)
 	runFaninBatteries(ctx)
+	runExchangeBatteries(ctx)
+	runBarrierBatteries(ctx)
 
 	dur := time.Since(ctx.started)
 	ctx.write(map[string]any{

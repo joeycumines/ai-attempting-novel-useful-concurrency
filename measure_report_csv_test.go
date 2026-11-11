@@ -71,10 +71,18 @@ func writeReportCSVs(metricsPath, scoresPath string, data *reportData, derived d
 			return scores[i].Impl < scores[j].Impl
 		})
 		for _, s := range scores {
+			// An unranked implementation (family below minRankedImpls) has
+			// empty score and dimension cells, never a zero.
+			num := func(v int) string {
+				if !s.Ranked {
+					return ""
+				}
+				return fmt.Sprint(v)
+			}
 			row := []string{
-				family, s.Impl, fmt.Sprint(s.Score), s.Verdict, fmt.Sprint(s.Baseline), s.Integrity,
-				fmt.Sprint(s.Dims["throughput"]), fmt.Sprint(s.Dims["latency"]), fmt.Sprint(s.Dims["allocations"]),
-				fmt.Sprint(s.Dims["churn"]), fmt.Sprint(s.Dims["scaling"]), fmt.Sprint(s.Dims["stall_resilience"]),
+				family, s.Impl, num(s.Score), s.Verdict, fmt.Sprint(s.Baseline), s.Integrity,
+				num(s.Dims["throughput"]), num(s.Dims["latency"]), num(s.Dims["allocations"]),
+				num(s.Dims["churn"]), num(s.Dims["scaling"]), num(s.Dims["stall_resilience"]),
 				fmt.Sprint(s.ExpectedGoodFit), fmt.Sprint(s.ExposureLimited),
 			}
 			if err := sw.Write(row); err != nil {

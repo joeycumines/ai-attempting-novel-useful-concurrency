@@ -419,5 +419,7 @@ func expectedImplSets() []expectedImplSet {
 		faninNames = append(faninNames, name)
 	}
 	sets = append(sets, expectedImplSet{"fanin", faninNames})
+	sets = append(sets, expectedImplSet{"exchange", exchangeNames()})
+	sets = append(sets, expectedImplSet{"barrier", barrierNames()})
 	return sets
 }

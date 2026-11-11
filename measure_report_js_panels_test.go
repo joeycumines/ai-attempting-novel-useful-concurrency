@@ -282,7 +282,8 @@ function downloadBlob(name, content, mime){
     familyOrder.forEach(function(f){
       Object.keys(derivedFamily(f)).forEach(function(impl){
         var s = derivedFamily(f)[impl];
-        lines.push([f, impl, s.score, s.verdict, s.baseline, s.integrity, s.dims.throughput, s.dims.latency, s.dims.allocations, s.dims.churn, s.dims.scaling, s.dims.stall_resilience, s.expected_good_fit, s.exposure_limited].map(csvEscape).join(','));
+        var n = function(v){ return isRanked(s) ? v : ''; };
+        lines.push([f, impl, n(s.score), s.verdict, s.baseline, s.integrity, n(s.dims.throughput), n(s.dims.latency), n(s.dims.allocations), n(s.dims.churn), n(s.dims.scaling), n(s.dims.stall_resilience), s.expected_good_fit, s.exposure_limited].map(csvEscape).join(','));
       });
     });
     downloadBlob('bigbuff-scores.csv', lines.join('\n')+'\n', 'text/csv');
@@ -322,7 +323,11 @@ function downloadBlob(name, content, mime){
     ['payload.stalled_consumer', 'stalled_consumer_ops_completed', 'async lane vs never-ranged subscriber; approximate retained bytes'],
     ['payload.churn', 'churn_ns_op', 'subscribe-with-context cancellation lifecycle'],
     ['fanin.merge', 'merge_ns_op / exactly_once_violations', 'concurrent 4-lane merge cost per value; per-lane FIFO exactly-once accounting'],
-    ['fanin.batch_drain', 'drain_ns_op / exactly_once_violations', 'Drain(32) against a fixture prefilled to capacity (256 values)']
+    ['fanin.batch_drain', 'drain_ns_op / exactly_once_violations', 'Drain(32) against a fixture prefilled to capacity (256 values)'],
+    ['exchange.pair', 'exchange_ns_op / exactly_once_violations', 'wall-clock cost of one completed swap at 2 and 8 continuous callers; every completed call checked to be half of a consistent swap'],
+    ['exchange.cancel_race', 'cancel_race_ns_op / swapped / withdrawn / exactly_once_violations', 'one caller cancelled while its partner arrives; one-sided outcomes are violations'],
+    ['barrier.send', 'send_ns_op / exactly_once_violations', 'barrier send (hand to every member, wait for every acknowledgement) at 1..64 prompt members'],
+    ['barrier.deadline', 'deadline_overshoot_ns / deadline_recovery_ns', 'one of 4 members never takes the value: time past the deadline until the send returns, and the next send after that member leaves']
   ];
   $('batteryGloss').innerHTML = '<thead><tr><td>battery</td><td>metrics</td><td>what it measures</td></tr></thead><tbody>' + batteries.map(function(b){
     return '<tr><td>'+esc(b[0])+'</td><td>'+esc(b[1])+'</td><td>'+esc(b[2])+'</td></tr>';
