@@ -117,8 +117,10 @@ latent cross-goroutine deadlock (ModeBlock readers park on the gate while the
 test’s `stop` channel is never selected on) — the test now closes the Beacon
 before joining readers.
 Verification: green across `-count=10`, `-race`, close-burst `-count=20`;
-cross-compiled for `linux/arm64` and `linux/386` (asm fences compile-verified
-only — not run on ARM hardware). **No benchmarks were delivered with the
+cross-compiled for `linux/arm64` and `linux/386` (the arm64 fence was
+compile-verified at this point; it has since been executed under an ARMv8
+emulator, never on ARM hardware: see "arm64 assembly: executed under
+emulation"). **No benchmarks were delivered with the
 candidate** (its README claims a matrix that does not exist in the extract);
 measurement harness coverage comes from the scenario facets instead.
 Attachment: `bounded-ring-lossy-detectable`, `ephemeral-churn-membership`,
@@ -387,14 +389,10 @@ blocks). Both are documented in their attachment remarks.
   protocol (`beacon_64_glm_slot_race.go`) or per-slot mutex
   (`horizon_70_meta_slot_race.go`) so the race detector verifies the same
   algorithm the fast build runs.
-- Measurements **were** regenerated for this batch: run 03 (quick profile,
-  commit `9581dec`, 1659 records, verify **PASS**) is committed and is the
-  current artifact; report and CSVs cover the fan-in family (`EdgeFanIn68Chatgpt`
-  scores 72 — Situational — on the throughput dimension: merged cost 165.2 ns/op
-  vs the baseline's 129.3 ns/op, integrity verified; `BaselineFanIn` scores
-  100). Runs 01/02 predate the fan-in family and re-index to
-  `verified: false` under the current registry; the committed manifests say
-  so, and the honest story is in `results-00-00-readme.md`.
+- Measurement: the runs taken while this audit was written (01 to 06) are not
+  ranked. See "Third pass" below for the two measurement defects that void
+  them, and `results-00-00-readme.md` for the run log. The fan-in figures this
+  bullet once quoted from run 03 came from such a run and are withdrawn.
 
 ## Completion phase: 71–74, 62, and repairs to earlier ports
 
@@ -695,12 +693,88 @@ available, and it has not been run to completion anywhere: only its build
 step and its failure path were exercised here.
 
 Measurement run 04 measured the defective versions of #28, #29, #30, #31,
-#47, `BaselineBarrierPubSub` and the `EpochPubSub` adapter. Its numbers for
-those implementations are superseded by the run that follows these repairs.
+#47, `BaselineBarrierPubSub` and the `EpochPubSub` adapter. No run before
+run 07 is ranked in any case (see "Third pass").
+
+### Third pass: the churn exemption removed, and what the measurement was measuring
+
+Four adapters were exempt from the standard concurrent-churn test
+(`SkipStandardConcurrentChurn`), each with a recorded reason. The exemption is
+gone: the hook no longer exists and every adapter runs the test. Turning it off
+passed for one of the four and exposed defects in the other three.
+
+- **#06 `ChanPubSubV2_06meta`.** The exemption was unnecessary. A subscriber
+  that withdraws takes its own share of the ping with `Add(-1)`. Passed as it
+  was (churn ×2000, race ×300).
+- **#57 `ChanPubSub57DeepSeek`.** The primitive is sound. The adapter held an
+  exclusive `subsMu` around a blocking `Subscribe`, which deadlocked against a
+  publisher waiting for that subscriber. The adapter now takes the lock shared
+  on the subscribe and unsubscribe paths and uses `TryLock` in `TryReceive`.
+  Its fuzz exemption went with the churn one.
+- **#43 `SlotPubSub43Grok`** (two source defects). `Send` held `mu` across its
+  unbuffered sends while `unsubscribe` needed `mu`, so a subscriber leaving
+  during a `Send` deadlocked both; the departing subscriber now takes and
+  acknowledges the value in flight, and `Send` still counts it. Concurrent
+  `Send`s shared one acknowledgement count, which stranded a publisher; a
+  `sendMu` now serialises them. Three regression tests; the one for the second
+  defect fails 5 of 5 without `sendMu`.
+- **#40 `SlabCaster40Gemini`** (five source defects). A send on a closed
+  channel and a data race on the slot's channel (now a per-slot in-flight lease
+  and a closed flag, checked in that order); a closer stuck behind a
+  Block-policy `Send` (it drains while it waits, and that `Send` reports the
+  value as not delivered); a slot returned to the free list before its channel
+  was replaced; `Subscribe` racing the caster's `Close` (now panics with
+  `ErrSlabCaster40Closed`); `SubscribeContext` closing twice. Four regression
+  tests. What remains is a property of the design: a handle is valid only
+  until it is closed.
+
+Found in the same pass, in implementations that were not exempt:
+
+- **#28 `Broadcast28Flint`**: `Stop` tested the subscription's stop field and
+  then set it to nil, both unsynchronised, so two goroutines stopping the same
+  subscription raced (reported by the race detector). The field is now written
+  once, before the subscription is visible. Regression test
+  `TestBroadcast28Flint_ConcurrentStop`.
+- **#34 `ChanMultiCast34Lightning`** (repairs 7 and 8 in its header): a
+  subscriber that stopped receiving and then left during a `Send` waited for
+  that `Send`, which was waiting for it, and `Close` hung the same way; and
+  `Unsubscribe` could only remove the newest subscriber, so with A then B
+  subscribed, A leaving retired B. `UnsubscribeChan` removes the owner of a
+  channel, and the adapter uses it.
+
+Two defects were in the measurement, not in an implementation. Both made
+implementations look better than they are, and both went unnoticed for five
+runs because the numbers were plausible.
+
+- **The caster batteries timed Sends that delivered nothing.** They looped on
+  `Send` without waiting for the receivers to register again. Most Sends found
+  no receiver and returned in 2 to 8 ns; of 20,000 values most casters
+  delivered between 0 and 31. From record contract 1.2.0 a Send is timed only
+  once every receiver is registered, the deliveries are counted, and a missing
+  one fails the integrity gate. `BenchmarkScenarioCaster` had the same flaw and
+  the same fix. A delivered send to 8 receivers costs 700 to 1,100 ns.
+- **The run was one process, and a spinning publisher poisoned it.** The
+  stalled-consumer probes of `EpochCaster (13-OpenRouter)`, eleventh in run
+  order, each end with its publisher spinning in `Send`. On the 2-CPU machine
+  every run was taken on, those two goroutines held both CPUs for the rest of
+  the run. The ten implementations before them were measured on an idle
+  machine. For everything after them, the measured implementation's own
+  subscribers were kept off the CPUs while its publisher was timed.
+  `Latest3260Terra` reads 10 ns per publish at every subscriber count in run
+  06 and 173 to 450 ns at 4 to 256 subscribers measured alone. From record
+  contract 1.3.0 every battery of every implementation runs in a process of
+  its own (`measure_isolate_test.go`), the run records what each one left
+  behind, and no family of an earlier run is ranked.
+
+  Looking for this also showed that the throughput batteries sized a
+  repetition from 16 publishes made before any subscriber had run. For
+  `EpochTape (10-Gemini)`, whose publish is cheap only while its subscribers
+  sleep, that put 400,000 publishes into a repetition with a 60 ms target, at
+  up to 75 µs each. Repetitions are now sized by the clock after a timed
+  warm-up.
 
 ### Not done
 
-- No measurement battery for the exchange and barrier scenarios (Go
-  benchmarks only).
 - arm64 assembly (#64 fence, #72 bitmap) has run under an emulator, one
-  function at a time, and never on arm64 hardware (next section).
+  function at a time, and never on arm64 hardware (previous section).
+- Nothing has been measured on more than 2 CPUs.
