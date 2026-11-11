@@ -137,6 +137,14 @@ func (b *BaselineDeadlineBarrier[V]) Send(ctx context.Context, v V) (int, error)
 		case <-ack:
 			acked++
 		case <-owners[i].gone:
+			// A member that acknowledged and then left has both channels
+			// ready, and select picks either. The acknowledgement happened,
+			// so count it.
+			select {
+			case <-ack:
+				acked++
+			default:
+			}
 		case <-ctx.Done():
 			return acked, ctx.Err()
 		case <-b.done:

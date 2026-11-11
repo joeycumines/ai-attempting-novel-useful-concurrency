@@ -173,6 +173,14 @@ func (r *TelemetryRing63Qwen[V]) Next(cursor *uint64) (V, bool) {
 	}
 }
 
+// Head returns the number of values published so far, which is also the
+// 1-based position of the newest one. A cursor is the next position to read,
+// so Head()+1 makes Next and Subscribe start after everything already
+// published ("tail attach"); a cursor of zero starts at the first retained
+// entry. Added in the completion phase: the ring had no way to obtain this
+// position without reading through the retained history.
+func (r *TelemetryRing63Qwen[V]) Head() uint64 { return r.head.Load() }
+
 func (r *TelemetryRing63Qwen[V]) NotifyChan() <-chan struct{} {
 	if r.notifier == nil {
 		return nil

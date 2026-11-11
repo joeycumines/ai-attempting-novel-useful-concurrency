@@ -612,3 +612,82 @@ func TestSkipErrorString(t *testing.T) {
 		t.Fatal("errclosed string")
 	}
 }
+
+// Benchmarks added in the completion phase; response 64 shipped none.
+
+// BenchmarkBeacon64GLM_PublishNoWatcher is the publish path alone: a claim
+// CAS and a fenced slot write, with no gate to arm.
+func BenchmarkBeacon64GLM_PublishNoWatcher(b *testing.B) {
+	bc := NewBeacon64GLM[int](1024)
+	defer bc.Close()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = bc.Publish(i)
+	}
+}
+
+// BenchmarkBeacon64GLM_PublishThenNext is one publish followed by one
+// non-blocking read of it by a caught-up watcher, on one goroutine: the
+// uncontended cost of a value's round trip. It fails if a read misses.
+func BenchmarkBeacon64GLM_PublishThenNext(b *testing.B) {
+	bc := NewBeacon64GLM[int](1024)
+	defer bc.Close()
+	w := bc.WatchLatest()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = bc.Publish(i)
+		if v, _, ok := w.Next(ModeNonBlock64GLM, nil); !ok || v != i {
+			b.Fatalf("read (%d, %v) after publishing %d", v, ok, i)
+		}
+	}
+}
+
+// BenchmarkBeacon64GLM_Snapshot reads the newest value without a watcher.
+func BenchmarkBeacon64GLM_Snapshot(b *testing.B) {
+	bc := NewBeacon64GLM[int](1024)
+	defer bc.Close()
+	_, _ = bc.Publish(42)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if v, _, ok := bc.Snapshot(); !ok || v != 42 {
+			b.Fatalf("Snapshot = (%d, %v)", v, ok)
+		}
+	}
+}
+
+// BenchmarkBeacon64GLM_PublishWithBlockedWatchers measures Publish while
+// eight watchers consume in ModeLatest64GLM, so that publishes find parked
+// watchers and pay for arming and closing gates. The watchers conflate; the
+// number reported is publish cost, not delivery cost. Every watcher must
+// observe the final value before the benchmark ends, which bounds the work
+// and shows no wakeup was lost.
+func BenchmarkBeacon64GLM_PublishWithBlockedWatchers(b *testing.B) {
+	const watchers = 8
+	bc := NewBeacon64GLM[int](1024)
+	final := b.N - 1
+	var wg sync.WaitGroup
+	for range watchers {
+		w := bc.WatchLatest()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				v, _, ok := w.Next(ModeLatest64GLM, context.Background())
+				if !ok || v == final {
+					return
+				}
+			}
+		}()
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = bc.Publish(i)
+	}
+	wg.Wait() // every watcher saw the final value
+	b.StopTimer()
+	bc.Close()
+}

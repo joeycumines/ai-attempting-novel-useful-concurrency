@@ -375,8 +375,9 @@ blocks). Both are documented in their attachment remarks.
 
 ## Not done / open items
 
-- #64 ships no candidate benchmarks (see above); #62’s fan-out benchmark not
-  re-measured in this pass; both are one-liners if wanted later.
+- #64 shipped no benchmarks; four were added in the completion phase
+  (`BenchmarkBeacon64GLM_*` in `beacon_64_glm_test.go`: publish with no
+  watcher, publish then read, snapshot, publish with eight blocked watchers).
 - #64’s ARM64 fence (`beacon_64_glm_fence_arm64.s`, `DMB ISHLD/ISH`) is
   compile-verified only; untested on ARM hardware. AMD64 fences are covered by
   the full amd64 suite; GOARCH=386 is green as of the portability batch above.
@@ -615,6 +616,19 @@ stated:
   `buffered-lossless-backpressured`.
 - **#52 `ChanCascade52Opus`** (lifecycle review). No defect found. Four
   lifecycle tests added, including the exact-count claim under churn.
+
+Also in the second pass:
+
+- **`BaselineDeadlineBarrier.Send`** miscounted a member that acknowledged
+  and then left: both its acknowledgement and its departure were ready and
+  `select` chose between them, so `Send` sometimes reported 0 for 1. The
+  departure branch now checks for the acknowledgement. Found while writing
+  the baseline's unit tests (`baseline_deadline_barrier_test.go`, 8 tests;
+  `baseline_exchange_test.go`, 5 tests); the regression test fails without
+  the fix at GOMAXPROCS 2 and 4.
+- **#63 `TelemetryRing63Qwen`** gained `Head()`, so a reader can start after
+  everything already published; the adapter now tail-attaches like the other
+  ring adapters and #63 is attached to `zero-subscriber-and-edge-lifecycle`.
 
 Measurement run 04 measured the defective versions of #28, #29, #30, #31,
 #47, `BaselineBarrierPubSub` and the `EpochPubSub` adapter. Its numbers for
