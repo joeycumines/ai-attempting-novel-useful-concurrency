@@ -206,10 +206,14 @@ func recMean(rec map[string]any) (float64, bool) {
 }
 
 type implScore struct {
-	Impl            string         `json:"impl"`
-	Family          string         `json:"family"`
-	Score           int            `json:"score"`
-	Verdict         string         `json:"verdict"`
+	Impl    string `json:"impl"`
+	Family  string `json:"family"`
+	Score   int    `json:"score"`
+	Verdict string `json:"verdict"`
+	// Ranked is false when the family has fewer than minRankedImpls measured
+	// implementations: Score and Dims are then zero and carry no meaning.
+	Ranked          bool           `json:"ranked"`
+	Peers           int            `json:"peers"` // implementations measured in the family
 	Baseline        bool           `json:"baseline"`
 	Integrity       string         `json:"integrity"` // "verified" | "failed" | "insufficient-data"
 	Dims            map[string]int `json:"dims"`
@@ -226,6 +230,15 @@ type derivedData struct {
 	FamilyOf     map[string]string               `json:"family_of"`
 	Baselines    []string                        `json:"baselines"`
 }
+
+// minRankedImpls is the smallest family that gets a composite score. Every
+// dimension of the score is a percentile rank within the family, so with n
+// subjects it can only take n values: among two, the faster is 100 and the
+// other 0 whatever the difference between them, and a 3 percent difference
+// inside run-to-run noise moves a subject by 100/(n-1) points. Families
+// below this size are reported with their measurements and confidence
+// intervals only.
+const minRankedImpls = 5
 
 func isBaselineName(name string) bool {
 	return strings.Contains(name, "Baseline") || strings.Contains(name, "(baseline)")
@@ -365,9 +378,12 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 		if family == "fanin" {
 			thrDims = faninSenders
 		}
-		thrAll := metricMeans(data.metrics, map[string]string{ // metric name differs per family
+		thrMetric := map[string]string{ // metric name differs per family
 			"broadcast": "publish_ns_op", "payload": "publish_ns_op", "caster": "send_ns_op", "fanin": "merge_ns_op",
-		}[family], family, thrDims)
+			"exchange": "exchange_ns_op", "barrier": "send_ns_op",
+		}[family]
+		ranked := len(impls) >= minRankedImpls
+		thrAll := metricMeans(data.metrics, thrMetric, family, thrDims)
 		latAll := metricMeans(data.metrics, map[string]string{
 			"broadcast": "publish_latency_ns", "payload": "publish_latency_ns", "caster": "send_latency_ns",
 		}[family], family, -1)
@@ -466,6 +482,8 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			switch {
 			case integrity == "failed":
 				verdict = "Do not adopt (integrity failure)"
+			case !ranked:
+				verdict = fmt.Sprintf("Not ranked (family of %d)", len(impls))
 			case score >= 75:
 				verdict = "Strong candidate"
 			case score >= 60:
@@ -479,8 +497,11 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			metrics := map[string]any{}
 			if hasThr {
 				thrKey := "publish_ns_op@8"
-				if family == "fanin" {
+				switch family {
+				case "fanin":
 					thrKey = "merge_ns_op@4"
+				case "exchange", "barrier":
+					thrKey = thrMetric + "@8"
 				}
 				metrics[thrKey] = thr
 			}
@@ -500,11 +521,16 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 				metrics["scaling_ratio_64_over_1"] = scale
 			}
 
+			if !ranked {
+				score, thrScore, latScore, allocScore, churnScore, scaleScore, stallScore = 0, 0, 0, 0, 0, 0, 0
+			}
 			dd.Scores[family][impl] = implScore{
 				Impl:            impl,
 				Family:          family,
 				Score:           score,
 				Verdict:         verdict,
+				Ranked:          ranked,
+				Peers:           len(impls),
 				Baseline:        isBaselineName(impl),
 				Integrity:       integrity,
 				Dims:            map[string]int{"throughput": thrScore, "latency": latScore, "allocations": allocScore, "churn": churnScore, "scaling": scaleScore, "stall_resilience": stallScore},
@@ -538,6 +564,7 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 	}
 	for fam, set := range map[string][]string{
 		"broadcast": broadcastFactoryNames(), "caster": casterNames(), "scatter": scatterNames(), "gather": gatherNames(), "payload": payloadNames(), "fanin": faninNames(),
+		"exchange": exchangeNames(), "barrier": barrierNames(),
 	} {
 		m := measured[fam]
 		seen := 0

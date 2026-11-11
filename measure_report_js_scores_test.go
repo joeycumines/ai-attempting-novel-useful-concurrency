@@ -21,7 +21,7 @@ function lbRows(family){
     var p99 = lm && typeof lm.p99 === 'number' ? lm.p99 : null;
     var stallOps = sm && typeof sm.ops_completed === 'number' ? sm.ops_completed : (sm ? meanOf(sm) : null);
     rows.push({
-      impl: impl, score: s.score, verdict: s.verdict, integrity: s.integrity,
+      impl: impl, score: s.score, ranked: isRanked(s), verdict: s.verdict, integrity: s.integrity,
       baseline: !!s.baseline, exposureLimited: !!s.exposure_limited, goodFit: !!s.expected_good_fit,
       thr: tm ? meanOf(tm) : null,
       ciLo: tm ? tm.ci95_low : null, ciHi: tm ? tm.ci95_high : null,
@@ -64,10 +64,12 @@ function lbRender(){
     if (r.verdict.indexOf('Strong') === 0) vclass = 'v-strong';
     else if (r.verdict.indexOf('Situational') === 0) vclass = 'v-situational';
     else if (r.verdict.indexOf('Niche') === 0) vclass = 'v-niche';
+    else if (r.verdict.indexOf('Not ranked') === 0) vclass = 'v-unranked';
     var fillHue = Math.round(8 + (r.score/100)*130); // red→green
     var scoreCell = '<div class="scorebar"><div class="fill" style="width:'+r.score+'%;background:linear-gradient(90deg,hsl('+fillHue+',65%,28%),hsl('+fillHue+',80%,55%))"></div><span style="color:#eaf6ff">'+r.score+'</span></div>';
     var kind = r.baseline ? '<span class="bl">BASELINE</span>' : '<span style="color:var(--ink3);font-size:10px">measured</span>';
     if (r.exposureLimited) kind += '<span class="xl">EXP-LIMITED</span>';
+    if (!r.ranked) scoreCell = '<span class="small" style="color:var(--ink3)">not ranked</span>';
     tr.innerHTML = '<td><span class="impl-name">'+esc(r.impl)+kind+'</span></td>'
       + '<td>'+scoreCell+'</td>'
       + '<td><span class="verdict '+vclass+'">'+esc(r.verdict)+'</span></td>'
@@ -124,7 +126,7 @@ function radarRender(){
   var sel = $('radarImpl'); clear(sel);
   ranked.forEach(function(r){
     var o = document.createElement('option');
-    o.value = r.impl; o.textContent = r.impl + '  ·  ' + r.score;
+    o.value = r.impl; o.textContent = r.impl + '  ·  ' + scoreText(r);
     sel.appendChild(o);
   });
   // shortcuts
@@ -180,7 +182,7 @@ function radarRender(){
     });
     // legend chips
     var lg = document.createElement('span');
-    lg.innerHTML = '<i style="background:'+color+'"></i>'+esc(impl)+' <b style="color:var(--ink3)">'+s.score+'</b>';
+    lg.innerHTML = '<i style="background:'+color+'"></i>'+esc(impl)+' <b style="color:var(--ink3)">'+scoreText(s)+'</b>';
     lg.onclick = function(){ radarSel = radarSel.filter(function(x){ return x !== impl; }); radarRender(); };
     if (!$('radarLegendHolder')) {
       var holder2 = document.createElement('div');
@@ -193,7 +195,8 @@ function radarRender(){
   var rowsBox = $('radarRows'); clear(rowsBox);
   var focus = radarSel.length ? sc[radarSel[0]] : null;
   if (focus) {
-    var h = '<div class="small" style="margin-bottom:4px">Breakdown — <b style="color:var(--ink)">'+esc(focus.impl)+'</b> · score <b style="color:var(--cyan)">'+focus.score+'</b></div>';
+    var h = '<div class="small" style="margin-bottom:4px">Breakdown — <b style="color:var(--ink)">'+esc(focus.impl)+'</b> · score <b style="color:var(--cyan)">'+scoreText(focus)+'</b></div>';
+    if (!isRanked(focus)) h += '<div class="small" style="margin:6px 0">This family has '+(focus.peers||'too few')+' measured implementations, too few for percentile dimensions. The axes below are empty by design; use the measurements and their confidence intervals.</div>';
     radarAxes.forEach(function(axis){
       var v = focus.dims[axis.key]||0;
       h += '<div class="srow"><div class="dim">'+esc(axis.label)+'</div><div class="strack"><div class="sfill" style="width:'+v+'%"></div></div><div class="mono" style="text-align:right">'+v+'</div></div>';

@@ -130,7 +130,7 @@ table.tbl tr:hover td{background:rgba(99,102,241,.07)}
 .scorebar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:linear-gradient(90deg,#0e7490,#22d3ee)}
 .scorebar span{position:absolute;left:8px;top:1px;font-size:11px;font-weight:700;color:#04121a;mix-blend-mode:plus-lighter;text-shadow:0 0 4px rgba(34,211,238,.8)}
 .verdict{font-size:10.5px;font-weight:700;white-space:nowrap}
-.v-strong{color:var(--green)} .v-situational{color:var(--amber)} .v-niche{color:var(--orange)} .v-avoid{color:var(--red)}
+.v-strong{color:var(--green)} .v-situational{color:var(--amber)} .v-niche{color:var(--orange)} .v-avoid{color:var(--red)} .v-unranked{color:var(--ink3)}
 .barnum{font-family:var(--mono);color:var(--ink2)}
 
 /* whiskers */

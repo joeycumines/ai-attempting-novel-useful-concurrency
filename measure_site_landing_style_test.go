@@ -187,6 +187,7 @@ table.tbl tr:hover td { background: rgba(99,102,241,.06); }
 .v-strong { color: var(--green); }
 .v-situational { color: var(--amber); }
 .v-niche { color: var(--orange); }
+.v-unranked { color: var(--ink3); }
 .v-avoid { color: var(--red); }
 
 .tag {

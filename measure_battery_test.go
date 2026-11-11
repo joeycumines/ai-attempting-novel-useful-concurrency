@@ -50,6 +50,10 @@ var measureBatteries = []measureBattery{
 	{"payload.churn", "payload", "SubscribeContext+cancel pair cost"},
 	{"fanin.merge", "fanin", "End-to-end concurrent merge cost per value at 4 producers draining into one consumer (blocking Next, per-lane FIFO exactly-once accounting)"},
 	{"fanin.batch_drain", "fanin", "Drain(32) cost against a fixture prefilled to capacity (256 values); producer-side cost excluded"},
+	{"exchange.pair", "exchange", "Wall-clock cost of one completed swap with 2 and 8 callers exchanging continuously; every completed call checked to be half of a consistent swap"},
+	{"exchange.cancel_race", "exchange", "One caller cancelled while its partner arrives: time to resolve, how often the offer was withdrawn or swapped, and one-sided outcomes counted as violations"},
+	{"barrier.send", "barrier", "Barrier send ns/op (hand to every member, wait for every acknowledgement) at 1..64 prompt members; in-order exactly-once accounting per member"},
+	{"barrier.deadline", "barrier", "One of 4 members never takes the value: how long after its deadline the send returns, and how long the next send takes once that member has left"},
 }
 
 func batteryIDs() []string {

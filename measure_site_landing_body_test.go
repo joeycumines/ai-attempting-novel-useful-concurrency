@@ -171,6 +171,8 @@ const landingPageBody = `</head>
           <div class="pill" data-family="scatter">Scatter (Queue)</div>
           <div class="pill" data-family="gather">Gather (Barrier)</div>
           <div class="pill" data-family="fanin">FanIn (Bounded Merge)</div>
+          <div class="pill" data-family="exchange">Exchange (Pairwise)</div>
+          <div class="pill" data-family="barrier">Barrier (Deadline)</div>
           <div class="pill" data-family="payload">Payload (Async)</div>
         </div>
         <div class="filter-pills" id="verdictPills">
@@ -179,6 +181,8 @@ const landingPageBody = `</head>
           <div class="pill" data-verdict="Situational">Situational</div>
           <div class="pill" data-verdict="Niche">Niche</div>
           <div class="pill" data-verdict="Avoid">Avoid</div>
+          <div class="pill" data-verdict="Do not adopt">Do Not Adopt</div>
+          <div class="pill" data-verdict="Not ranked">Not Ranked</div>
         </div>
       </div>
 

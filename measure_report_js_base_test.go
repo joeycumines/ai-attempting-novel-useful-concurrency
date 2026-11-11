@@ -75,12 +75,16 @@ function bindTip(el, htmlFn){
 function containerWidth(el){ return Math.max(el.clientWidth || 900, 320); }
 function clear(el){ while (el.firstChild) el.removeChild(el.firstChild); }
 function familyMetricName(family, kind){
-  if (kind === 'throughput') return family === 'caster' ? 'send_ns_op' : (family === 'scatter' ? 'dispatch_ns_op' : (family === 'gather' ? 'wait_ns_op' : (family === 'fanin' ? 'merge_ns_op' : 'publish_ns_op')));
+  if (kind === 'throughput') return family === 'caster' ? 'send_ns_op' : (family === 'scatter' ? 'dispatch_ns_op' : (family === 'gather' ? 'wait_ns_op' : (family === 'fanin' ? 'merge_ns_op' : (family === 'exchange' ? 'exchange_ns_op' : (family === 'barrier' ? 'send_ns_op' : 'publish_ns_op')))));
   if (kind === 'latency') return family === 'caster' ? 'send_latency_ns' : 'publish_latency_ns';
   return null;
 }
-var familyLabel = { broadcast:'Broadcast', caster:'Caster', scatter:'Scatter', gather:'Gather', payload:'Payload', fanin:'FanIn' };
-var familyOrder = ['broadcast','caster','scatter','gather','payload','fanin'];
+var familyLabel = { broadcast:'Broadcast', caster:'Caster', scatter:'Scatter', gather:'Gather', payload:'Payload', fanin:'FanIn', exchange:'Exchange', barrier:'Barrier' };
+var familyOrder = ['broadcast','caster','scatter','gather','payload','fanin','exchange','barrier'];
+/* A family below the ranking threshold has no composite score (ranked === false).
+   Reports generated before that rule existed have no such field and count as ranked. */
+function isRanked(s){ return !s || s.ranked !== false; }
+function scoreText(s){ return isRanked(s) ? String(s.score) : 'not ranked'; }
 var familiesPresent = familyOrder.filter(function(f){ return (derived.scores && derived.scores[f] && Object.keys(derived.scores[f]).length) || metrics.some(function(m){return m.family===f;}); });
 function derivedFamily(f){ return (derived.scores && derived.scores[f]) || {}; }
 function sortedImpls(f, by){
@@ -136,8 +140,9 @@ function sortedImpls(f, by){
     var best = impls.map(function(i){ return scores[i]; }).sort(function(a,b){ return b.score-a.score; })[0];
     var cov = (derived.coverage && derived.coverage[f]) || {expected: impls.length, measured: impls.length, missing: []};
     html += '<div class="finding"><span class="tag">'+esc(familyLabel[f]||f)+' · '+(cov.measured||impls.length)+'/'+(cov.expected||impls.length)+' measured</span>'
-      + '<h3>'+esc(best.impl)+'</h3>'
-      + '<p>Adoptability <b style="color:var(--cyan)">'+best.score+'</b> — '+esc(best.verdict)+'. '
+      + (isRanked(best)
+          ? '<h3>'+esc(best.impl)+'</h3><p>Adoptability <b style="color:var(--cyan)">'+best.score+'</b> — '+esc(best.verdict)+'. '
+          : '<h3>Not ranked</h3><p>'+impls.length+' implementations measured: too few for a percentile score. Compare their measurements and confidence intervals. ')
       + (cov.missing && cov.missing.length ? cov.missing.length+' expected impl(s) skipped (see skip list).' : 'Full family coverage.')
       + '</p></div>';
   });
@@ -145,11 +150,11 @@ function sortedImpls(f, by){
 
   // Verdict distribution histogram
   var all = [];
-  familiesPresent.forEach(function(f){ Object.keys(derivedFamily(f)).forEach(function(i){ all.push(derivedFamily(f)[i].score); }); });
+  familiesPresent.forEach(function(f){ Object.keys(derivedFamily(f)).forEach(function(i){ if (isRanked(derivedFamily(f)[i])) all.push(derivedFamily(f)[i].score); }); });
   var buckets = new Array(10).fill(0);
   all.forEach(function(s){ buckets[Math.min(9, Math.floor(s/10))]++; });
   var maxB = Math.max.apply(null, buckets.concat([1]));
-  html += '<div class="card pad" style="margin-top:16px"><h4 style="font-size:12px;color:var(--ink2);margin-bottom:10px">Adoptability score distribution (all families)</h4><div class="histo">';
+  html += '<div class="card pad" style="margin-top:16px"><h4 style="font-size:12px;color:var(--ink2);margin-bottom:10px">Adoptability score distribution (ranked families)</h4><div class="histo">';
   buckets.forEach(function(b){ html += '<div style="height:'+Math.round(100*b/maxB)+'%" title="'+b+' impls"></div>'; });
   html += '</div><div class="histo-x"><span>0</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>60</span><span>70</span><span>80</span><span>90</span><span>100</span></div></div>';
   $('overview').innerHTML = html;

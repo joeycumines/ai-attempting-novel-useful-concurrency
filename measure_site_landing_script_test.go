@@ -35,16 +35,18 @@ const landingPageScript = `<script>
 
     var html = '';
     filtered.forEach(function(r){
+      var ranked = r.score !== '' && r.score != null;
       var s = parseInt(r.score, 10) || 0;
       var vClass = 'v-avoid';
       if (r.verdict.indexOf('Strong') !== -1) vClass = 'v-strong';
       else if (r.verdict.indexOf('Situational') !== -1) vClass = 'v-situational';
       else if (r.verdict.indexOf('Niche') !== -1) vClass = 'v-niche';
+      else if (r.verdict.indexOf('Not ranked') !== -1) vClass = 'v-unranked';
 
       html += '<tr>' +
         '<td><span class="tag">' + esc(r.family) + '</span></td>' +
         '<td style="font-weight:600;font-family:var(--mono);font-size:12px">' + esc(r.impl) + '</td>' +
-        '<td><div class="scorebar"><div class="fill" style="width:' + s + '%"></div><span>' + s + '</span></div></td>' +
+        '<td>' + (ranked ? '<div class="scorebar"><div class="fill" style="width:' + s + '%"></div><span>' + s + '</span></div>' : '<span style="color:var(--ink3)">not ranked</span>') + '</td>' +
         '<td><span class="verdict ' + vClass + '">' + esc(r.verdict) + '</span></td>' +
         '<td>' + (r.throughput || '-') + '</td>' +
         '<td>' + (r.latency || '-') + '</td>' +
