@@ -55,6 +55,8 @@ Commands:
   report         Generate the interactive HTML report from results.
   site           Build landing page (index.html) and wire backlinks across all reports.
   index          Write per-run manifests (results-NN-00-manifest.json) for the flat tree.
+  gates          Record what 'make verify VERIFY_LOG=<dir>' reported (results-NN-06-gates.json).
+  evaluate       Generate the run's evaluation (results-NN-07-evaluation.md) from its own files.
   extract        Extract the source files embedded in a model response (NN-*.md).
   help           Show this help.
 
@@ -67,6 +69,8 @@ Common flags:
           --registry <file>   --csv-metrics <file>   --csv-scores <file>
   verify: --in  results-NN-01-results.jsonl  (default: newest results-*-01-results.jsonl)
   index:  --dir .                            (rewrites every results-NN-00-manifest.json)
+  gates:  --log <dir>  --out results-NN-06-gates.json
+  evaluate: --in results-NN-01-results.jsonl  (registry, gates and output default to the run group)
   extract: --in NN-response.md  --out <scratch dir>   [--list]
 
 Everything after the bigbuff-measure sentinel is the subcommand argv; all
@@ -94,6 +98,10 @@ func runMeasureCommand(args []string) int {
 		return cmdMeasureSite(args[1:])
 	case "index":
 		return cmdMeasureIndex(args[1:])
+	case "gates":
+		return cmdMeasureGates(args[1:])
+	case "evaluate":
+		return cmdMeasureEvaluate(args[1:])
 	case "extract":
 		return cmdMeasureExtract(args[1:])
 	case "help", "-h", "--help":

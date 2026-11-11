@@ -229,6 +229,11 @@ var harnessRunnables = map[string]string{
 	"TestUnrankedFamilyStillReportsIntegrityFailure": "measurement report tooling",
 	"TestScoreUsesOnlyDimensionsWithData":            "measurement report tooling",
 	"TestExchangePairingViolations":                  "measurement battery tooling",
+	"TestGateLogParsing":                             "measurement gates tooling",
+	"TestEvaluationIsGeneratedFromTheRecords":        "measurement evaluation tooling",
+	"TestTrackerFilesResolve":                        "site tooling",
+	"TestLandingPageCoversEveryRunAndReport":         "site tooling",
+	"TestCommittedLandingPageIsCurrent":              "site tooling",
 	"TestSiteWiringIsIdempotent":                     "site tooling",
 	"TestPagesMarkdownLiquidDelimitersAreEscaped":    "site tooling",
 }

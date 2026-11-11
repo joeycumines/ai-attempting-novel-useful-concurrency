@@ -11,7 +11,7 @@ package bigbuff
 //   - GitHub repository README (README.md / https://github.com/joeycumines/ai-attempting-novel-useful-concurrency)
 //   - All measurement reports (results-*-03-report.html)
 //   - All architectural/empirical reports (report-*.html)
-//   - Manifests, CSVs, JSONL datasets, and 58 model responses.
+//   - Manifests, CSVs, JSONL datasets, and every model response.
 
 import (
 	"encoding/csv"
@@ -47,9 +47,11 @@ type siteResponseMeta struct {
 	PromptType string `json:"prompt_type"`
 	Impls      string `json:"impls"`
 	Files      string `json:"files"`
-	State      string `json:"state"`
-	ChatLink   string `json:"chat_link"`
-	Size       int64  `json:"size"`
+	// FileList is Files resolved to the files that exist (see trackerFiles).
+	FileList []string `json:"file_list"`
+	State    string   `json:"state"`
+	ChatLink string   `json:"chat_link"`
+	Size     int64    `json:"size"`
 }
 
 type siteScoreRow struct {
@@ -101,13 +103,24 @@ func cmdMeasureSite(args []string) int {
 		return 1
 	}
 
+	// The manifests record the SHA-256 of the reports just rewritten, and the
+	// landing page is read from the manifests, so the index runs between the
+	// two. It is idempotent; a run that fails verification is reported on
+	// the page and fails this command after the page is written.
+	indexRC := cmdMeasureIndex([]string{"--dir", *dir})
+
 	cat, err := loadSiteCatalogData(*dir, reports)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "site: load catalog: %v\n", err)
 		return 1
 	}
+	facts, err := loadSiteFacts(*dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "site: load facts: %v\n", err)
+		return 1
+	}
 
-	htmlContent := renderLandingPage(cat)
+	htmlContent := renderLandingPage(cat, facts)
 	indexPath := filepath.Join(*dir, "index.html")
 	if err := os.WriteFile(indexPath, []byte(htmlContent), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "site: write index.html: %v\n", err)
@@ -116,7 +129,7 @@ func cmdMeasureSite(args []string) int {
 
 	fmt.Printf("bigbuff-measure site: wrote %s (%d bytes, %d reports, %d responses, %d scores)\n",
 		indexPath, len(htmlContent), len(cat.Reports), len(cat.Responses), len(cat.Scores))
-	return 0
+	return indexRC
 }
 
 func discoverSiteReports(dir string) ([]siteReportMeta, error) {
@@ -227,7 +240,7 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 		"20": {"EpochTape, ChanRelay", "epochtape.go, chanrelay.go", "Ref-counted epoch log tape with replay cursors"},
 	}
 
-	// 2. Scan response markdown files (03..58)
+	// 2. Scan response markdown files (03 onwards)
 	matches, _ := filepath.Glob(filepath.Join(dir, "[0-9][0-9]-*.md"))
 	sort.Strings(matches)
 	for _, path := range matches {
@@ -286,6 +299,11 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 			}
 		}
 
+		// Only files that exist are linked; the cell's shorthand is expanded.
+		fileList, _ := trackerFiles(dir, ext[1])
+		if fileList == nil {
+			fileList = []string{}
+		}
 		cat.Responses = append(cat.Responses, siteResponseMeta{
 			Num:        num,
 			Filename:   base,
@@ -294,6 +312,7 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 			PromptType: promptType,
 			Impls:      ext[0],
 			Files:      ext[1],
+			FileList:   fileList,
 			State:      ext[2],
 			ChatLink:   chatLinks[num],
 			Size:       info.Size(),
@@ -348,12 +367,12 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 	return cat, nil
 }
 
-func renderLandingPage(cat siteCatalog) string {
+func renderLandingPage(cat siteCatalog, facts siteFacts) string {
 	respJSON, _ := json.Marshal(cat.Responses)
 	scoresJSON, _ := json.Marshal(cat.Scores)
 	reportsJSON, _ := json.Marshal(cat.Reports)
 
-	html := landingPageTemplate
+	html := renderSiteFacts(landingPageTemplate, cat, facts)
 	html = strings.ReplaceAll(html, "__GITHUB_REPO_URL__", githubRepoURL)
 	html = strings.ReplaceAll(html, "__RESPONSES_JSON__", string(respJSON))
 	html = strings.ReplaceAll(html, "__SCORES_JSON__", string(scoresJSON))
@@ -368,7 +387,7 @@ const landingPageHead = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>AI Attempting Novel Useful Concurrency in Go · bigbuff</title>
-<meta name="description" content="Empirical benchmark, architectural analysis, and verification of 58+ AI model outputs implementing novel synchronous Go channel concurrency patterns.">
+<meta name="description" content="Measurements, tests and written analysis of __N_RESPONSES__ AI model responses implementing novel synchronous Go channel concurrency primitives.">
 <style>
 `
 

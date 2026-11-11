@@ -10,7 +10,8 @@
 #
 #   rr  run sequence (00 = documentation group, 01.. = runs)
 #   ss  slot within the run (00 = manifest, 01 = JSONL results, 02 = registry
-#       dump, 03 = HTML report, 04 = metrics CSV, 05 = scores CSV)
+#       dump, 03 = HTML report, 04 = metrics CSV, 05 = scores CSV, 06 = gates
+#       record, 07 = generated evaluation)
 #
 # Each run is self-describing: results-NN-00-manifest.json carries the full
 # environment fingerprint (machine, OS, Go toolchain, git commit, profile,
@@ -30,6 +31,9 @@
 #   MEASURE_SEED         optional seed override forwarded to the harness
 #   MEASURE_TIMEOUT      go test -timeout for measurement runs (default: $(GO_TEST_TIMEOUT))
 #   MEASURE_EXTRA_FLAGS  additional flags appended to the harness invocation
+#   MEASURE_GATES_LOG    directory `make measure-gates` has `make verify` log to
+#                        (default: $${TMPDIR:-/tmp}/bigbuff-verify-log; it must be
+#                        outside the repository, or the tree counts as dirty)
 #
 # Everything is overridable on the command line, e.g.
 #   make measure MEASURE_PROFILE=full MEASURE_TIMEOUT=180m MEASURE_RUN=3
@@ -43,6 +47,7 @@ MEASURE_SEED ?=
 MEASURE_TIMEOUT ?= $(GO_TEST_TIMEOUT)
 MEASURE_EXTRA_FLAGS ?=
 MEASURE_SEED_ARG := $(if $(MEASURE_SEED),--seed $(MEASURE_SEED),)
+MEASURE_GATES_LOG ?= $(or $(TMPDIR),/tmp)/bigbuff-verify-log
 
 # Next run sequence: max existing rr prefix + 1 (or 1 when none exist).
 MEASURE_RUN ?= auto
@@ -107,7 +112,23 @@ measure.pipeline: ## New run in group $(MEASURE_NN): measure -> registry -> repo
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) run --profile $(MEASURE_PROFILE) --out $(MEASURE_JSONL) $(MEASURE_SEED_ARG) $(MEASURE_EXTRA_FLAGS)
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) dump-registry --out $(MEASURE_REGISTRY)
 	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) report --in $(MEASURE_JSONL) --csv-metrics $(MEASURE_PREFIX)-04-metrics_wide.csv --csv-scores $(MEASURE_PREFIX)-05-scores.csv
+	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) evaluate --in $(MEASURE_JSONL)
 	$(MAKE) site.build
+
+.PHONY: measure.evaluate
+measure.evaluate: ## Regenerate the evaluation (slot 07) of the newest run (or MEASURE_IN=<file>) from its own files.
+	cd $(PROJECT_ROOT) && $(MEASURE_HARNESS) evaluate $(if $(MEASURE_IN),--in $(MEASURE_IN),)
+	$(MAKE) site.build
+
+# The gates are recorded whether or not they pass: a failing leg is written
+# into the record, and this target then fails.
+.PHONY: measure.gates
+measure.gates: SHELL := bash
+measure.gates: ## Run `make verify`, record what it reported as slot 06 of the newest run, and regenerate that run's evaluation.
+	rm -rf $(MEASURE_GATES_LOG) && mkdir -p $(MEASURE_GATES_LOG)
+	cd $(PROJECT_ROOT) && { $(MAKE) --keep-going verify.all VERIFY_LOG=$(MEASURE_GATES_LOG) || true; } && \
+	  $(MEASURE_HARNESS) gates --log $(MEASURE_GATES_LOG) --out $(REPORT_STEM)-06-gates.json; rc=$$?; \
+	  $(MEASURE_HARNESS) evaluate --in $(REPORT_IN) && $(MAKE) site.build && exit $$rc
 
 .PHONY: measure.ci
 measure.ci: ## CI gate: quick profile, verified. Fails the build on any failure or missing coverage.

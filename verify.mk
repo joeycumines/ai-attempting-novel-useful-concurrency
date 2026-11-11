@@ -86,15 +86,24 @@ verify.vet: ## go vet for the default build, the race build, and each of VERIFY_
 
 .PHONY: verify.test
 verify.test: ## Full test suite at each GOMAXPROCS in VERIFY_CPUS.
-	@$(VERIFY_SH) go test -count=$(VERIFY_COUNT) -cpu $(VERIFY_CPUS) -timeout $(VERIFY_TIMEOUT) ./... $(call verify_tee,test)
+	@$(VERIFY_SH) { \
+	  echo '== go test -count=$(VERIFY_COUNT) -cpu $(VERIFY_CPUS) ./...'; \
+	  go test -count=$(VERIFY_COUNT) -cpu $(VERIFY_CPUS) -timeout $(VERIFY_TIMEOUT) ./...; \
+	} $(call verify_tee,test)
 
 .PHONY: verify.race
 verify.race: ## Full test suite under the race detector.
-	@$(VERIFY_SH) go test -race -count=$(VERIFY_COUNT) -timeout $(VERIFY_TIMEOUT) ./... $(call verify_tee,race)
+	@$(VERIFY_SH) { \
+	  echo '== go test -race -count=$(VERIFY_COUNT) ./...'; \
+	  go test -race -count=$(VERIFY_COUNT) -timeout $(VERIFY_TIMEOUT) ./...; \
+	} $(call verify_tee,race)
 
 .PHONY: verify.alloc
 verify.alloc: ## Allocation assertions (default build), verbose.
-	@$(VERIFY_SH) go test -count=1 -run 'Alloc' -v -timeout $(VERIFY_TIMEOUT) ./... $(call verify_tee,alloc)
+	@$(VERIFY_SH) { \
+	  echo "== go test -count=1 -run Alloc -v ./..."; \
+	  go test -count=1 -run 'Alloc' -v -timeout $(VERIFY_TIMEOUT) ./...; \
+	} $(call verify_tee,alloc)
 
 .PHONY: verify.fuzz
 verify.fuzz: ## Fuzz every target matching VERIFY_FUZZ for VERIFY_FUZZTIME each.
