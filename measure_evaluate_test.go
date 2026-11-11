@@ -50,6 +50,7 @@ type gatesRecord struct {
 	Commit   string           `json:"commit"`
 	Dirty    bool             `json:"dirty_tree"`
 	Recorded string           `json:"recorded"`
+	Stamp    string           `json:"stamp"`
 	Go       string           `json:"go"`
 	GOOS     string           `json:"goos"`
 	GOARCH   string           `json:"goarch"`
@@ -162,8 +163,29 @@ func readGateLogs(dir string) gatesRecord {
 		Go:       runtime.Version(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, NumCPU: runtime.NumCPU(),
 		Legs: []gateLeg{}, Fuzz: []gateFuzzTarget{},
 	}
-	if out, err := exec.Command("git", "status", "--porcelain").Output(); err != nil || len(strings.TrimSpace(string(out))) > 0 {
-		rec.Dirty = true
+	// The stamp verify.all writes before its first leg says which tree the
+	// gates ran on. Without it the tree is read now, and the record says so.
+	if raw, err := os.ReadFile(filepath.Join(dir, "stamp.txt")); err == nil {
+		rec.Stamp = "written by verify.all before its first leg"
+		for _, line := range strings.Split(string(raw), "\n") {
+			key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+			if !ok {
+				continue
+			}
+			switch key {
+			case "commit":
+				rec.Commit = value
+			case "dirty":
+				rec.Dirty = value != "0"
+			case "started":
+				rec.Recorded = value
+			}
+		}
+	} else {
+		rec.Stamp = "none: commit and tree state were read when this record was written, after the gates ran"
+		if out, err := exec.Command("git", "status", "--porcelain").Output(); err != nil || len(strings.TrimSpace(string(out))) > 0 {
+			rec.Dirty = true
+		}
 	}
 	for _, leg := range gateLegOrder {
 		raw, err := os.ReadFile(filepath.Join(dir, leg+".log"))
@@ -466,6 +488,9 @@ func renderEvaluation(in evaluationInput) string {
 		fmt.Fprintf(&b, "`make verify` at commit `%s`, %s, recorded %s on %s %s/%s with %d logical CPUs.", g.Commit, tree, g.Recorded, g.Go, g.GOOS, g.GOARCH, g.NumCPU)
 		if run := evalStr(meta, "commit"); run != g.Commit {
 			fmt.Fprintf(&b, " The measurements were taken at commit `%s`, which is a different commit.", run)
+		}
+		if strings.HasPrefix(g.Stamp, "none") {
+			b.WriteString(" The logs carried no stamp, so the commit and tree state above were read after the gates ran.")
 		}
 		b.WriteString("\n\n")
 		rows = rows[:0]

@@ -253,6 +253,48 @@ function renderCoverage(){
   });
 }
 
+/* ── Runnables per scenario ── */
+// Every top-level Test, Benchmark and Fuzz function is in the registry dump
+// with a class: "case" runs every implementation attached to a scenario and
+// so compares them; "unit" tests one implementation's own contract and bears
+// on the scenarios that implementation is attached to; "harness" is adapter
+// conformance or the tooling testing itself.
+function renderRunnables(){
+  var table = $('runTable'), summary = $('runSummary');
+  if (!table || !summary) return;
+  clear(table);
+  var runs = REG.runnables;
+  if (!runs || !runs.length) {
+    summary.textContent = 'This registry dump predates the runnable registry, so it does not say which tests bear on which scenario.';
+    return;
+  }
+  var by = {}, classes = {case:0, unit:0, harness:0};
+  runs.forEach(function(r){
+    classes[r.class] = (classes[r.class]||0) + 1;
+    (r.scenarios||[]).forEach(function(id){
+      var e = by[id] || (by[id] = {caseNames:{}, unit:0, impls:{}});
+      if (r.class === 'case') e.caseNames[r.name] = true;
+      if (r.class === 'unit') { e.unit++; (r.implementations||[]).forEach(function(i){ e.impls[i] = true; }); }
+    });
+  });
+  var casesBy = {};
+  (REG.cases||[]).forEach(function(c){ casesBy[c.scenario] = (casesBy[c.scenario]||0) + 1; });
+  var attachedBy = {};
+  (REG.attachments||[]).forEach(function(a){ (attachedBy[a.scenario] || (attachedBy[a.scenario] = {}))[a.impl] = true; });
+  summary.textContent = runs.length + ' top-level runnables: ' + (classes.case||0) + ' run registered cases across every attached implementation, '
+    + (classes.unit||0) + ' test one implementation each, ' + (classes.harness||0) + ' are adapter conformance or tooling. '
+    + 'A unit test shows that one implementation holds where it is attached; only the case runnables compare implementations.';
+  var h = '<thead><tr><th>scenario</th><th>family</th><th>attached</th><th>registered cases</th><th>case runnables</th><th>unit runnables</th><th>attached implementations with unit tests</th></tr></thead><tbody>';
+  (REG.scenarios||[]).slice().sort(function(a,b){ return a.kind === b.kind ? (a.id < b.id ? -1 : 1) : (a.kind < b.kind ? -1 : 1); }).forEach(function(s){
+    var e = by[s.id] || {caseNames:{}, unit:0, impls:{}};
+    var attached = Object.keys(attachedBy[s.id]||{});
+    var withUnit = attached.filter(function(i){ return e.impls[i]; }).length;
+    h += '<tr><td class="mono">'+esc(s.id)+'</td><td>'+esc(s.kind)+'</td><td class="barnum">'+attached.length+'</td><td class="barnum">'+(casesBy[s.id]||0)+'</td>'
+      + '<td class="mono">'+esc(Object.keys(e.caseNames).sort().join(', ') || 'none')+'</td><td class="barnum">'+e.unit+'</td><td class="barnum">'+withUnit+' of '+attached.length+'</td></tr>';
+  });
+  table.innerHTML = h + '</tbody>';
+}
+
 /* ── Data & exports ── */
 function downloadBlob(name, content, mime){
   var blob = new Blob([content], {type: mime || 'application/octet-stream'});
@@ -362,7 +404,7 @@ function initNav(){
   }
 }
 function renderAllCharts(){
-  renderScaling(); lbRender(); radarRender(); renderLatency(); renderMemory(); renderChurn(); pathoRenderCards(); renderCoverage();
+  renderScaling(); lbRender(); radarRender(); renderLatency(); renderMemory(); renderChurn(); pathoRenderCards(); renderCoverage(); renderRunnables();
 }
 pathoFillSelects();
 initNav();

@@ -219,27 +219,6 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 		}
 	}
 
-	earlyMap := map[string][3]string{
-		"03": {"ChanLatest", "chanlatest.go", "Slab-based latest-value broadcast with ring notification"},
-		"04": {"ChanFeed", "chanfeed.go", "Dynamic subscriber slice with lockless send fast-path"},
-		"05": {"ChanGatherer", "changatherer.go", "Signal gathering barrier & broadcast with O(1) state"},
-		"06": {"ChanCasterV2_06meta, ChanPubSubV2_06meta, GenCaster", "chancaster_06_meta.go, chanpubsub_06_meta.go, gencaster.go", "Generational barrier pub-sub & lock-free fast-path caster"},
-		"07": {"ChanBeacon, ChanRotor", "chanbeacon.go, chanrotor.go", "State beacon notification & round-robin ring dispatcher"},
-		"08": {"RingBeacon, ReliableBeacon, Beacon", "ring_beacon.go, reliable_beacon.go, beacon.go", "Lock-free atomic generation beacons with loss tracking"},
-		"09": {"ChanCaster09Gemini, ChanPubSub09Gemini, EpochCasterGemini", "chancaster_09_gemini.go, chanpubsub_09_gemini.go, epochcaster_09_gemini.go", "Epoch-based generational caster and lock-step pub-sub"},
-		"10": {"ChanPubSub10Gemini, EpochTape", "chanpubsub_10_gemini.go, epochtape.go", "Generational ring buffer tape & synchronous pub-sub"},
-		"11": {"ChanCaster11Meta, EpochPubSub", "chancaster_11_meta.go, epochpubsub_11_meta.go", "Epoch-fenced atomic publication barrier & zero-allocation caster"},
-		"12": {"ChanFanout, ChanRelay", "chanfanout.go, chanrelay.go", "Asynchronous ring buffer fan-out & buffered relay"},
-		"13": {"EpochCaster13Crouton", "epochcaster_13_crouton.go", "Ref-counted epoch caster over shared sequence ring"},
-		"14": {"ChanCaster14Xing, ChanPubSub14Xing, RingFanOut14Xing", "chancaster_14_xing.go, chanpubsub_14_xing.go, ringfanout_14_xing.go", "High-throughput ring fanout & rendezvous caster with fast-path CAS"},
-		"15": {"ChanCaster15Nemotron, ChanHub", "chancaster_15_nemotron.go, chanhub.go", "Cursor-based ring hub & low-overhead registration caster"},
-		"16": {"ChanPubSub16DeepSeek", "chanpubsub_16_deepseek.go", "Two-tier completion barrier pub-sub with withdrawal protocol"},
-		"17": {"ChanCaster17FastPath, ChanCaster17Pumped, ChanPubSub17Gemini", "chancaster_17_gemini.go, chanpubsub_17_gemini.go", "Pumped ring caster & split-state pub-sub barrier"},
-		"18": {"RingPubSub", "ringpubsub.go", "Bounded lossless/lossy ring buffer pub-sub with subscriber cursors"},
-		"19": {"ChanHub, PhasePubSub, RelayPubSub", "chanhub.go, phasepubsub.go, relaypubsub.go", "Phase-alternating transfer pub-sub & lockless hub"},
-		"20": {"EpochTape, ChanRelay", "epochtape.go, chanrelay.go", "Ref-counted epoch log tape with replay cursors"},
-	}
-
 	// 2. Scan response markdown files (03 onwards)
 	matches, _ := filepath.Glob(filepath.Join(dir, "[0-9][0-9]-*.md"))
 	sort.Strings(matches)
@@ -290,13 +269,11 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 			provider = "ChatJimmy"
 		}
 
+		// The tracker is the only source. A response it does not list is
+		// shown as exactly that; TestTrackerCoversEveryResponse fails on one.
 		ext, ok := extractionMap[num]
 		if !ok {
-			if early, okEarly := earlyMap[num]; okEarly {
-				ext = early
-			} else {
-				ext = [3]string{"Extracted", "-", "Desk-checked / verified"}
-			}
+			ext = [3]string{"", "", "not listed in the tracker (01-readme.md)"}
 		}
 
 		// Only files that exist are linked; the cell's shorthand is expanded.
@@ -370,13 +347,11 @@ func loadSiteCatalogData(dir string, reports []siteReportMeta) (siteCatalog, err
 func renderLandingPage(cat siteCatalog, facts siteFacts) string {
 	respJSON, _ := json.Marshal(cat.Responses)
 	scoresJSON, _ := json.Marshal(cat.Scores)
-	reportsJSON, _ := json.Marshal(cat.Reports)
 
 	html := renderSiteFacts(landingPageTemplate, cat, facts)
 	html = strings.ReplaceAll(html, "__GITHUB_REPO_URL__", githubRepoURL)
 	html = strings.ReplaceAll(html, "__RESPONSES_JSON__", string(respJSON))
 	html = strings.ReplaceAll(html, "__SCORES_JSON__", string(scoresJSON))
-	html = strings.ReplaceAll(html, "__REPORTS_JSON__", string(reportsJSON))
 	return html
 }
 

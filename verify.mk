@@ -42,7 +42,9 @@
 #   VERIFY_BENCH      regexp selecting benchmarks              (default: .)
 #   VERIFY_BENCHTIME  -benchtime                               (default: 200x)
 #   VERIFY_ARCHES     extra GOARCH values to vet               (default: arm64 386)
-#   VERIFY_LOG        if set, a directory; each leg also writes <leg>.log there
+#   VERIFY_LOG        if set, a directory; each leg also writes <leg>.log there,
+#                     and verify.all writes stamp.txt (commit, dirty-file
+#                     count, start time) first. Keep it outside the repository.
 #   VERIFY_ARM64_EXEC emulator used to run arm64 test binaries (default: qemu-aarch64 if on PATH)
 #   VERIFY_ARM64_RUN  -run regexp for verify.arm64             (default: 64-GLM and 72-Gemini tests)
 #
@@ -139,5 +141,18 @@ verify.arm64: ## Execute the tests of the arm64-assembly implementations as an a
 	  echo 'verify.arm64: ok'; \
 	} $(call verify_tee,arm64)
 
+# The stamp records which tree the gates ran on, at the moment they start, so
+# that a record made from the logs later (bigbuff-measure gates) cannot
+# attribute them to a different commit.
+.PHONY: verify.stamp
+verify.stamp:
+	@$(VERIFY_SH) $(if $(VERIFY_LOG),{ \
+	  echo "commit=$$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"; \
+	  echo "dirty=$$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"; \
+	  echo "started=$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+	  echo "fuzztime=$(VERIFY_FUZZTIME)"; \
+	  echo "cpus=$(VERIFY_CPUS)"; \
+	} > $(VERIFY_LOG)/stamp.txt,true)
+
 .PHONY: verify.all
-verify.all: verify.vet verify.test verify.race verify.alloc verify.fuzz ## Every correctness gate (not benchmarks).
+verify.all: verify.stamp verify.vet verify.test verify.race verify.alloc verify.fuzz ## Every correctness gate (not benchmarks).

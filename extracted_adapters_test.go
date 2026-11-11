@@ -263,12 +263,6 @@ func (a *chanMultiCast34Adapter) Name() string       { return "ChanMultiCast34Li
 func (a *chanMultiCast34Adapter) Publish(v int) int  { return a.x.Send(v) }
 func (a *chanMultiCast34Adapter) Close()             { a.x.Close() }
 func (a *chanMultiCast34Adapter) IsCoalescing() bool { return false }
-
-// SkipStandardConcurrentChurn marks the source's known architectural limit:
-// Send holds the reader lock while waiting, whereas membership removal needs
-// the writer lock. The generic churn stress intentionally avoids that deadlock
-// path; focused tests exercise only the documented bounded exposure.
-func (a *chanMultiCast34Adapter) SkipStandardConcurrentChurn() bool { return true }
 func (a *chanMultiCast34Adapter) Subscribe() BroadcastSubscriber {
 	return &chanMultiCast34Sub{a: a, ch: a.x.Subscribe()}
 }
@@ -298,7 +292,7 @@ func (s *chanMultiCast34Sub) TryReceive() (int, bool) {
 func (s *chanMultiCast34Sub) Unsubscribe() {
 	if !s.done {
 		s.done = true
-		s.a.x.Unsubscribe()
+		s.a.x.UnsubscribeChan(s.ch)
 	}
 }
 
@@ -550,7 +544,7 @@ func extractedBroadcastAttachments() []Attachment {
 		att("bounded-ring-lossy-detectable", "Arcadia (30-dots3)", "Bounded atomic-pointer ring with independent subscriber cursors; late/slow readers may skip overwritten values.", true),
 		att("synchronous-handoff-no-barrier", "Vecast (31-Nemotron)", "Sharded subscriber-vector fan-out with per-subscriber channel handoff and a slow-receiver phase; a withdrawing subscriber releases a Send that is waiting for it.", true),
 		att("buffered-lossless-backpressured", "ChanMulticast33North (33-North)", "Single distributor relays to private one-value channels: lossless and ordered, one value of slack per subscriber, a stalled subscriber stalls the publisher.", true),
-		attX("synchronous-handoff-no-barrier", "ChanMultiCast34Lightning (34-Lightning)", "RWMutex-protected subscriber snapshot and synchronous fan-out.", true, "Exposure limited: exercise only deterministic LIFO Unsubscribe after the steady publish facet. This design has no per-handle unsubscribe identity and no subscriber-channel close; do not exercise arbitrary concurrent removal or lifecycle closure of subscriber channels."),
+		att("synchronous-handoff-no-barrier", "ChanMultiCast34Lightning (34-Lightning)", "RWMutex-protected membership with a snapshot taken per Send and synchronous fan-out; a subscriber that leaves releases a Send that is waiting for it.", true),
 		att("synchronous-handoff-no-barrier", "ShardCaster36Meta (36-MetaAI)", "Immutable subscriber snapshots keep membership churn off the Send path; each subscriber has an unbuffered rendezvous channel and a teardown signal.", true),
 		att("latest-value-conflating-watch", "SelectCaster37Gemini (37-Gemini)", "Per-subscriber selectable buffered channels with sliding overflow preserve the newest state without blocking Send.", true),
 		att("latest-value-conflating-watch", "ShardCast39Mistral/latest (39-Mistral)", "Latest policy evicts stale buffered values for each subscriber and keeps Send nonblocking.", true),

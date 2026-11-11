@@ -1,5 +1,14 @@
 //go:build !race && arm64
 
+// How far this file has been exercised: it assembles and vets
+// (GOARCH=arm64 go vet), and each routine's machine code was executed under
+// an ARMv8 emulator (Unicorn 2.1.4) against a reference written in a
+// high-level language: 200 scan cases and 544 find cases agree. It has not
+// run on arm64 hardware, and the test binary has not run as an arm64
+// process: `make verify-arm64` does that and needs an arm64 host or
+// qemu-aarch64. The LDAR acquire loads were executed single-threaded, which
+// shows nothing about their ordering under concurrency.
+
 #include "textflag.h"
 
 // func asmScanAndPopcnt72Gemini(dst *uint64, src *uint64, n int) int

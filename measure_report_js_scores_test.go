@@ -135,9 +135,15 @@ function radarRender(){
   mk('Top overall', function(){ radarSel = ranked.length ? [ranked[0].impl] : []; });
   var blb = ranked.filter(function(r){ return r.baseline; });
   if (blb.length) mk('Best baseline', function(){ radarSel = [blb[0].impl]; });
-  var flat = ranked.slice().sort(function(a,b){ return (b.dims.scaling||0)-(a.dims.scaling||0); })[0];
+  // A shortcut picks among implementations that were scored on that
+  // dimension; one with no data for it is not a candidate.
+  var bestOn = function(key){
+    return ranked.filter(function(r){ return isRanked(r) && !dimMissing(r, key); })
+      .sort(function(a,b){ return (b.dims[key]||0)-(a.dims[key]||0); })[0];
+  };
+  var flat = bestOn('scaling');
   if (flat) mk('Flattest curve', function(){ radarSel = [flat.impl]; });
-  var stall = ranked.slice().sort(function(a,b){ return (b.dims.stall_resilience||0)-(a.dims.stall_resilience||0); })[0];
+  var stall = bestOn('stall_resilience');
   if (stall) mk('Stall-proof', function(){ radarSel = [stall.impl]; });
   mk('Clear', function(){ radarSel = []; });
 
@@ -153,7 +159,10 @@ function radarRender(){
     var d = '';
     radarAxes.forEach(function(_, i){ var p = pt(i, frac); d += (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ' '; });
     d += 'Z';
-    svg('polygon', {points: d, fill:'none', stroke:'#26315f', 'stroke-width': frac===1 ? 1.4 : 1, 'stroke-dasharray': frac===1 ? '' : '3 5'}, svgEl);
+    // The outline is path data (M/L/Z), so it is a path. It used to be given
+    // to a polygon's points attribute, which takes bare numbers: browsers
+    // reject that and drew neither the rings nor the shapes.
+    svg('path', {d: d, fill:'none', stroke:'#26315f', 'stroke-width': frac===1 ? 1.4 : 1, 'stroke-dasharray': frac===1 ? '' : '3 5'}, svgEl);
   });
   radarAxes.forEach(function(axis, i){
     var p = pt(i, 1);
@@ -165,21 +174,36 @@ function radarRender(){
   radarSel.forEach(function(impl, si){
     var s = sc[impl]; if (!s) return;
     var color = palette(si + 3);
-    var d = '';
-    radarAxes.forEach(function(axis, i){
-      var frac = (s.dims[axis.key]||0)/100;
-      var p = pt(i, Math.max(0.02, frac));
-      d += (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ' ';
-    });
-    d += 'Z';
-    var poly = svg('polygon', {points:d, fill:color, 'fill-opacity':0.16, stroke:color, 'stroke-width':2.2, 'stroke-linejoin':'round'}, svgEl);
-    if (s.baseline) poly.setAttribute('stroke-dasharray','7 5');
-    radarAxes.forEach(function(axis, i){
-      var frac = (s.dims[axis.key]||0)/100;
-      var p = pt(i, Math.max(0.02, frac));
-      var c = svg('circle', {cx:p[0], cy:p[1], r:3.4, fill:color}, svgEl);
-      bindTip(c, function(){ return '<div class="tt">'+esc(impl)+'</div><div>'+esc(axis.label)+': <b>'+(s.dims[axis.key]||0)+'</b></div>'; });
-    });
+    // An unranked implementation has no dimension scores, so it gets no
+    // shape. A dimension with no data is not a zero: the shape is drawn
+    // through the axes that have data, and the missing axis gets a hollow
+    // marker on the rim, where it cannot be read as a score.
+    if (isRanked(s)) {
+      var d = '';
+      var first = true;
+      radarAxes.forEach(function(axis, i){
+        if (dimMissing(s, axis.key)) return;
+        var p = pt(i, Math.max(0.02, (s.dims[axis.key]||0)/100));
+        d += (first ? 'M' : 'L') + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ' ';
+        first = false;
+      });
+      if (!first) {
+        d += 'Z';
+        var poly = svg('path', {d:d, class:'radar-shape', fill:color, 'fill-opacity':0.16, stroke:color, 'stroke-width':2.2, 'stroke-linejoin':'round'}, svgEl);
+        if (s.baseline) poly.setAttribute('stroke-dasharray','7 5');
+      }
+      radarAxes.forEach(function(axis, i){
+        if (dimMissing(s, axis.key)) {
+          var q = pt(i, 1.0);
+          var h0 = svg('circle', {cx:q[0], cy:q[1], r:4.4, fill:'none', stroke:color, 'stroke-width':1.4, 'stroke-dasharray':'2 2', class:'radar-nodata'}, svgEl);
+          bindTip(h0, function(){ return '<div class="tt">'+esc(impl)+'</div><div>'+esc(axis.label)+': <b>no data</b> (left out of the score)</div>'; });
+          return;
+        }
+        var p = pt(i, Math.max(0.02, (s.dims[axis.key]||0)/100));
+        var c = svg('circle', {cx:p[0], cy:p[1], r:3.4, fill:color}, svgEl);
+        bindTip(c, function(){ return '<div class="tt">'+esc(impl)+'</div><div>'+esc(axis.label)+': <b>'+(s.dims[axis.key]||0)+'</b></div>'; });
+      });
+    }
     // legend chips
     var lg = document.createElement('span');
     lg.innerHTML = '<i style="background:'+color+'"></i>'+esc(impl)+' <b style="color:var(--ink3)">'+scoreText(s)+'</b>';

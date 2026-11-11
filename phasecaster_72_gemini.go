@@ -26,6 +26,13 @@
 //     Broadcast is now allocation-free; BroadcastPhased allocates its gate
 //     channel and the cell holding it, as designed.
 //
+//   - The response ships bitmap kernels (bitmap_72_gemini*.go) and describes
+//     the caster as using them, but its masks sat inside the per-bank
+//     structs where the kernels could not reach, and nothing called them.
+//     The masks are now two contiguous slices on the caster, and Broadcast
+//     and Subscribe call the kernels. Measured effect, including a 6 to 9
+//     percent cost at the default four banks, is in extraction_audit.md.
+//
 // Recorded, not changed: capacity is fixed at construction (ErrCapacity72Gemini
 // beyond it); Close() waits for, and does not interrupt, a broadcast blocked
 // on a receiver; calling Ack() for a value

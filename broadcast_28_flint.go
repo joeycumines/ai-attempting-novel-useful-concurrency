@@ -107,13 +107,20 @@ func (b *Broadcast28Flint[V]) Unsubscribe(s *Subscription28Flint[V]) error {
 	return nil
 }
 
+// Stop retires the subscription. It may be called any number of times, from
+// any number of goroutines, and concurrently with the cancellation of the
+// context given to Subscribe.
+//
+// Integration repair. As delivered, Stop tested the stop field and then set it
+// to nil, both unsynchronised, so two goroutines stopping the same
+// subscription raced on the field (reported by the race detector; see
+// TestBroadcast28Flint_ConcurrentStop). The field is now written once, in
+// Subscribe before the subscription is visible to anyone, and never again:
+// the function context.AfterFunc returns is safe to call repeatedly, and
+// Unsubscribe retires the node at most once through its state CAS.
 func (s *Subscription28Flint[V]) Stop() error {
-	if s.stop != nil {
-		s.stop()
-		s.stop = nil
-		_ = s.b.Unsubscribe(s)
-	}
-	return nil
+	s.stop()
+	return s.b.Unsubscribe(s)
 }
 
 func (s *Subscription28Flint[V]) Ch() <-chan V {

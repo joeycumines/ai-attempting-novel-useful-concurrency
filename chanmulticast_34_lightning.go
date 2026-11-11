@@ -41,6 +41,23 @@ package bigbuff
 //     nothing ever closed, so it could never terminate. A documented Close now
 //     retires subscribers, closes C (making Iter terminate) and is idempotent.
 //  6. math was imported to force use of a package that was never needed.
+//  7. Repair 2 held the read lock for the whole fan-out, and membership removal
+//     needs the write lock. A subscriber that stopped receiving and then tried
+//     to leave therefore waited for a Send that was waiting for it: neither
+//     ever returned, and Close hung the same way
+//     (TestChanMultiCast34Lightning_LeaveWhileSendIsBlockedOnYou). Send now
+//     takes the two slice headers under the read lock and releases it before
+//     the fan-out. That is sound because removal no longer shrinks the slices
+//     in place: it copies the survivors into fresh arrays, so an element a
+//     sender can see is never overwritten. Growth still appends in place (it
+//     only writes past every snapshot's length), so the capacity hint keeps
+//     its meaning and Subscribe below the hint still allocates only the
+//     subscriber's two channels.
+//  8. Unsubscribe could only remove the most recently added subscriber, so a
+//     subscriber could not remove itself unless it happened to be the last
+//     one: with A then B subscribed, A calling Unsubscribe retired B.
+//     UnsubscribeChan removes the subscriber that owns a given channel.
+//     Unsubscribe keeps its delivered meaning (remove the newest).
 
 import (
 	"iter"
@@ -65,6 +82,11 @@ type ChanMultiCast34Lightning[V any] struct {
 	// subscriber, and retiring[i] is its retirement signal. The slice length is
 	// always equal to the subscriber count; the two slices are grown and
 	// shrunk together under mu.
+	//
+	// Senders read the slice headers under the read lock and the elements
+	// after releasing it, so an element below the current length is never
+	// written again in the same backing array: growth appends past the
+	// length, removal copies into new arrays (see keepLocked).
 	receivers []chan V
 	retiring  []chan struct{}
 	closed    bool
@@ -113,8 +135,11 @@ func (x *ChanMultiCast34Lightning[V]) Subscribe() <-chan V {
 }
 
 // Unsubscribe removes the most‑recently added subscriber.  It is a panic if
-// there are no subscribers.  After removal the subscriber’s channel is closed
-// (the caller should not use it again).
+// there are no subscribers.  The subscriber's channel is not closed: it simply
+// stops receiving values, and a Send blocked on it is released.
+//
+// A subscriber that wants to remove itself should use UnsubscribeChan, since
+// it is the newest subscriber only if nobody subscribed after it.
 func (x *ChanMultiCast34Lightning[V]) Unsubscribe() {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -122,15 +147,45 @@ func (x *ChanMultiCast34Lightning[V]) Unsubscribe() {
 	if n == 0 {
 		panic("bigbuff: ChanMultiCast34Lightning: no subscribers to unsubscribe")
 	}
-	// Remove the last slot (LIFO – simple and O(1)).
 	// The subscriber channel is never closed: an in-flight Send may hold the
-	// channel that was captured from the snapshot below and be blocked in a
-	// send to it, so closing it here would panic. Retirement is signalled with
-	// the paired retiring channel instead, which Send also selects on.
+	// channel from its snapshot and be blocked in a send to it, so closing it
+	// here would panic. Retirement is signalled with the paired retiring
+	// channel instead, which Send also selects on.
 	close(x.retiring[n-1])
-	x.receivers = x.receivers[:n-1]
-	x.retiring = x.retiring[:n-1]
-	x.subscribers.Add(-1)
+	x.keepLocked(n-1, n)
+}
+
+// UnsubscribeChan removes the subscriber whose channel is ch, wherever it is
+// in the subscriber list, and reports whether it was subscribed. It is safe to
+// call while a Send is blocked on ch: that Send skips the subscriber and
+// carries on. Calling it again, or after Close, returns false.
+func (x *ChanMultiCast34Lightning[V]) UnsubscribeChan(ch <-chan V) bool {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	for i := range x.receivers {
+		if (<-chan V)(x.receivers[i]) == ch {
+			close(x.retiring[i])
+			x.keepLocked(i, i+1)
+			return true
+		}
+	}
+	return false
+}
+
+// keepLocked drops subscribers [from, to) by copying the others into fresh
+// arrays of the same capacity. The arrays being replaced are left untouched
+// for any Send that is still walking them. The caller holds the write lock and
+// has already closed the retirement channels of the dropped subscribers.
+func (x *ChanMultiCast34Lightning[V]) keepLocked(from, to int) {
+	receivers := make([]chan V, 0, cap(x.receivers))
+	receivers = append(receivers, x.receivers[:from]...)
+	receivers = append(receivers, x.receivers[to:]...)
+	retiring := make([]chan struct{}, 0, cap(x.retiring))
+	retiring = append(retiring, x.retiring[:from]...)
+	retiring = append(retiring, x.retiring[to:]...)
+	x.receivers = receivers
+	x.retiring = retiring
+	x.subscribers.Add(int32(from - to))
 }
 
 // ----------------------------------------------------------------------
@@ -174,9 +229,7 @@ func (x *ChanMultiCast34Lightning[V]) Add(delta int) (newCount int) {
 	for i := start; i < current; i++ {
 		close(x.retiring[i])
 	}
-	x.receivers = x.receivers[:start]
-	x.retiring = x.retiring[:start]
-	x.subscribers.Add(int32(-removal))
+	x.keepLocked(start, current)
 	return int(x.subscribers.Load())
 }
 
@@ -188,8 +241,9 @@ func (x *ChanMultiCast34Lightning[V]) Add(delta int) (newCount int) {
 // and send the value to each receiver.  Because the slice is only mutated
 // under a write‑lock, concurrent Send calls may proceed simultaneously.
 //
-// Returns the number of receivers that received the value (always equal to
-// the subscriber count unless a receiver channel is closed prematurely).
+// Returns the number of receivers that received the value. A subscriber that
+// leaves while the Send is in flight is skipped and not counted, unless it
+// had already taken the value.
 // ----------------------------------------------------------------------
 
 // Send delivers *value* to every currently active subscriber.
@@ -199,20 +253,22 @@ func (x *ChanMultiCast34Lightning[V]) Send(value V) (sent int) {
 		return 0
 	}
 
-	// Take a read‑only snapshot. Holding the read lock for the duration of the
-	// fan-out is what makes the snapshot sound: without it, a concurrent
-	// Unsubscribe could truncate the slice under the sender's feet (the
-	// original sliced to a stale count and then released the lock). Retirement
-	// is additionally signalled per receiver, so a subscriber that departs
-	// while a sender is blocked on it cannot deadlock the publisher.
+	// Take a read‑only snapshot: the two slice headers, read together under
+	// the read lock. The lock is released before the fan-out, because a
+	// subscriber must be able to leave (which needs the write lock) while a
+	// sender is blocked on it. The snapshot stays valid afterwards because
+	// its elements are never overwritten (see the receivers field), and each
+	// receiver has a retirement signal, so a subscriber that departs while a
+	// sender is blocked on it releases that sender.
 	x.mu.RLock()
-	defer x.mu.RUnlock()
-	for i := range x.receivers {
+	receivers, retiring := x.receivers, x.retiring
+	x.mu.RUnlock()
+	for i := range receivers {
 		select {
-		case x.receivers[i] <- value:
+		case receivers[i] <- value:
 			sent++
-		case <-x.retiring[i]:
-			// Retired between the snapshot and the send; skip it.
+		case <-retiring[i]:
+			// Retired after the snapshot; skip it.
 		}
 	}
 	return sent
