@@ -161,6 +161,39 @@ func warmOps(target time.Duration, maxOps int, op func(i int)) int {
 	return n
 }
 
+// settledReceives returns the receive count once the subscribers have taken
+// what they are going to take: it reaches want, or it has not moved for two
+// milliseconds, or 200 ms have passed. It is called after the timed loop, so
+// it costs the measurement nothing. A lossless implementation reaches want; a
+// lossy one stops short, and the difference is what it dropped.
+func settledReceives(read func() int64, want int64) int64 {
+	deadline := time.Now().Add(200 * time.Millisecond)
+	last, still := read(), 0
+	for last < want && still < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		if now := read(); now != last {
+			last, still = now, 0
+		} else {
+			still++
+		}
+	}
+	return last
+}
+
+// deliveryFields are the fields a throughput record carries about what its
+// publishes delivered: the publishes made (warm-up included), the values the
+// subscribers received, and received / (publishes x subscribers). The cost
+// in the record is the cost of calling Publish, whatever became of the
+// value; an implementation that drops or coalesces by contract publishes
+// cheaply and delivers a fraction, and the record says which fraction.
+func deliveryFields(m map[string]any, publishes, receives int64, subs int) {
+	m["publishes"] = publishes
+	m["receives"] = receives
+	if publishes > 0 && subs > 0 {
+		m["delivered_fraction"] = float64(receives) / (float64(publishes) * float64(subs))
+	}
+}
+
 // drainGroup owns the drain goroutines for one measurement instance.
 type drainGroup struct {
 	ctx       context.Context
@@ -307,6 +340,7 @@ func measureBroadcastThroughput(ctx *measureContext, factory func() Broadcaster,
 		samples := make([]float64, 0, ctx.profile.Reps)
 		repsRun := 0
 		lastOps := 0
+		var publishes, receives int64
 		for r := 0; r < ctx.profile.Reps; r++ {
 			b := factory()
 			g, drainErr := startBroadcastDrains(b, subs)
@@ -323,6 +357,8 @@ func measureBroadcastThroughput(ctx *measureContext, factory func() Broadcaster,
 				}
 			}
 			n, d := budget.done()
+			publishes += int64(warmup + n)
+			receives += settledReceives(g.totalReceived, int64(warmup+n)*int64(subs))
 			clean := g.stop(3 * time.Second)
 			lastOps = n
 			if !clean {
@@ -335,7 +371,7 @@ func measureBroadcastThroughput(ctx *measureContext, factory func() Broadcaster,
 			repsRun++
 		}
 		_ = repsRun
-		ctx.writeMetric(map[string]any{
+		rec := map[string]any{
 			"metric":            "publish_ns_op",
 			"family":            "broadcast",
 			"impl":              name,
@@ -348,7 +384,9 @@ func measureBroadcastThroughput(ctx *measureContext, factory func() Broadcaster,
 			"expected_good_fit": goodFit,
 			"exposure_limited":  expLimit,
 			"instrumented":      false,
-		}, samples)
+		}
+		deliveryFields(rec, publishes, receives, subs)
+		ctx.writeMetric(rec, samples)
 	}
 }
 

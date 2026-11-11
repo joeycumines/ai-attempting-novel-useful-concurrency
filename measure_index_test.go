@@ -193,7 +193,7 @@ func TestVerifyRejectsMetricRecordsWithoutAValue(t *testing.T) {
 	}
 	const valueless = `{"type":"metric","family":"broadcast","impl":"A","metric":"stalled_consumer_ops_completed","outcome":"completed"}`
 	const withOps = `{"type":"metric","family":"broadcast","impl":"A","metric":"stalled_consumer_ops_completed","ops_completed":0}`
-	const withMean = `{"type":"metric","family":"broadcast","impl":"A","metric":"publish_ns_op","mean":12.5}`
+	const withMean = `{"type":"metric","family":"broadcast","impl":"A","metric":"publish_ns_op","mean":12.5,"publishes":8,"receives":8}`
 	const tornReads = `{"type":"metric","family":"broadcast","impl":"A","metric":"torn_reads","violations":0,"checked":500}`
 
 	if rc, out := run(measureGeneratorVersion, valueless); rc == 0 || !strings.Contains(out, "metric records without a value: stalled_consumer_ops_completed (1)") {

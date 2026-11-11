@@ -69,6 +69,14 @@ func (g *payloadDrain) stop(timeout time.Duration) bool {
 	}
 }
 
+func (g *payloadDrain) totalReceived() int64 {
+	var total int64
+	for i := range g.counts {
+		total += g.counts[i].Load()
+	}
+	return total
+}
+
 func (g *payloadDrain) minReceived() int64 {
 	if len(g.counts) == 0 {
 		return 0
@@ -87,6 +95,7 @@ func measurePayloadThroughput(ctx *measureContext, mk func() asyncAPI, name stri
 	for _, subs := range ctx.profile.ScaleSubs {
 		samples := make([]float64, 0, ctx.profile.Reps)
 		lastOps := 0
+		var publishes, receives int64
 		for r := 0; r < ctx.profile.Reps; r++ {
 			x := mk()
 			g := startPayloadDrains(x, subs)
@@ -98,13 +107,15 @@ func measurePayloadThroughput(ctx *measureContext, mk func() asyncAPI, name stri
 				}
 			}
 			n, d := budget.done()
+			publishes += int64(warmup + n)
+			receives += settledReceives(g.totalReceived, int64(warmup+n)*int64(subs))
 			if !g.stop(3 * time.Second) {
 				ctx.fail("%s: payload drains did not exit (subs=%d)", name, subs)
 			}
 			lastOps = n
 			samples = append(samples, float64(d)/float64(n))
 		}
-		ctx.writeMetric(map[string]any{
+		rec := map[string]any{
 			"metric":            "publish_ns_op",
 			"family":            "payload",
 			"impl":              name,
@@ -117,7 +128,9 @@ func measurePayloadThroughput(ctx *measureContext, mk func() asyncAPI, name stri
 			"expected_good_fit": goodFit,
 			"exposure_limited":  expLimit,
 			"payload_words":     4,
-		}, samples)
+		}
+		deliveryFields(rec, publishes, receives, subs)
+		ctx.writeMetric(rec, samples)
 	}
 }
 

@@ -213,7 +213,7 @@ func TestMeasureRunReportsADeadMeasuringProcess(t *testing.T) {
 // requires it on; older runs are what they are.
 func TestVerifyRejectsARunThatWasNotIsolated(t *testing.T) {
 	sets := []expectedImplSet{{"broadcast", []string{"A"}}}
-	const record = `{"type":"metric","family":"broadcast","impl":"A","metric":"publish_ns_op","mean":12.5}`
+	const record = `{"type":"metric","family":"broadcast","impl":"A","metric":"publish_ns_op","mean":12.5,"publishes":8,"receives":8}`
 	verify := func(meta string) (int, string) {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "results-01-01-results.jsonl")
@@ -247,18 +247,20 @@ func TestVerifyRejectsARunThatWasNotIsolated(t *testing.T) {
 func TestFamiliesOfUnisolatedRunsAreNotRanked(t *testing.T) {
 	metrics := []map[string]any{}
 	for i := range minRankedImpls + 1 {
-		metrics = append(metrics, map[string]any{"type": "metric", "family": "broadcast", "impl": "B" + string(rune('a'+i)),
-			"metric": "publish_ns_op", "dims": map[string]any{"subs": 8.0}, "mean": float64(10 + i)})
+		metrics = append(metrics, map[string]any{"type": "metric", "family": "scatter", "impl": "B" + string(rune('a'+i)),
+			"metric": "dispatch_ns_op", "dims": map[string]any{"receivers": 8.0}, "mean": float64(10 + i)})
 	}
 	for i := range 2 {
 		metrics = append(metrics, map[string]any{"type": "metric", "family": "gather", "impl": "G" + string(rune('a'+i)),
 			"metric": "wait_ns_op", "dims": map[string]any{"senders": 8.0}, "mean": float64(10 + i)})
 	}
 	for generator, isolated := range map[string]bool{"1.0.0": false, "1.2.0": false, isolationContract: true, "1.4.0": true} {
+		// The scatter family: it has no delivery classes, so isolation is
+		// the only thing that decides whether a family of six is ranked.
 		dd := deriveReport(&reportData{meta: map[string]any{"generator_version": generator}, metrics: metrics}, nil)
-		b, g := dd.Scores["broadcast"]["Ba"], dd.Scores["gather"]["Ga"]
+		b, g := dd.Scores["scatter"]["Ba"], dd.Scores["gather"]["Ga"]
 		if b.Ranked != isolated {
-			t.Errorf("generator %s: broadcast ranked = %v, want %v", generator, b.Ranked, isolated)
+			t.Errorf("generator %s: scatter ranked = %v, want %v", generator, b.Ranked, isolated)
 		}
 		if g.Ranked {
 			t.Errorf("generator %s: a family of two is ranked", generator)
@@ -267,9 +269,9 @@ func TestFamiliesOfUnisolatedRunsAreNotRanked(t *testing.T) {
 		if !isolated {
 			wantSmall = "Not ranked (measurement not valid)"
 			if b.Verdict != wantSmall || b.Score != 0 || !strings.Contains(b.UnrankedReason, "one process") {
-				t.Errorf("generator %s: broadcast score %+v", generator, b)
+				t.Errorf("generator %s: scatter score %+v", generator, b)
 			}
-			if dd.UnrankedSince["broadcast"] != isolationContract || dd.UnrankedSince["gather"] != isolationContract {
+			if dd.UnrankedSince["scatter"] != isolationContract || dd.UnrankedSince["gather"] != isolationContract {
 				t.Errorf("generator %s: valid since %v", generator, dd.UnrankedSince)
 			}
 		} else if len(dd.UnrankedSince) != 0 {

@@ -426,6 +426,7 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 	}
 	families := map[string]map[string]bool{}
 	valueless := map[string]int{} // metric name -> records carrying no value
+	undelivered := 0              // throughput records without delivery fields
 	generator, isolation := "", ""
 	for _, set := range sets {
 		v.expected[set.family] = len(set.names)
@@ -465,6 +466,13 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 		}
 		family, _ := rec["family"].(string)
 		impl, _ := rec["impl"].(string)
+		if typ == "metric" && hasDeliveryClasses(family) && rec["metric"] == "publish_ns_op" {
+			_, pubs := rec["publishes"].(float64)
+			_, recv := rec["receives"].(float64)
+			if !pubs || !recv {
+				undelivered++
+			}
+		}
 		known := families[family] != nil
 		if !known {
 			continue // registry record or family not under verification
@@ -519,6 +527,12 @@ func verifyResultsAgainst(path string, sets []expectedImplSet, against string, o
 		// measure_isolate_test.go). Runs older than the contract are what
 		// they are, and the reports do not rank them.
 		fmt.Fprintf(out, "  not isolated: the meta record says isolation=%q, and record contract %s requires %q\n", isolation, generator, measureIsolationPerUnit)
+		fail++
+	}
+	if undelivered > 0 && generator != "" && !generatorBefore(generator, deliveryClassContract) {
+		// Without these a publish that is cheap because it discards the
+		// value cannot be told from one that delivers it.
+		fmt.Fprintf(out, "  throughput records that do not say what was delivered (no publishes or receives field): %d\n", undelivered)
 		fail++
 	}
 	if len(valueless) > 0 {
