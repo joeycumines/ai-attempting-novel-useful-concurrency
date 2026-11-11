@@ -100,8 +100,12 @@ func (b *Broadcast28Flint[V]) Unsubscribe(s *Subscription28Flint[V]) error {
 		// subscriber instead of blocking forever on an unbuffered channel that
 		// nobody will ever receive from. Closing happens exactly once because
 		// only the CAS winner reaches it.
-		close(s.sub.quit)
+		//
+		// The count is taken down first, so that anyone who observes quit
+		// closed also observes the subscription counted out. In the other
+		// order a caller released by quit could still read the old count.
 		b.subscribers.Add(-1)
+		close(s.sub.quit)
 	}
 
 	return nil

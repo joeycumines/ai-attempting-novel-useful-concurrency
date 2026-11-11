@@ -8,8 +8,10 @@
 //     retained sequence; Lag/Missed report the gap. Values are never torn:
 //     the per-slot seqlock double-check discards racing reads.
 //   - Next() is non-blocking and never returns torn data. WaitNext /
-//     WaitNextContext park on a shared sync.Cond with coalesced TryLock
-//     wakeups; Close is idempotent and wakes every parked waiter.
+//     WaitNextContext park on a shared sync.Cond; a publish takes the Cond
+//     mutex only while a consumer is parked or about to park (repaired: the
+//     delivered TryLock coalescing lost wakeups, see notify). Close is
+//     idempotent and wakes every parked waiter.
 //   - Every publish is O(1) in the number of consumers; cursors are
 //     single-goroutine and never registered with the ring.
 //
@@ -249,26 +251,34 @@ func (h *Horizon70Meta[V]) PublishBatch(vals []V) (uint64, bool) {
 	return first, true
 }
 
-// notify wakes parked waiters, coalesced.
+// notify wakes parked waiters.
 //
 // Fast path (no waiters): one atomic Load, no lock, no futex.
-// Slow path (waiters > 0): TryLock the Cond mutex. If TryLock
-// fails, another publisher is already holding it to broadcast, or
-// a waiter is holding it while re-checking and will see the new
-// data itself. In both cases our publish is already visible
-// (seq Store happened before notify), so the other broadcast /
-// the waiter's own re-check covers us. We must NOT block here:
-// blocking on the Cond mutex would serialise all publishers
-// behind one slow waiter wakeup and re-introduce the lock
-// contention we removed from the publish path.
+// Slow path (waiters > 0): take the Cond mutex and broadcast.
+//
+// Integration repair: a lost wakeup. As delivered, the slow path used
+// TryLock and skipped the broadcast when it failed, on the argument that
+// whoever held the mutex was either another publisher broadcasting or a
+// waiter re-checking, who "will see the new data itself". A waiter holds the
+// mutex from its re-check until sync.Cond.Wait releases it, and its re-check
+// can precede the publish. A publish that lands in between found the mutex
+// held, skipped the broadcast, and the waiter then parked with a value
+// available and nothing left to wake it: WaitNext did not return until the
+// next publish, or ever if there was none. It was seen as a failure of
+// TestHorizon_WaitNext_Wakes under the race detector, once in two runs of
+// the suite.
+//
+// Blocking here is the cost of being correct. The mutex is held only for a
+// waiter's re-check or another publisher's broadcast, never across a park,
+// so the wait is short; and it is paid only while a consumer is parked or
+// about to park. Regression test: TestHorizon_PublishWakesAWaiterAboutToPark.
 func (h *Horizon70Meta[V]) notify() {
 	if h.waiters.Load() == 0 {
 		return
 	}
-	if h.mu.TryLock() {
-		h.cond.Broadcast()
-		h.mu.Unlock()
-	}
+	h.mu.Lock()
+	h.cond.Broadcast()
+	h.mu.Unlock()
 }
 
 // Latest returns the most recent fully-published value without
