@@ -161,6 +161,12 @@ func runMeasureUnit(u measureUnit, profile measureProfile, seed int64, outPath s
 	}
 	before := runtime.NumGoroutine()
 	run(ctx)
+	if w.records == 0 && len(ctx.failures) == 0 {
+		// Every unit of the plan measures or skips something. One that does
+		// neither named an implementation or a battery the family does not
+		// have, and a run that let it pass would be short without saying so.
+		ctx.fail("%s: nothing in family %q answers to that implementation and battery; the unit measured nothing", u, u.family)
+	}
 	if left, cores, measured := measureResidue(before); left > 0 {
 		rec := map[string]any{
 			"type":       "residue",

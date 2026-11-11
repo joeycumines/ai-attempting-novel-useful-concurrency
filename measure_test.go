@@ -341,9 +341,20 @@ func (c *measureContext) implAllowed(name string) bool {
 	if c.implGlob == "" {
 		return true
 	}
-	ok, err := path.Match(c.implGlob, name)
+	return measureGlob(c.implGlob, name)
+}
+
+// measureGlob matches a --impl or --battery pattern against a name. The names
+// are not paths: several implementations have a "/" in theirs
+// ("Fanout45ChatGPT/sync (45-ChatGPT)"), and path.Match will not let "*"
+// cross one, so `--impl '*'` silently left those implementations out. Here
+// "/" is an ordinary character. A malformed pattern is matched as a
+// substring.
+func measureGlob(pattern, name string) bool {
+	const slash = "\x01"
+	ok, err := path.Match(strings.ReplaceAll(pattern, "/", slash), strings.ReplaceAll(name, "/", slash))
 	if err != nil {
-		return strings.Contains(name, c.implGlob)
+		return strings.Contains(name, pattern)
 	}
 	return ok
 }
@@ -355,11 +366,7 @@ func (c *measureContext) batteryAllowed(id string) bool {
 	if c.batteryGlob == "" {
 		return true
 	}
-	ok, err := path.Match(c.batteryGlob, id)
-	if err != nil {
-		return strings.Contains(id, c.batteryGlob)
-	}
-	return ok
+	return measureGlob(c.batteryGlob, id)
 }
 
 func (c *measureContext) write(rec map[string]any) {

@@ -1,0 +1,169 @@
+{
+  "type": "gates",
+  "schema": 1,
+  "commit": "b1a351a1bb2f",
+  "dirty_tree": false,
+  "recorded": "2026-11-11T11:16:20Z",
+  "stamp": "written by verify.all before its first leg",
+  "go": "go1.27.3",
+  "goos": "linux",
+  "goarch": "amd64",
+  "num_cpu": 2,
+  "legs": [
+    {
+      "leg": "vet",
+      "status": "pass",
+      "commands": [
+        "go vet ./...",
+        "go vet -race ./...",
+        "GOARCH=arm64 go vet ./...",
+        "GOARCH=386 go vet ./..."
+      ],
+      "detail": "4 vet invocations"
+    },
+    {
+      "leg": "test",
+      "status": "pass",
+      "commands": [
+        "go test -count=1 -cpu 1,2,4 ./..."
+      ],
+      "detail": "185.434 s"
+    },
+    {
+      "leg": "race",
+      "status": "pass",
+      "commands": [
+        "go test -race -count=1 ./..."
+      ],
+      "detail": "149.046 s"
+    },
+    {
+      "leg": "alloc",
+      "status": "pass",
+      "commands": [
+        "go test -count=1 -run Alloc -v ./..."
+      ],
+      "detail": "31 passing, 0 failing, 0 skipped test results; 0.028 s"
+    },
+    {
+      "leg": "fuzz",
+      "status": "pass",
+      "commands": [
+        "go test -run=NONE -fuzz='^TARGET$' -fuzztime=10s -timeout 30m . (once for each target)"
+      ],
+      "detail": "15 of 15 targets passed"
+    },
+    {
+      "leg": "arm64",
+      "status": "not-run",
+      "detail": "no log"
+    }
+  ],
+  "fuzz": [
+    {
+      "target": "FuzzBitmap72Gemini",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 2664
+    },
+    {
+      "target": "FuzzUnifiedBroadcaster",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 1031
+    },
+    {
+      "target": "FuzzBroadcaster58RingModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 135148
+    },
+    {
+      "target": "FuzzQueuedFanout24FIFO",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 130663
+    },
+    {
+      "target": "FuzzReplayCast53RingModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 141453
+    },
+    {
+      "target": "FuzzRingCaster55Model",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 141453
+    },
+    {
+      "target": "FuzzRingFanOut14TwoStageModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 131672
+    },
+    {
+      "target": "FuzzRingPubSubModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 24612
+    },
+    {
+      "target": "FuzzScenarioBarrier",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 65922
+    },
+    {
+      "target": "FuzzScenarioExchange",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 71894
+    },
+    {
+      "target": "FuzzScenarioFaninModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 130643
+    },
+    {
+      "target": "FuzzScenarioBroadcast",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 26379
+    },
+    {
+      "target": "FuzzScenarioCasterScatterGather",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 42948
+    },
+    {
+      "target": "FuzzStableRing32QueueModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 133116
+    },
+    {
+      "target": "FuzzBoundedScatterModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 127957
+    }
+  ],
+  "measured_commit": "df776172e692",
+  "comparison": "compared",
+  "source_files_changed_since_measurement": [
+    "01-readme.md",
+    "AGENTS.md",
+    "extraction_audit.md",
+    "measure_delivery_class_test.go",
+    "measure_evaluate_test.go",
+    "measure_evaluate_tooling_test.go",
+    "measure_report_test.go",
+    "measure_site_landing_body_test.go",
+    "measurement.md",
+    "scenario_registry_test.go"
+  ],
+  "result_files_changed_since_measurement": 27
+}

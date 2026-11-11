@@ -468,13 +468,26 @@ is recorded in `extraction_audit.md` ("arm64 assembly: executed under emulation"
   subscribers that only receive, on 2 CPUs. A different load would put some
   implementations in the other class, and the delivered share of an
   implementation that drops varies from run to run with the scheduler. The
-  class membership itself was the same in three takes of the battery on this
-  machine. Nothing here measures how an implementation that drops behaves when
+  class membership itself has one confirmation: a second pass of the
+  throughput batteries under the same settling rule put the 108
+  implementations it covered in the classes run 08 gives them. Nothing here measures how an implementation that drops behaves when
   its subscribers keep up, which is the case it is built for.
 - Within the dropping class, a publish that delivers 0.1 percent of its values
   and one that delivers 70 percent are still scored on the cost of the call.
   The evaluation prints the delivered share beside each score so that the two
   can be told apart; the score does not weigh it.
+- A ranked group is one whose headline cost separates at least half of its
+  pairs. That is a floor, not a guarantee: adjacent places in a ranked class
+  can still be within each other's intervals, and only the broadcast and
+  payload classes of run 08 have been through it with a run that is not
+  otherwise withdrawn.
+- The broadcast and payload throughput and latency batteries size a repetition
+  by the clock while it runs (`opBudget`). The churn and stalled-consumer
+  probes, and the caster, scatter, exchange and barrier batteries, still size
+  it once from a short estimate (`calibrateOps`). That is sound where an
+  operation completes before the next begins, which is what those batteries
+  measure, and wrong for an operation that is cheap until something else
+  wakes; the per-unit timeout is what stands behind it.
 - Isolation covers what one battery leaves for the next. It does not cover what
   else the machine is doing: another tenant of the host still shows up as noise,
   and the within-run variation in the evaluation is the only measure of it.

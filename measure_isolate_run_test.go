@@ -328,3 +328,131 @@ func TestOpBudgetEndsNearItsTarget(t *testing.T) {
 		t.Errorf("cost jump: ran %d operations in %s (wall %s); the target is %s", n, d, wall, target)
 	}
 }
+
+// "/" is an ordinary character in an implementation's name.
+func TestMeasureGlobTreatsSlashAsOrdinary(t *testing.T) {
+	for _, c := range []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"*", "Fanout45ChatGPT/sync (45-ChatGPT)", true},
+		{"Fanout45ChatGPT*", "Fanout45ChatGPT/sync (45-ChatGPT)", true},
+		{"Fanout45ChatGPT/sync*", "Fanout45ChatGPT/sync (45-ChatGPT)", true},
+		{"Fanout45ChatGPT/buffered*", "Fanout45ChatGPT/sync (45-ChatGPT)", false},
+		{"*.throughput", "broadcast.throughput", true},
+		{"*.throughput", "broadcast.latency", false},
+		{"ChanPubSub (Baseline)", "ChanPubSub (Baseline)", true},
+		{"[", "a[b", true}, // malformed: substring
+		{"[", "ab", false},
+	} {
+		if got := measureGlob(c.pattern, c.name); got != c.want {
+			t.Errorf("measureGlob(%q, %q) = %v, want %v", c.pattern, c.name, got, c.want)
+		}
+	}
+	// The plan under --impl '*' is the whole plan.
+	all := measurePlan(&measureContext{})
+	star := measurePlan(&measureContext{implGlob: "*", batteryGlob: "*"})
+	if len(star) != len(all) || len(all) == 0 {
+		t.Errorf("--impl '*' --battery '*' plans %d units, no filter plans %d", len(star), len(all))
+	}
+}
+
+// A unit that names nothing the family has is a failure, not an empty success.
+func TestMeasureUnitThatMatchesNothingFails(t *testing.T) {
+	for _, u := range []measureUnit{
+		{family: "broadcast", impl: "NoSuchImplementation", battery: "broadcast.zero_subscriber", index: -1},
+		{family: "broadcast", impl: "ChanPubSub (Baseline)", battery: "broadcast.no_such_battery", index: 0},
+	} {
+		out := filepath.Join(t.TempDir(), "unit.jsonl")
+		quick, _ := profileByName("quick")
+		if code := runMeasureUnit(u, quick, 1, out); code != 0 {
+			t.Fatalf("%s: exit code %d; the failure belongs in the unit's summary", u, code)
+		}
+		recs := readMeasureRecords(t, out)
+		if len(recs["unit_summary"]) != 1 {
+			t.Fatalf("%s: %d summaries", u, len(recs["unit_summary"]))
+		}
+		msgs, _ := recs["unit_summary"][0]["failure_msg"].([]any)
+		if len(msgs) != 1 || !strings.Contains(msgs[0].(string), "measured nothing") {
+			t.Errorf("%s: failure messages %v, want one saying the unit measured nothing", u, msgs)
+		}
+	}
+}
+
+// The warm-up is sized by the clock too: it ends near an eighth of the target
+// when an operation is slow, and at the cap when it is free.
+func TestWarmOpsIsSizedByTheClock(t *testing.T) {
+	const target = 80 * time.Millisecond
+	start := time.Now()
+	calls := 0
+	n := warmOps(target, 1000000, func(i int) {
+		if i != calls {
+			t.Fatalf("operation %d ran as number %d", i, calls)
+		}
+		calls++
+		time.Sleep(time.Millisecond)
+	})
+	if n != calls {
+		t.Errorf("warmOps reports %d operations, %d ran", n, calls)
+	}
+	if n < opBudgetMinBatch || time.Since(start) > 2*time.Second {
+		t.Errorf("slow operation: %d operations in %s; the warm-up budget is %s", n, time.Since(start), target/8)
+	}
+	if n := warmOps(target, 500, func(int) {}); n != 500 {
+		t.Errorf("free operation: %d operations, want the cap of 500", n)
+	}
+}
+
+// What a throughput record says about delivery.
+func TestDeliveryFieldsRecordTheShareDelivered(t *testing.T) {
+	m := map[string]any{}
+	deliveryFields(m, 1000, 6000, 8)
+	if m["publishes"] != int64(1000) || m["receives"] != int64(6000) || m["delivered_fraction"] != 0.75 {
+		t.Errorf("1000 publishes to 8 subscribers, 6000 received: %v", m)
+	}
+	m = map[string]any{}
+	deliveryFields(m, 1000, 8000, 8)
+	if m["delivered_fraction"] != 1.0 {
+		t.Errorf("everything delivered: %v", m)
+	}
+	// No publishes, or no subscribers: there is no share to state.
+	for _, c := range [][3]int64{{0, 0, 8}, {1000, 0, 0}} {
+		m = map[string]any{}
+		deliveryFields(m, c[0], c[1], int(c[2]))
+		if _, ok := m["delivered_fraction"]; ok {
+			t.Errorf("publishes=%d subs=%d: a delivered fraction was recorded: %v", c[0], c[2], m)
+		}
+		if m["publishes"] != c[0] || m["receives"] != c[1] {
+			t.Errorf("publishes=%d subs=%d: counts %v", c[0], c[2], m)
+		}
+	}
+}
+
+// The evaluation lists a unit that left a CPU in use, and not one that left a
+// parked goroutine.
+func TestEvaluationListsOnlyResidueThatUsesACPU(t *testing.T) {
+	render := func(generator string, residue ...map[string]any) string {
+		var b strings.Builder
+		evalResidue(&b, &reportData{meta: map[string]any{"generator_version": generator}, residue: residue})
+		return b.String()
+	}
+	spinning := map[string]any{"family": "broadcast", "impl": "Spinner", "battery": "broadcast.stalled_consumer", "goroutines": 2.0, "cpu_cores": 1.08}
+	again := map[string]any{"family": "broadcast", "impl": "Spinner", "battery": "broadcast.trace_stalled_consumer", "goroutines": 2.0, "cpu_cores": 0.9}
+	parked := map[string]any{"family": "broadcast", "impl": "Parker", "battery": "broadcast.stalled_consumer", "goroutines": 1.0, "cpu_cores": 0.0}
+	unmeasured := map[string]any{"family": "caster", "impl": "Unknown", "battery": "caster.churn", "goroutines": 1.0}
+
+	out := render(isolationContract, spinning, again, parked, unmeasured)
+	if !strings.Contains(out, "| broadcast | Spinner | broadcast.stalled_consumer, broadcast.trace_stalled_consumer | 1.08 |") {
+		t.Errorf("the spinning implementation is not listed once with both batteries and its worst figure:\n%s", out)
+	}
+	if strings.Contains(out, "Parker") || strings.Contains(out, "Unknown") {
+		t.Errorf("a parked or unmeasured residue is listed:\n%s", out)
+	}
+	if out := render(isolationContract, parked); !strings.Contains(out, "No battery left a goroutine using a CPU") || strings.Contains(out, "Parker") {
+		t.Errorf("only parked residue:\n%s", out)
+	}
+	// A run that was one process recorded no residue; the section says nothing.
+	if out := render("1.2.0", spinning); out != "" {
+		t.Errorf("a run before process isolation printed a residue section:\n%s", out)
+	}
+}
