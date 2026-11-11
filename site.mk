@@ -28,14 +28,14 @@ site.build: ## Wire backlinks across all reports, re-index the run manifests, an
 site.wire: site.build ## Alias for site.build.
 
 .PHONY: site.check
-site.check: site.build ## Verify that all reports and index.html exist and links are intact.
+site.check: site.build ## Rebuild, then check the page covers every run and report and the tracker resolves.
 	@test -f $(PROJECT_ROOT)/index.html || { echo "Error: index.html missing"; exit 1; }
 	@cd $(PROJECT_ROOT) && for jsonl in results-[0-9][0-9]-01-results.jsonl; do \
 	  report=$${jsonl%-01-results.jsonl}-03-report.html; \
 	  test -f $$report || { echo "Error: $$report missing (run 'make measure-report MEASURE_IN=$$jsonl')"; exit 1; }; \
 	done
-	@test -f $(PROJECT_ROOT)/report-01-gemini-flash-3.8-high.html || { echo "Error: report-01-gemini-flash-3.8-high.html missing"; exit 1; }
-	@echo "site.check: all landing page and report links verified successfully."
+	cd $(PROJECT_ROOT) && go test -count=1 -run 'TestLandingPageCoversEveryRunAndReport|TestTrackerFilesResolve|TestTrackerCoversEveryResponse|TestCommittedRunsAreIndexed' .
+	@echo "site.check: index.html exists, every run has its report, the page covers every run and report file, and every tracker file resolves."
 
 .PHONY: site.clean
 site.clean: ## Site artifacts (index.html) are committed at repository root; non-destructive clean.

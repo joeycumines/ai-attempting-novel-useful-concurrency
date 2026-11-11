@@ -213,6 +213,9 @@ const reportHTMLBody = `<body>
   <div class="tabs" id="covTabs"></div>
   <div class="cov-wrap"><table class="cov" id="covTable"></table></div>
   <div class="cov-legend"><span><i style="background:#166534"></i>expected good fit</span><span><i style="background:#7f1d1d"></i>declared bad fit</span><span><i style="background:#1b2447"></i>no attachment</span></div>
+  <h3 class="title" style="font-size:18px;margin-top:28px">Tests, benchmarks and fuzz targets behind each scenario</h3>
+  <p class="lede" id="runSummary"></p>
+  <div class="scroll-x"><table class="gloss" id="runTable"></table></div>
 </section>
 
 <!-- ══════════════ METHODOLOGY ══════════════ -->

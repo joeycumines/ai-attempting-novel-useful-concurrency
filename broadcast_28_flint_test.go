@@ -7,6 +7,7 @@ package bigbuff
 import (
 	"context"
 	"reflect"
+	"sync"
 	"testing"
 )
 
@@ -203,5 +204,80 @@ func TestBroadcast28Flint_NilContextSubscribes(t *testing.T) {
 	}
 	if err := b.Unsubscribe(nil); err != nil {
 		t.Fatalf("Unsubscribe(nil): %v", err)
+	}
+}
+
+// Stop from several goroutines at once, with the context being cancelled at
+// the same moment, retires the subscription exactly once. As delivered Stop
+// read and cleared an unsynchronised field; the race detector reports that on
+// the old code, and this test is the reason verify.race covers it.
+func TestBroadcast28Flint_ConcurrentStop(t *testing.T) {
+	const rounds, stoppers = 200, 4
+	b := NewBroadcast28Flint[int]()
+	for round := 0; round < rounds; round++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		s, err := b.Subscribe(ctx)
+		if err != nil {
+			t.Fatalf("Subscribe: %v", err)
+		}
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := 0; i < stoppers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				if err := s.Stop(); err != nil {
+					t.Errorf("Stop: %v", err)
+				}
+			}()
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			cancel()
+		}()
+		close(start)
+		wg.Wait()
+		select {
+		case <-s.sub.quit:
+		default:
+			t.Fatalf("round %d: Stop returned and the subscription is not retired", round)
+		}
+		if n := b.subscribers.Load(); n != 0 {
+			t.Fatalf("round %d: %d subscribers counted after the only one stopped, want 0", round, n)
+		}
+	}
+	if n := b.Send(1); n != 0 {
+		t.Fatalf("Send = %d with every subscription stopped, want 0", n)
+	}
+}
+
+// A subscription made with a context that is already cancelled is retired by
+// the context callback, which may run before Subscribe has returned.
+func TestBroadcast28Flint_SubscribeWithCancelledContext(t *testing.T) {
+	b := NewBroadcast28Flint[int]()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for i := 0; i < 100; i++ {
+		s, err := b.Subscribe(ctx)
+		if err != nil {
+			t.Fatalf("Subscribe: %v", err)
+		}
+		select {
+		case <-s.sub.quit:
+		case <-timeAfterGuard():
+			t.Fatalf("subscription %d was never retired by its cancelled context", i)
+		}
+		if err := s.Stop(); err != nil {
+			t.Fatalf("Stop after the context retired the subscription: %v", err)
+		}
+	}
+	if n := b.subscribers.Load(); n != 0 {
+		t.Fatalf("%d subscribers counted, want 0", n)
+	}
+	if n := b.Send(1); n != 0 {
+		t.Fatalf("Send = %d, want 0", n)
 	}
 }

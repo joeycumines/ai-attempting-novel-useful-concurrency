@@ -7,6 +7,14 @@
 //   fenceRelease64GLM: DMB ISH   — full inner-shareable barrier before the
 //                 even-seq publication store.
 //   spinHint64GLM:     YIELD     — power- and pipeline-friendly spin hint.
+//
+// How far this file has been exercised: it assembles and vets
+// (GOARCH=arm64 go vet), and each routine's machine code was executed under
+// an ARMv8 emulator (Unicorn 2.1.4), where each returns to its caller on two
+// CPU models. It has not run on arm64 hardware, and the test binary has not
+// run as an arm64 process: `make verify-arm64` does that and needs an arm64
+// host or qemu-aarch64. Emulation shows the instructions decode and return;
+// it shows nothing about memory ordering, which is what a fence is for.
 
 #include "textflag.h"
 

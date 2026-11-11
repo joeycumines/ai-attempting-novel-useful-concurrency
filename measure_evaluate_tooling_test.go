@@ -174,6 +174,47 @@ func renderCommittedLandingPage(t *testing.T) (string, siteFacts) {
 
 // The landing page links every run's report and files and every written
 // analysis, and no template placeholder survives rendering.
+// Every response file has a tracker row, and every tracker row has a response
+// file. The landing page shows what the tracker says and nothing else, so a
+// response the tracker omits would appear with no implementation or state.
+func TestTrackerCoversEveryResponse(t *testing.T) {
+	reports, err := discoverSiteReports(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := loadSiteCatalogData(".", reports)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Responses) == 0 {
+		t.Fatal("no response files found")
+	}
+	listed := map[string]bool{}
+	for _, r := range cat.Responses {
+		listed[r.Num] = true
+		if strings.HasPrefix(r.State, "not listed in the tracker") {
+			t.Errorf("%s has no row in the tracker table of 01-readme.md", r.Filename)
+		}
+		if strings.TrimSpace(r.Impls) == "" || strings.TrimSpace(r.State) == "" {
+			t.Errorf("%s: the tracker row has an empty implementation or state cell", r.Filename)
+		}
+	}
+	raw, err := os.ReadFile("01-readme.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		cells := strings.Split(line, "|")
+		if len(cells) < 5 {
+			continue
+		}
+		num := strings.TrimSpace(cells[1])
+		if len(num) == 2 && num[0] >= '0' && num[0] <= '9' && num[1] >= '0' && num[1] <= '9' && !listed[num] {
+			t.Errorf("tracker row %s has no response file %s-*.md", num, num)
+		}
+	}
+}
+
 func TestLandingPageCoversEveryRunAndReport(t *testing.T) {
 	page, facts := renderCommittedLandingPage(t)
 	if len(facts.Runs) == 0 {
@@ -212,5 +253,24 @@ func TestCommittedLandingPageIsCurrent(t *testing.T) {
 	page, _ := renderCommittedLandingPage(t)
 	if page != string(committed) {
 		t.Error("index.html is stale: run 'make site' and commit the result")
+	}
+}
+
+// The report script draws outlines as SVG paths. A polygon's points attribute
+// takes bare coordinates, not path data; every report up to run 04 gave it
+// path data, so browsers drew neither the radar's rings nor its shapes. A DOM
+// emulator does not notice, which is why this is checked on the source.
+func TestReportScriptDrawsOutlinesAsPaths(t *testing.T) {
+	script := reportJS1 + reportJS2 + reportJS3 + reportJS4
+	if strings.Contains(script, "svg('polygon'") || strings.Contains(script, "svg('polyline'") {
+		t.Error("the report script builds a polygon or polyline; its outlines are path data and must be path elements")
+	}
+	for _, want := range []string{"svg('path', {d: d,", "class:'radar-shape'", "class:'radar-nodata'", "function renderRunnables()"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("the report script no longer contains %q", want)
+		}
+	}
+	if !strings.Contains(reportHTMLBody, `id="runTable"`) || !strings.Contains(reportHTMLBody, `id="runSummary"`) {
+		t.Error("the report body has no runnables table")
 	}
 }

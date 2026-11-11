@@ -7,7 +7,6 @@ const landingPageScript = `<script>
 (function(){
   var RESPONSES = __RESPONSES_JSON__;
   var SCORES = __SCORES_JSON__;
-  var REPORTS = __REPORTS_JSON__;
 
   function esc(s){
     if (s == null) return '';
