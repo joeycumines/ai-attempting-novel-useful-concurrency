@@ -85,10 +85,40 @@ var familyOrder = ['broadcast','caster','scatter','gather','payload','fanin','ex
    Reports generated before that rule existed have no such field and count as ranked. */
 function isRanked(s){ return !s || s.ranked !== false; }
 function scoreText(s){ return isRanked(s) ? String(s.score) : 'not ranked'; }
-/* A dimension with no data for this implementation is left out of its score. */
-function dimMissing(s, key){ return !!(s && s.dims_missing && s.dims_missing.indexOf(key) >= 0); }
+/* A dimension with no data for this implementation is left out of its score,
+   and so is one on which every member of its scoring group has the same value. */
+function dimMissing(s, key){ return !!(s && ((s.dims_missing && s.dims_missing.indexOf(key) >= 0) || (s.dims_uniform && s.dims_uniform.indexOf(key) >= 0))); }
 var familiesPresent = familyOrder.filter(function(f){ return (derived.scores && derived.scores[f] && Object.keys(derived.scores[f]).length) || metrics.some(function(m){return m.family===f;}); });
 function derivedFamily(f){ return (derived.scores && derived.scores[f]) || {}; }
+/* Scoring groups. A family whose implementations differ in whether a publish
+   is delivered is scored in delivery classes, and a score is comparable only
+   within one class: every list of scores on this page is a list of one group. */
+var classLabel = {'delivers-all':'delivers every value', 'drops':'drops or coalesces', '':'no delivery figures'};
+function familyClasses(f){
+  var seen = {}, sc = derivedFamily(f);
+  Object.keys(sc).forEach(function(i){ seen[sc[i]['class'] || ''] = true; });
+  return ['delivers-all','drops',''].filter(function(c){ return seen[c]; });
+}
+var scoreGroups = [];
+familiesPresent.forEach(function(f){
+  var cs = familyClasses(f);
+  var classed = cs.length > 1 || (cs.length === 1 && cs[0] !== '');
+  if (!cs.length) cs = [''];
+  cs.forEach(function(c){
+    scoreGroups.push({family: f, cls: c, classed: classed, label: (familyLabel[f] || f) + (classed ? ' · ' + classLabel[c] : '')});
+  });
+});
+function derivedGroup(g){
+  var sc = derivedFamily(g.family), out = {};
+  Object.keys(sc).forEach(function(i){ if (!g.classed || (sc[i]['class'] || '') === g.cls) out[i] = sc[i]; });
+  return out;
+}
+function fmtShare(f){
+  if (typeof f !== 'number') return '—';
+  if (f >= 1) return '100%';
+  if (f >= 0.9995) return '<100%';
+  return (100*f).toFixed(f >= 0.1 ? 0 : f >= 0.01 ? 1 : 2) + '%';
+}
 function sortedImpls(f, by){
   var rows = Object.keys(derivedFamily(f)).map(function(impl){ return derivedFamily(f)[impl]; });
   rows.sort(function(a,b){
@@ -135,13 +165,14 @@ function sortedImpls(f, by){
 
   // Family scoreboard cards + verdict distribution
   var html = '<div class="kicker" style="margin-top:6px">Family scorecards</div><div class="findings-grid" style="margin-top:10px">';
-  familiesPresent.forEach(function(f){
-    var scores = derivedFamily(f);
+  scoreGroups.forEach(function(g){
+    var f = g.family;
+    var scores = derivedGroup(g);
     var impls = Object.keys(scores);
     if (!impls.length) return;
     var best = impls.map(function(i){ return scores[i]; }).sort(function(a,b){ return b.score-a.score; })[0];
     var cov = (derived.coverage && derived.coverage[f]) || {expected: impls.length, measured: impls.length, missing: []};
-    html += '<div class="finding"><span class="tag">'+esc(familyLabel[f]||f)+' · '+(cov.measured||impls.length)+'/'+(cov.expected||impls.length)+' measured</span>'
+    html += '<div class="finding"><span class="tag">'+esc(g.label)+' · '+(g.classed ? impls.length+' in this class' : (cov.measured||impls.length)+'/'+(cov.expected||impls.length)+' measured')+'</span>'
       + (isRanked(best)
           ? '<h3>'+esc(best.impl)+'</h3><p>Adoptability <b style="color:var(--cyan)">'+best.score+'</b> — '+esc(best.verdict)+'. '
           : '<h3>Not ranked</h3><p>'+esc(best.unranked_reason ? 'Reason: '+best.unranked_reason+'. ' : impls.length+' implementations measured: too few for a percentile score. Compare their measurements and confidence intervals. '))

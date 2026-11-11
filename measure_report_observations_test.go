@@ -17,6 +17,33 @@ func computeObservations(data *reportData, dd derivedData) []map[string]any {
 	}
 	metrics := data.metrics
 
+	// 0. What the throughput battery delivered (broadcast family).
+	if class, _ := deliveryClasses(metrics, "broadcast"); len(class) > 0 {
+		all, lo, hi := 0, math.Inf(1), math.Inf(-1)
+		for _, m := range metrics {
+			if m["metric"] != "publish_ns_op" || m["family"] != "broadcast" || dimsSubs(m) != 8 {
+				continue
+			}
+			f, ok := m["delivered_fraction"].(float64)
+			if !ok || class[fmt.Sprint(m["impl"])] != classDrops {
+				continue
+			}
+			lo, hi = math.Min(lo, f), math.Max(hi, f)
+		}
+		for _, c := range class {
+			if c == classDeliversAll {
+				all++
+			}
+		}
+		detail := "The throughput battery publishes as fast as it can to subscribers that do nothing but receive, and counts what arrives. The two groups are scored separately: a publish is cheaper when the value need not arrive."
+		if !math.IsInf(lo, 1) {
+			detail = fmt.Sprintf("The other %d delivered between %s and %s of what was published at 8 subscribers. ", len(class)-all, evalPercent(lo), evalPercent(hi)) + detail
+		}
+		add("delivery",
+			fmt.Sprintf("%d of %d broadcast implementations delivered every published value in the throughput battery", all, len(class)),
+			detail, "#leaderboard")
+	}
+
 	// 1. Stalled-consumer blocking fraction (broadcast family).
 	blocked, completed, total := 0, 0, 0
 	for _, m := range metrics {
@@ -58,6 +85,7 @@ func computeObservations(data *reportData, dd derivedData) []map[string]any {
 	// 3. Fanout flatness champion.
 	var bestScale float64 = math.Inf(1)
 	var bestScaleImpl string
+	bestScaleLeast, bestScaleHasLeast := 0.0, false
 	for family, implScores := range dd.Scores {
 		if family != "broadcast" {
 			continue
@@ -65,13 +93,22 @@ func computeObservations(data *reportData, dd derivedData) []map[string]any {
 		for impl, s := range implScores {
 			if v, ok := s.Metrics["scaling_ratio_64_over_1"].(float64); ok && v < bestScale {
 				bestScale, bestScaleImpl = v, impl
+				bestScaleLeast, bestScaleHasLeast = s.Metrics["delivered_fraction_least"].(float64)
 			}
 		}
 	}
 	if !math.IsInf(bestScale, 1) {
 		add("scaling",
 			fmt.Sprintf("%s is the flattest publisher (%.2fx cost growth from 1 to 64 subscribers)", bestScaleImpl, bestScale),
-			"Publish cost at 64 subscribers relative to 1 subscriber, geometric mean of reps. Flat designs scale to high fan-out without amortisation tricks.",
+			func() string {
+				d := "Publish cost at 64 subscribers relative to 1 subscriber."
+				if bestScaleHasLeast && bestScaleLeast < 1 {
+					d += " Its cost does not grow because its publish does not wait for a subscriber: in the least favourable cell of the throughput battery its subscribers received " + evalPercent(bestScaleLeast) + " of what was published."
+				} else if bestScaleHasLeast {
+					d += " It delivered every published value in every cell of the throughput battery."
+				}
+				return d
+			}(),
 			"#scaling")
 	}
 

@@ -108,7 +108,11 @@ func measurePayloadThroughput(ctx *measureContext, mk func() asyncAPI, name stri
 			}
 			n, d := budget.done()
 			publishes += int64(warmup + n)
-			receives += settledReceives(g.totalReceived, int64(warmup+n)*int64(subs))
+			got, settled := settledReceives(g.totalReceived, int64(warmup+n)*int64(subs))
+			if !settled {
+				ctx.fail("%s: payload subscribers were still receiving %v after the last publish (subs=%d): the delivered count is not final", name, settleLimit, subs)
+			}
+			receives += got
 			if !g.stop(3 * time.Second) {
 				ctx.fail("%s: payload drains did not exit (subs=%d)", name, subs)
 			}
