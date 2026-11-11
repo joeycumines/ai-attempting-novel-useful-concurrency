@@ -233,6 +233,7 @@ var harnessRunnables = map[string]string{
 	"TestEvaluationIsGeneratedFromTheRecords":        "measurement evaluation tooling",
 	"TestTrackerCoversEveryResponse":                 "site tooling",
 	"TestTrackerFilesResolve":                        "site tooling",
+	"TestRegistryDumpForResults":                     "measure tooling",
 	"TestReportScriptDrawsOutlinesAsPaths":           "report tooling",
 	"TestLandingPageCoversEveryRunAndReport":         "site tooling",
 	"TestCommittedLandingPageIsCurrent":              "site tooling",

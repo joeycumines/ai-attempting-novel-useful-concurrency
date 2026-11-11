@@ -208,3 +208,32 @@ func TestVerifyRejectsMetricRecordsWithoutAValue(t *testing.T) {
 		}
 	}
 }
+
+// A results file is reported and evaluated against the dump of its own run
+// group, or the nearest earlier one, never a later one and never silently the
+// live registry.
+func TestRegistryDumpForResults(t *testing.T) {
+	dir := t.TempDir()
+	touch := func(name string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	touch("results-02-02-registry.json")
+	touch("results-05-02-registry.json")
+	for _, c := range []struct{ results, want, note string }{
+		{"results-01-01-results.jsonl", "", ""},
+		{"results-02-01-results.jsonl", "results-02-02-registry.json", ""},
+		{"results-04-01-results.jsonl", "results-02-02-registry.json", " (nearest earlier registry dump; this run group has none)"},
+		{"results-05-01-results.jsonl", "results-05-02-registry.json", ""},
+		{"scratch.jsonl", "", ""},
+	} {
+		got, note := registryDumpForResults(filepath.Join(dir, c.results))
+		if got != "" {
+			got = filepath.Base(got)
+		}
+		if got != c.want || note != c.note {
+			t.Errorf("%s: got %q %q, want %q %q", c.results, got, note, c.want, c.note)
+		}
+	}
+}
