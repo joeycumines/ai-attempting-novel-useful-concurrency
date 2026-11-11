@@ -289,10 +289,6 @@ func TestStandardHarness_InOrderDelivery(t *testing.T) {
 func TestStandardHarness_ConcurrentChurn(t *testing.T) {
 	for _, factory := range AllBroadcasters() {
 		b := factory()
-		if limited, ok := b.(interface{ SkipStandardConcurrentChurn() bool }); ok && limited.SkipStandardConcurrentChurn() {
-			b.Close()
-			continue
-		}
 		t.Run(b.Name(), func(t *testing.T) {
 			defer b.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

@@ -16,14 +16,37 @@ package bigbuff
 // Provenance: 43-grok-chat-prompt-mini.md (Grok, response #43).
 // Symbols are response-scoped for the flat package. This implementation holds
 // its membership mutex during synchronous sends and uses a global ack count.
-// Its harness adapter waits per delivered value; generic concurrent churn is
-// exposure-limited because cancelling a receiver before it acknowledges an
-// in-flight round can strand the publisher.
+//
+// Repair (not in the source): Unsubscribe could not run during a Send. Send
+// holds the membership mutex for the whole fan-out and blocks on each
+// subscriber's unbuffered channel, so a subscriber that stopped receiving and
+// called Unsubscribe waited for a mutex held by a Send that was waiting for
+// that subscriber: a deadlock. Unsubscribe now takes, and acknowledges, any
+// value an in-flight Send hands it while it waits for the mutex. The
+// departing subscriber is thereby "fully included" in that fan-out, which is
+// the snapshot rule Send documents, and the value is discarded.
+//
+// Repair (not in the source): concurrent Sends corrupted the acknowledgement
+// count. The count is one integer shared by every round, and the source let a
+// second Send fan out while the first was still collecting acknowledgements.
+// A subscriber that had acknowledged the first round and received the second
+// then acknowledged again while the first round was still open, which closed
+// the first round early; the subscriber that had yet to acknowledge it parked
+// in Wait for a round that no longer existed, never received the second
+// value, and the second Send never returned. Sends are now serialised for
+// their whole length (sendMu), so there is one round at a time and every
+// acknowledgement belongs to it. Subscribe and Unsubscribe still run while a
+// Send collects its acknowledgements, as before.
+//
+// What remains the caller's duty, as the source states: every receive on C
+// must be followed by exactly one Wait, including the last one before
+// Unsubscribe. A value received and never acknowledged strands its Send.
 
 import (
 	"context"
 	"iter"
 	"math"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -94,6 +117,8 @@ func (sub *SlotSubscription43Grok[V]) Unsubscribe() {
 // subscribers (identical asymptotics to a callback list) while still exposing
 // ordinary Go channels that can be used in select.
 type SlotPubSub43Grok[V any] struct {
+	sendMu sync.Mutex // one Send at a time, fan-out and barrier (repair; see the header)
+
 	mu sync.Mutex // serialises active-list mutations and the fan-out itself
 
 	// freelist (singly linked via slot43Grok.next while free)
@@ -191,7 +216,12 @@ func (x *SlotPubSub43Grok[V]) unsubscribe(s *slot43Grok[V]) {
 	x.checkUsedFactoryFunction()
 	x.checkBroken()
 
-	x.mu.Lock()
+	// A Send in its fan-out holds mu and may be blocked handing this very
+	// subscriber its value. Take that value and acknowledge it, so the Send
+	// can finish and release mu. Nothing can be sent to the slot once mu is
+	// held here, so the slot goes back to the free list with no value in
+	// flight.
+	x.lockDraining(s)
 	defer x.mu.Unlock()
 
 	// Already free?
@@ -223,6 +253,56 @@ func (x *SlotPubSub43Grok[V]) unsubscribe(s *slot43Grok[V]) {
 	x.subscribers.Add(-1)
 }
 
+// lockDraining acquires mu on behalf of the subscriber that owns s, taking and
+// acknowledging whatever a Send hands that subscriber in the meantime.
+//
+// The common case is an uncontended TryLock. A Send that is mid fan-out
+// usually finishes within a few scheduler yields, so the wait starts as a
+// short allocation-free spin. A Send that is itself waiting on a slow
+// subscriber can hold mu indefinitely; the wait then parks, with a helper
+// goroutine blocking on mu so that the subscriber's channel and the mutex can
+// be waited on together.
+func (x *SlotPubSub43Grok[V]) lockDraining(s *slot43Grok[V]) {
+	const spins = 64
+	for i := 0; i < spins; i++ {
+		if x.mu.TryLock() {
+			return
+		}
+		select {
+		case <-s.c:
+			x.wait()
+		case <-x.broken:
+			panic(slotPubSub43StateInvariantViolation)
+		default:
+			runtime.Gosched()
+		}
+	}
+	x.lockDrainingParked(s)
+}
+
+// lockDrainingParked is the parked phase of lockDraining.
+func (x *SlotPubSub43Grok[V]) lockDrainingParked(s *slot43Grok[V]) {
+	locked := make(chan struct{})
+	go func() {
+		x.mu.Lock()
+		close(locked)
+	}()
+	for {
+		select {
+		case <-locked:
+			return // mu was locked by the helper; this goroutine now owns it
+		case <-s.c:
+			x.wait()
+		case <-x.broken:
+			go func() { // do not leave mu held by a helper nobody will join
+				<-locked
+				x.mu.Unlock()
+			}()
+			panic(slotPubSub43StateInvariantViolation)
+		}
+	}
+}
+
 // Send delivers value to every subscriber that is registered at the moment
 // the fan-out begins.  It blocks until each of those subscribers has both
 // received the value and called Wait.  The number of subscribers that were
@@ -238,6 +318,9 @@ func (x *SlotPubSub43Grok[V]) Send(value V) (sent int) {
 	if x.subscribers.Load() == 0 {
 		return 0 // fast path
 	}
+
+	x.sendMu.Lock()
+	defer x.sendMu.Unlock()
 
 	x.mu.Lock()
 	n := x.numActive

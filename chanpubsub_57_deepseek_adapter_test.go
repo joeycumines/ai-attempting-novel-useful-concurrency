@@ -7,8 +7,13 @@ import (
 )
 
 type chanPubSub57Adapter struct {
-	x      *ChanPubSub57DeepSeek[chan int, int]
-	subsMu sync.Mutex
+	x *ChanPubSub57DeepSeek[chan int, int]
+	// subsMu lets TryReceive hold the membership still. Subscribe and
+	// Unsubscribe share it (read side): the primitive's Subscribe blocks for
+	// the length of an in-flight Send, and that Send may be waiting for a
+	// subscriber to withdraw, so one membership change must never exclude
+	// another. TryReceive takes the write side without waiting.
+	subsMu sync.RWMutex
 }
 
 func newChanPubSub57Adapter() Broadcaster {
@@ -23,19 +28,10 @@ func (b *chanPubSub57Adapter) Publish(v int) int { return b.x.Send(v) }
 func (b *chanPubSub57Adapter) Close()             {}
 func (b *chanPubSub57Adapter) IsCoalescing() bool { return false }
 
-// SkipStandardConcurrentChurn documents the manual lock-step exposure: Receive
-// cannot abandon Wait mid-round, so cancelling a churn subscriber while Send is
-// armed can strand the round. Dedicated facets unsubscribe only between rounds.
-func (b *chanPubSub57Adapter) SkipStandardConcurrentChurn() bool { return true }
-
-// TryReceive may acknowledge a whole round and is restricted to one subscriber;
-// the ordinary one-subscriber polling facet remains safe, but concurrent fuzz
-// withdrawal is not. Never disguise a blocked multi-subscriber Wait as a miss.
-func (b *chanPubSub57Adapter) SkipBroadcastFuzz() bool { return true }
 func (b *chanPubSub57Adapter) Subscribe() BroadcastSubscriber {
-	b.subsMu.Lock()
+	b.subsMu.RLock()
 	b.x.Subscribe()
-	b.subsMu.Unlock()
+	b.subsMu.RUnlock()
 	return &chanPubSub57Sub{b: b}
 }
 
@@ -71,8 +67,11 @@ func (s *chanPubSub57Sub) TryReceive() (int, bool) {
 	// acknowledgement. If there are other subscribers, that acknowledgement
 	// may block until all of them receive; TryReceive must remain safe in the
 	// serialized fuzz/harness path, so it polls only when this is the sole
-	// registered receiver. subsMu keeps membership stable through Wait.
-	s.b.subsMu.Lock()
+	// registered receiver. subsMu keeps membership stable through Wait; if a
+	// membership change is in progress the poll reports a miss.
+	if !s.b.subsMu.TryLock() {
+		return 0, false
+	}
 	defer s.b.subsMu.Unlock()
 	if s.closed.Load() || s.b.x.subscribers.Load() != 1 {
 		return 0, false
@@ -93,7 +92,7 @@ func (s *chanPubSub57Sub) Unsubscribe() {
 	if !s.closed.CompareAndSwap(false, true) {
 		return
 	}
-	s.b.subsMu.Lock()
+	s.b.subsMu.RLock()
 	s.b.x.Unsubscribe()
-	s.b.subsMu.Unlock()
+	s.b.subsMu.RUnlock()
 }

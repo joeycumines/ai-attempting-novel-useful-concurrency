@@ -12,7 +12,6 @@ func (a *slotPubSub43Adapter) IsCoalescing() bool { return false }
 func (a *slotPubSub43Adapter) Subscribe() BroadcastSubscriber {
 	return &slotPubSub43Sub{sub: a.x.Subscribe()}
 }
-func (a *slotPubSub43Adapter) SkipStandardConcurrentChurn() bool { return true }
 
 type slotPubSub43Sub struct{ sub *SlotSubscription43Grok[int] }
 

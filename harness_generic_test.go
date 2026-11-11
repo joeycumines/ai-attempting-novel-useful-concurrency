@@ -16,10 +16,7 @@ type genericPubSubBroadcaster struct {
 	api  pubsubAPI
 }
 
-func (a *genericPubSubBroadcaster) Name() string { return a.name }
-func (a *genericPubSubBroadcaster) SkipStandardConcurrentChurn() bool {
-	return a.name == "ChanPubSubV2_06meta" // manual Wait cannot be interrupted mid-round
-}
+func (a *genericPubSubBroadcaster) Name() string       { return a.name }
 func (a *genericPubSubBroadcaster) Publish(v int) int  { return a.api.send(v) }
 func (a *genericPubSubBroadcaster) IsCoalescing() bool { return !a.api.lossless }
 func (a *genericPubSubBroadcaster) Close()             {}

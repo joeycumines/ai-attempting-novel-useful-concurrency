@@ -244,7 +244,7 @@ var Cases = []Case{
 	{"barrier/bench/send-with-acks", "deadline-bounded-barrier-broadcast", CaseBenchmark, "Send cost with 1/8/64 acknowledging members", "BenchmarkScenarioBarrier"},
 	{"barrier/fuzz/op-stream", "deadline-bounded-barrier-broadcast", CaseFuzz, "Fuzzed join/leave/stall/deadline stream against the delivery model", "FuzzScenarioBarrier"},
 	{"edge/test/standard-no-subscribers", "zero-subscriber-and-edge-lifecycle", CaseTest, "Standard harness: publish with no subscribers never blocks or panics, for every Broadcaster adapter", "TestStandardHarness_NoSubscribers"},
-	{"churn/test/standard-concurrent-churn", "ephemeral-churn-membership", CaseTest, "Standard harness: bounded subscribe/receive/unsubscribe cycles against a free-running publisher, for every Broadcaster adapter that does not opt out", "TestStandardHarness_ConcurrentChurn"},
+	{"churn/test/standard-concurrent-churn", "ephemeral-churn-membership", CaseTest, "Standard harness: bounded subscribe/receive/unsubscribe cycles against a free-running publisher, for every Broadcaster adapter (none is exempt)", "TestStandardHarness_ConcurrentChurn"},
 	{"churn/bench/unified-churn", "ephemeral-churn-membership", CaseBenchmark, "Subscribe/unsubscribe cost for every Broadcaster adapter", "BenchmarkUnified_Churn"},
 	{"churn/test/membership-churn", "ephemeral-churn-membership", CaseTest, "Continuous subscribe/unsubscribe while publishing; no corruption/stall", "TestScenarioChurn"},
 	{"churn/bench/subscribe-unsubscribe", "ephemeral-churn-membership", CaseBenchmark, "Subscribe/unsubscribe cost (BenchmarkUnified_Churn + scenario bench)", "BenchmarkScenarioBroadcast"},
