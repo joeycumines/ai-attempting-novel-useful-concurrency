@@ -18,12 +18,42 @@ package bigbuff
 
 // Provenance: 40-arena-gemini-3.8-flash-high-prompt-mini.md (Gemini, response #40).
 //
-// Source identifiers are response-scoped. The candidate's slot channel pointer
-// is plain mutable memory and the implementation closes/replaces it during
-// unsubscribe, so concurrent send/churn and blocking-policy close are not safe.
-// This source is integrated with a precise exposure limit: the unified adapter
-// uses only DropOldest, and generic concurrent churn excludes it. No scenario
-// benchmarks or tests may race channel replacement/close against Send.
+// Source identifiers are response-scoped.
+//
+// Repairs (not in the source). The design is a slab of slots, each holding a
+// channel that is closed and replaced when its subscriber leaves, with Send
+// walking an occupancy mask without a lock. The source did nothing to keep a
+// Send that had read the mask away from a slot being closed:
+//
+//  1. Send could send on a channel that Unsubscribe or Close had just closed
+//     (a panic), and read the slot's channel field while Unsubscribe wrote it
+//     (a data race). Each slot now carries a lease: a count of the deliveries
+//     in flight to it. deliver takes the lease and then checks the slot's
+//     closed flag; a closer sets the flag and then waits for the count to
+//     reach zero before it touches the channel. One of the two always sees
+//     the other. The lease is two atomic operations per delivery; Send is
+//     still lock-free.
+//  2. A closer waiting for the lease would wait for ever behind a Send that is
+//     blocked on a full channel under SlabPolicy40Block. While it waits it
+//     takes values off the channel, which lets that Send complete. The values
+//     are discarded: their subscriber is leaving.
+//  3. Unsubscribe released the slot for reuse before it had replaced the
+//     channel, so a concurrent Subscribe could be handed the channel that was
+//     about to be closed. The slot is now released last, and stays marked
+//     closed until its next subscriber claims it, so a Send holding a stale
+//     mask does not deliver into an unclaimed slot.
+//  4. Subscribe could claim a slot after Close had passed it, leaving a
+//     subscriber on a channel that would never be closed. Subscribe checks
+//     for a concurrent Close after it has claimed.
+//  5. SubscribeContext closed its subscription twice when its context was
+//     cancelled (once from the context callback, once on return). A handle is
+//     a pointer into the slab and is shared with the slot's next subscriber,
+//     so the second close could cut off a subscriber that had since taken the
+//     slot. It now closes exactly once.
+//
+// A property of the design that remains, and that callers must respect: a
+// handle is only valid until it is closed. Closing a handle again after its
+// slot has been claimed by a new subscriber closes that subscriber.
 
 import (
 	"context"
@@ -126,10 +156,17 @@ type slab40[V any] struct {
 }
 
 type slot40[V any] struct {
+	// ch is written only by a closer that holds the closed flag and has seen
+	// inflight reach zero, and read only under the lease or by the slot's
+	// claimant.
 	ch     chan V
 	policy atomic.Uint32
+	// closed is true while the slot is being closed and while it is free. A
+	// closer claims the slot by setting it; Subscribe clears it.
 	closed atomic.Bool
-	sub    SlabSubscription40Gemini[V]
+	// inflight counts the deliveries in progress to this slot (the lease).
+	inflight atomic.Int32
+	sub      SlabSubscription40Gemini[V]
 }
 
 // SlabSubscription40Gemini represents an active subscriber registration.
@@ -168,6 +205,7 @@ func (sc *SlabCaster40Gemini[V]) newSlab() *slab40[V] {
 		slot40 := &s.slots[i]
 		slot40.ch = make(chan V, sc.bufferSize)
 		slot40.policy.Store(uint32(sc.policy))
+		slot40.closed.Store(true) // free; Subscribe opens it
 		slot40.sub.slab40 = s
 		slot40.sub.owner = sc
 		slot40.sub.index = uint8(i)
@@ -275,6 +313,22 @@ func (sc *SlabCaster40Gemini[V]) SendParallel(val V) int {
 }
 
 func (sc *SlabCaster40Gemini[V]) deliver(slot40 *slot40[V], val V) bool {
+	// A slot that is closing or free is left alone without taking the lease,
+	// so a closer waits only for the deliveries that began before it set the
+	// flag, not for Sends that keep arriving.
+	if slot40.closed.Load() {
+		return false
+	}
+	// Take the lease, then look at the flag again: a closer sets the flag,
+	// then waits for the lease. Whichever goes second sees the other.
+	slot40.inflight.Add(1)
+	ok := sc.deliverLeased(slot40, val)
+	slot40.inflight.Add(-1)
+	return ok
+}
+
+// deliverLeased is deliver's body; the caller holds the slot's lease.
+func (sc *SlabCaster40Gemini[V]) deliverLeased(slot40 *slot40[V], val V) bool {
 	if slot40.closed.Load() {
 		return false
 	}
@@ -329,10 +383,27 @@ func (sc *SlabCaster40Gemini[V]) deliver(slot40 *slot40[V], val V) bool {
 			return false
 		}
 		slot40.ch <- val
-		return true
+		// A closer that found this delivery blocked took values off the
+		// channel to release it; the value may be one of those.
+		return !slot40.closed.Load()
 
 	default:
 		return false
+	}
+}
+
+// awaitDeliveries is called by a closer that has set slot40.closed. It
+// returns when no delivery to the slot is in progress. New deliveries see the
+// flag and leave at once, so the wait is short unless a delivery is blocked
+// on a full channel (SlabPolicy40Block); taking values off the channel
+// releases it.
+func (slot40 *slot40[V]) awaitDeliveries() {
+	for slot40.inflight.Load() != 0 {
+		select {
+		case <-slot40.ch:
+		default:
+			runtime.Gosched()
+		}
 	}
 }
 
@@ -359,7 +430,6 @@ func (sc *SlabCaster40Gemini[V]) SubscribeWithPolicy(p SlabPolicy40Gemini) *Slab
 					if curr.active.CompareAndSwap(act, act|bit) {
 						slot40 := &curr.slots[idx]
 						slot40.policy.Store(uint32(p))
-						slot40.closed.Store(false)
 
 						// Drain any residual elements from prior usage
 						for {
@@ -371,6 +441,15 @@ func (sc *SlabCaster40Gemini[V]) SubscribeWithPolicy(p SlabPolicy40Gemini) *Slab
 						}
 					Drained:
 						sc.subscribers.Add(1)
+						slot40.closed.Store(false) // open: deliveries may begin
+						if sc.closed.Load() {
+							// Close ran while the slot was being claimed and
+							// may have passed it. Close it here (a no-op if
+							// Close did get to it) and report the caster
+							// closed, as at the top.
+							slot40.sub.Close()
+							panic(ErrSlabCaster40Closed)
+						}
 						return &slot40.sub
 					}
 					// CAS conflict: re-read active in next iteration
@@ -419,12 +498,17 @@ func (sc *SlabCaster40Gemini[V]) SubscribeContext(ctx context.Context, opts ...S
 		}
 
 		sub := sc.SubscribeWithPolicy(policy)
-		defer sub.Close()
+		ch := sub.C()
 
-		stop := context.AfterFunc(ctx, sub.Close)
+		// Close exactly once: the handle is shared with the slot's next
+		// subscriber, so a second Close could close that subscriber.
+		var closeOnce sync.Once
+		closeSub := func() { closeOnce.Do(sub.Close) }
+		defer closeSub()
+
+		stop := context.AfterFunc(ctx, closeSub)
 		defer stop()
 
-		ch := sub.C()
 		for {
 			select {
 			case <-ctx.Done():
@@ -465,6 +549,7 @@ func (sc *SlabCaster40Gemini[V]) Close() error {
 			idx := bits.TrailingZeros64(mask)
 			slot40 := &curr.slots[idx]
 			if !slot40.closed.Swap(true) {
+				slot40.awaitDeliveries()
 				close(slot40.ch)
 			}
 			mask &= mask - 1
@@ -510,25 +595,27 @@ func (s *SlabSubscription40Gemini[V]) Close() {
 	slab40 := s.slab40
 	idx := s.index
 	bit := uint64(1) << idx
-
-	for {
-		act := slab40.active.Load()
-		if act&bit == 0 {
-			return // Already unregistered
-		}
-		if slab40.active.CompareAndSwap(act, act&^bit) {
-			break
-		}
-	}
-
-	s.owner.subscribers.Add(-1)
 	slot40 := &slab40.slots[idx]
 
-	if !slot40.closed.Swap(true) {
-		oldCh := slot40.ch
-		// Replace channel so subsequent claimants start with a pristine, unclosed channel
-		slot40.ch = make(chan V, s.owner.bufferSize)
-		slot40.closed.Store(false)
-		close(oldCh)
+	// Claim the close. The flag is already set if the slot is free, if
+	// another Close of this handle is in progress, or if the caster's Close
+	// has closed the slot: in each case there is nothing to do.
+	if slot40.closed.Swap(true) {
+		return
+	}
+	slot40.awaitDeliveries()
+
+	oldCh := slot40.ch
+	// Replace channel so subsequent claimants start with a pristine, unclosed channel
+	slot40.ch = make(chan V, s.owner.bufferSize)
+	close(oldCh)
+
+	// Release the slot last: only now may a Subscribe claim it.
+	s.owner.subscribers.Add(-1)
+	for {
+		act := slab40.active.Load()
+		if act&bit == 0 || slab40.active.CompareAndSwap(act, act&^bit) {
+			return
+		}
 	}
 }

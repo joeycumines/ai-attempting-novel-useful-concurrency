@@ -3,6 +3,7 @@ package bigbuff
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // BenchmarkScenarioBroadcast: per scenario/attachment publish throughput with
@@ -52,49 +53,48 @@ func BenchmarkScenarioBroadcast(b *testing.B) {
 	}
 }
 
+// BenchmarkScenarioCaster times a Send that delivers to 8 registered
+// receivers. A caster delivers only to receivers that are registered when Send
+// is called, and each receiver registers again for every value, so a sender
+// that loops without waiting finds nobody registered and times an empty call
+// (see casterRounds). Each iteration here waits for the receivers and then
+// sends:
+//
+//	ns/op          the whole round: waiting for the receivers, then Send
+//	send-ns/op     Send alone, from call to return
+//	delivered/op   deliveries per Send; the benchmark fails unless it is 8
 func BenchmarkScenarioCaster(b *testing.B) {
 	for _, a := range casterAttachments {
 		b.Run(a.Impl, func(b *testing.B) {
 			if a.ExposureLimited {
 				b.Skip("exposure-limited attachment has no safe representative multi-receiver benchmark")
 			}
-			mk := casterLikes()[a.Impl]
-			x := mk()
 			const receivers = 8
-			stop := make(chan struct{})
-			done := make(chan struct{}, receivers)
-			for r := 0; r < receivers; r++ {
-				go func() {
-					defer func() { done <- struct{}{} }()
-					if !x.rearmEach {
-						x.add(1)
-					}
-					for {
-						if x.rearmEach {
-							x.add(1)
-						}
-						select {
-						case <-x.c:
-							if x.ack != nil {
-								x.ack()
-							}
-						case <-stop:
-							x.add(-1)
-							return
-						}
-					}
-				}()
+			rounds := startCasterRounds(casterLikes()[a.Impl](), receivers)
+			if !rounds.arm() {
+				b.Fatal("the receivers did not register")
 			}
+			var sending time.Duration
+			delivered := 0
 			b.ReportAllocs()
 			b.ResetTimer()
 			for v := 1; v <= b.N; v++ {
-				x.send(v)
+				d, k, ok := rounds.send(v)
+				if !ok {
+					b.Fatalf("send %d: a Send reported a delivery that no receiver took", v)
+				}
+				sending += d
+				delivered += k
 			}
 			b.StopTimer()
-			close(stop)
-			for r := 0; r < receivers; r++ {
-				<-done
+			if !rounds.arm() || !rounds.finish() {
+				b.Fatal("the receivers did not finish")
 			}
+			if got := rounds.received.Load(); delivered != receivers*b.N || got != int64(delivered) {
+				b.Fatalf("%d Sends reported %d deliveries and the receivers took %d; want %d", b.N, delivered, got, receivers*b.N)
+			}
+			b.ReportMetric(float64(sending.Nanoseconds())/float64(b.N), "send-ns/op")
+			b.ReportMetric(float64(delivered)/float64(b.N), "delivered/op")
 		})
 	}
 }

@@ -43,7 +43,7 @@ var broadcastAttachments = []Attachment{
 	// lockstep-barrier-lossless
 	att("lockstep-barrier-lossless", bBaselineBar, "Vacuum baseline: mutex + per-subscriber unbuffered channels + WaitGroup barrier.", true),
 	att("lockstep-barrier-lossless", bChanPubSub, "Reference lock-step design (also the historical baseline for this family).", true),
-	attX("lockstep-barrier-lossless", "ChanPubSubV2_06meta", "Attached via its manual Add/C/Wait adapter because it intentionally has no SubscribeContext.", true, "Exposure limited: facets unsubscribe only between rounds via the adapter; the manual Add(-1) steal panics if exercised mid-Send before all sends complete, so no facet withdraws mid-round."),
+	att("lockstep-barrier-lossless", "ChanPubSubV2_06meta", "Attached via its manual Add/C/Wait adapter because it intentionally has no SubscribeContext. A subscriber that withdraws during a Send takes its own share of the round, so the publisher is released; the adapter acknowledges every value it receives before it can withdraw.", true),
 	att("lockstep-barrier-lossless", "ChanPubSub09Gemini", "Lock-step variant with cond-based pong barrier.", true),
 	att("lockstep-barrier-lossless", "ChanPubSub10Gemini", "Lock-step variant with semaphore two-phase barrier.", true),
 	att("lockstep-barrier-lossless", "ChanPubSub14Xing", "Lock-step variant.", true),

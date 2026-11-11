@@ -39,6 +39,7 @@ type casterRounds struct {
 	wg        sync.WaitGroup
 	received  atomic.Int64
 	toArm     int // receivers that still owe a registration before the next Send
+	guard     *time.Timer
 }
 
 // casterArmGuard bounds the wait for a receiver to register again. It expires
@@ -89,7 +90,20 @@ func (r *casterRounds) arm() bool {
 	for ; r.toArm > 0; r.toArm-- {
 		select {
 		case <-r.ready:
-		case <-time.After(casterArmGuard):
+			continue
+		default:
+		}
+		// One timer for the life of the rounds: a timer per wait would put
+		// the harness's allocations into the benchmark that uses this.
+		if r.guard == nil {
+			r.guard = time.NewTimer(casterArmGuard)
+		} else {
+			r.guard.Reset(casterArmGuard)
+		}
+		select {
+		case <-r.ready:
+			r.guard.Stop()
+		case <-r.guard.C:
 			return false
 		}
 	}
