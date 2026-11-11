@@ -21,6 +21,11 @@ TEXT ·fenceRelease64GLM(SB), NOSPLIT|NOFRAME, $0-0
 	RET
 
 // func spinHint64GLM()
+//
+// Completion-phase repair: the response encoded this as WORD $0xd503233f and
+// labelled it YIELD. That word is HINT #25, PACIASP (sign the link register);
+// YIELD is HINT #1, 0xd503203f. The function has no caller, so the wrong
+// instruction never ran. It is now written with the assembler's mnemonic.
 TEXT ·spinHint64GLM(SB), NOSPLIT|NOFRAME, $0-0
-	WORD $0xd503233f // YIELD
+	YIELD
 	RET

@@ -419,3 +419,59 @@ func TestPhaseCaster72Gemini_ZeroAllocBroadcast(t *testing.T) {
 		c.Close()
 	}
 }
+
+// The two benchmarks below isolate the parts of the broadcaster that the
+// bitmap kernels serve, without any channel handoff in the measurement.
+
+// BenchmarkPhaseCaster72Gemini_BroadcastNoSubscribers is the cost of a
+// broadcast that finds nobody: the turnstile, the active-mask snapshot and
+// population count over every bank, and the coordination word.
+func BenchmarkPhaseCaster72Gemini_BroadcastNoSubscribers(b *testing.B) {
+	for _, banks := range []int{4, 64, 1024} {
+		b.Run("banks="+itoa72(banks), func(b *testing.B) {
+			c := NewPhaseCaster72Gemini[int](banks * slotsPerBank72Gemini)
+			defer c.Close()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if n, err := c.Broadcast(i); n != 0 || err != nil {
+					b.Fatalf("Broadcast = (%d, %v)", n, err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkPhaseCaster72Gemini_SubscribeLastBank is one Subscribe and
+// Unsubscribe when every bank but the last is full, so the free-slot search
+// has to pass over banks-1 full allocation masks.
+func BenchmarkPhaseCaster72Gemini_SubscribeLastBank(b *testing.B) {
+	for _, banks := range []int{4, 64, 1024} {
+		b.Run("banks="+itoa72(banks), func(b *testing.B) {
+			c := NewPhaseCaster72Gemini[int](banks * slotsPerBank72Gemini)
+			ch := make(chan int)
+			held := make([]Subscription72Gemini[int], 0, (banks-1)*slotsPerBank72Gemini)
+			for range (banks - 1) * slotsPerBank72Gemini {
+				s, err := c.Subscribe(ch)
+				if err != nil {
+					b.Fatal(err)
+				}
+				held = append(held, s)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				s, err := c.Subscribe(ch)
+				if err != nil {
+					b.Fatal(err)
+				}
+				s.Unsubscribe()
+			}
+			b.StopTimer()
+			for _, s := range held {
+				s.Unsubscribe()
+			}
+			c.Close()
+		})
+	}
+}

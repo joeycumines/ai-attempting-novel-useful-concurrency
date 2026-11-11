@@ -5,14 +5,18 @@ package bigbuff
 //
 // Integration status. The transcript presents these as the PhaseCaster
 // broadcast / subscribe hot-path scanners, but its final PhaseCaster source
-// never calls scanActiveBanks or findNonFullBank: the per-bank masks live
+// never called scanActiveBanks or findNonFullBank: the per-bank masks lived
 // inside the padded bank structs, not in the contiguous []atomic.Uint64 the
 // helpers take, and the only code that would have wired them (a second,
-// partial "bigbuff.go" listing) refers to fields that do not exist. Only
-// cpuPause is used (by SymExchanger72Gemini). They are therefore integrated
-// as stand-alone helpers: tested for parity against the reference loops
-// below in every build, fuzzed, and benchmarked; no PhaseCaster measurement
-// involves them.
+// partial "bigbuff.go" listing) refers to fields that do not exist.
+//
+// Completion-phase repair: PhaseCaster72Gemini now keeps its masks in two
+// contiguous arrays and calls scanActiveBanks72Gemini on every broadcast and
+// findNonFullBank72Gemini on every subscribe. cpuPause is used by
+// SymExchanger72Gemini. The helpers are also tested for parity against the
+// reference loops below in every build, fuzzed, and benchmarked. The arm64
+// routines were executed under an ARMv8 emulator against the same reference
+// (extraction_audit.md records how); they have not run on arm64 hardware.
 //
 // Integration repairs:
 //
