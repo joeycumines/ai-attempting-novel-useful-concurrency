@@ -533,11 +533,96 @@ same mechanism.
 - **#65** gained `NextContext`; **#60** and **#67** adapters lost their
   timing-based waits (see the tracker rows in `01-readme.md`).
 
+### Second pass: defects found after the first completion report
+
+The first completion report listed #28–#31 and #33 as "no dedicated unit
+tests, no defect known". That was a statement about coverage, not about the
+code. Two things changed it.
+
+**The broadcast op-stream fuzz target was rewritten.** The old
+`FuzzScenarioBroadcast` ran every implementation on every input with a 200 ms
+context and blocking receives: 6 executions in 10 s, so it explored nothing.
+The new one drives one implementation per input (chosen by the input) through
+at most 24 operations with at most 4 consumers, and uses no clock except the
+deadlock guard: about 7,800 executions per second. Operations: open a
+consumer, publish on a goroutine, wait for all publishes, probe, retire the
+newest consumer. `TestScenarioBroadcastOpStreams` replays the streams that
+found a defect and 300 fixed-seed streams per implementation on every
+`go test`.
+
+**Each of #28–#31 and #33 was read in full and given a unit test file.**
+
+Defects, each with a regression test that fails on the previous code unless
+stated:
+
+- **#28 `Broadcast28Flint.Send`** (op streams). On meeting a retired
+  subscriber that was not the list head it restarted the walk and never
+  unlinked the node: subscribers ahead of it received the value again and
+  `Send` never returned. It now steps past and unlinks by CAS.
+- **#47 `ChanPubSub47Gemini`** (op streams; the defect was on `main`). The
+  last subscriber to receive released the pong barrier before the sender had
+  cleared ping's sending state, so an `Unsubscribe` straight after `Wait` was
+  treated as a mid-flight withdrawal and parked forever. The sender is now a
+  participant in the barrier (`pongRem = subscribers + 1`), and `Add(-n)`
+  decides whether it is mid-flight under `subMu`. An acknowledged iterator now
+  leaves through `Unsubscribe`.
+- **`BaselineBarrierPubSub`** (op streams). A subscriber that joined
+  mid-round and then left was counted against that round:
+  `sync: negative WaitGroup counter`.
+- **#11 `EpochPubSub`** (op streams). `Subscribe` followed by `Current` was
+  two steps, so a round armed in between counted a subscriber that never
+  acknowledged; `Unsubscribe` compensated the barrier even after an
+  acknowledgement. `SubscribeEpoch` and `UnsubscribeAcked` make each atomic.
+  The dedicated tests pin the new contract; the failure itself is shown by
+  `TestScenarioBroadcastOpStreams`, which deadlocks in 3 of 10 runs
+  (GOMAXPROCS 2 and 4) with the old code.
+- **#29 `Relay29Nemotron`** (review). `WaitNext` waited on the shared
+  one-token doorbell, so one `Publish` woke one of N parked links (1 of 3 in
+  the test). Links now park on a channel that `Publish` closes. `store` also
+  refuses to put an older sequence over a newer one in a slot; that part is
+  shown by a white-box test, not by a reproduced race. The tests also record
+  that `Publish` allocates once per call (the boxed value, since the first
+  integration; the response claims none); the repair adds a channel
+  allocation only to a `WaitNext` that parks.
+- **#30 `Arcadia`** (review). Slots had no position tag. An overrun
+  subscriber re-read and reordered (4-slot ring, 0..9 sent: `8 9 6 7 8 9 6 7
+  8 9`), a reader could take the previous lap's value after a wrap, a slot
+  could regress with concurrent senders, the waiter's generation snapshot came
+  after the emptiness check (a subscriber could park with a value available),
+  `Len` exceeded the capacity, and the iterator could return with its
+  subscription still registered. Behaviour change: an overrun subscriber now
+  skips to the oldest retained value. The tests also record that `Send`
+  allocates once per call, as it did before the repair; the response claims
+  none.
+- **#31 `Vecast`** (review, then measured). Two concurrent `Subscribe` calls
+  could take the same slot (a subscriber lost in 15 of 200 runs with 8
+  subscribers). `Unsubscribe` drained the channel, so it swallowed a value a
+  blocked `Send` was offering and the `Send` counted it (returned 2 with one
+  receiver); if the drain came first the `Send` stayed blocked until `Close`.
+  Channels were recycled through a pool while a sender could still hold them.
+  `Close` closed channels a concurrent `Send` had loaded; this one was read,
+  not reproduced (20,000 attempts). Shard affinity used the low bits of a
+  stack address, which are the same in every goroutine: 64 goroutines used 1
+  shard, now about 40. Repair: per-shard mutex for membership, a `gone`
+  channel per subscription, no pool, a read/write lock between `Send` and
+  `Close`. The adapter no longer skips the churn facets and the attachment is
+  no longer exposure-limited.
+- **#33 `ChanMulticast33North`** (review). The iterator returned at once for
+  an already cancelled context while the removal was still queued on the
+  context's goroutine. It was also attached to the lossy-ring scenario with a
+  remark calling its channels unbuffered; it is a lossless relay with one
+  value of slack per subscriber, and is now attached to
+  `buffered-lossless-backpressured`.
+- **#52 `ChanCascade52Opus`** (lifecycle review). No defect found. Four
+  lifecycle tests added, including the exact-count claim under churn.
+
+Measurement run 04 measured the defective versions of #28, #29, #30, #31,
+#47, `BaselineBarrierPubSub` and the `EpochPubSub` adapter. Its numbers for
+those implementations are superseded by the run that follows these repairs.
+
 ### Not done
 
 - No measurement battery for the exchange and barrier scenarios (Go
   benchmarks only).
 - The #72 bitmap kernels are not wired into the broadcaster.
 - arm64 assembly (#64 fence, #72 bitmap) is assembled, never executed.
-- #28, #29, #30, #31, #33 still have no dedicated unit tests; #52 had no
-  further lifecycle review.

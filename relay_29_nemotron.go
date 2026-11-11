@@ -16,6 +16,27 @@
 
 package bigbuff
 
+// Provenance: response 29.
+//
+// Repairs made in the completion phase (regression tests:
+// relay_29_nemotron_test.go):
+//
+//  1. WaitNext waited on the doorbell below, which holds one token: one
+//     Publish woke one parked link and the others slept until the next
+//     Publish (or forever). Links now park on a channel that Publish closes
+//     (the wake field); the doorbell is kept for Notify, where one coalesced
+//     token is what the response documents.
+//  2. A slot is never overwritten by an older sequence than the one it
+//     holds. Two publishers a full lap apart could otherwise leave the older
+//     value in the slot.
+//
+// Costs, recorded by the tests. Publish allocates once per call: the value
+// is boxed for the slot's atomic pointer, which the first integration
+// introduced so that readers do not race a slot rewrite; the response claims
+// an allocation-free Publish. Repair 1 adds one channel allocation per
+// WaitNext that actually parks, and nothing to Publish beyond closing that
+// channel. Next allocates nothing.
+
 import (
 	"context"
 	"iter"

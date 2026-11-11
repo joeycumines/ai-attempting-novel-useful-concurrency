@@ -37,6 +37,23 @@ package bigbuff
 //     lost.
 //  4. sync/atomic.Int32 fields were passed to the package-level atomic helpers
 //     by address, which does not compile; they use the typed API.
+//
+// Completion-phase review (the first integration ran the shared harness only):
+//
+//  5. The SubscribeContext iterator has unsubscribed by the time it returns.
+//     With a context that was already cancelled it returned at once, leaving
+//     the removal to the context's AfterFunc goroutine, so the subscriber
+//     could still be registered (and still be counted by Send) afterwards.
+//  6. Comments that still described the pre-repair design were corrected:
+//     subscriber channels are never closed (repair 2), and Send returns once
+//     the distributor has accepted the value, not once it is delivered.
+//
+// What this type is: a lossless, ordered relay with one value of slack per
+// subscriber (its channel) plus one in the distributor. It is not a
+// synchronous handoff and it never drops; a subscriber that stops reading
+// stalls the distributor, and with it every other subscriber and, two values
+// later, Send. There is no Close: the caller closes the root channel, which
+// stops the distributor; subscriber channels stay open.
 
 import (
 	"context"
@@ -74,9 +91,8 @@ import (
 //
 // All public methods are safe for concurrent use.
 // chanmulticast33NorthSub is one distributor target. done is closed by
-// Unsubscribe before the subscriber's channel is closed, which is what lets the
-// distributor skip a departed subscriber instead of sending on a closed
-// channel.
+// Unsubscribe, which is what lets the distributor skip a departed subscriber
+// instead of blocking on it. The subscriber's channel is never closed.
 type chanmulticast33NorthSub[C ~chan V, V any] struct {
 	ch   C
 	done chan struct{}
@@ -140,10 +156,12 @@ func (x *ChanMulticast33North[C, V]) subscribe() (C, <-chan struct{}) {
 
 // Unsubscribe removes a subscriber identified by its channel `ch`. It closes the
 // done channel to signal the distributor to stop sending, removes the entry from
-// the subscriber slice, decrements the subscriber count, and finally closes the
-// receive channel (signaling any pending iterator that it should stop).
+// the subscriber slice and decrements the subscriber count. It does not close
+// `ch` (see repair 2): a consumer reading `ch` directly must not wait for it to
+// be closed, and may still find one value buffered in it.
 //
-// If `ch` is not currently registered, Unsubscribe is a no‑op.
+// If `ch` is not currently registered, Unsubscribe is a no‑op, so it is
+// idempotent.
 func (x *ChanMulticast33North[C, V]) Unsubscribe(ch C) {
 	x.subMu.Lock()
 	defer x.subMu.Unlock()
@@ -171,7 +189,11 @@ func (x *ChanMulticast33North[C, V]) Unsubscribe(ch C) {
 // sending to the root channel, which is consumed by the distributor goroutine.
 //
 // The method returns the current number of subscribers at the moment the Send
-// completes (after the root channel has accepted the value).
+// completes, which is when the distributor has accepted the value from the root
+// channel. Delivery happens afterwards, on the distributor's goroutine, so the
+// return value is not a count of deliveries.
+//
+// Send panics if the root channel has been closed (it is a channel send).
 func (x *ChanMulticast33North[C, V]) Send(value V) int {
 	if x.subCount.Load() == 0 {
 		return 0 // fast path: no active subscribers.
@@ -203,14 +225,15 @@ func (x *ChanMulticast33North[C, V]) SubscribeContext(ctx context.Context) iter.
 			}
 			panic("bigbuff: chanmulticast: iterator yield func is nil")
 		}
+		// Unsubscribe is idempotent and serialised by the subscriber lock, so
+		// once this deferred call returns the subscriber is gone, whether it
+		// was removed here or by the AfterFunc callback (repair 5).
+		defer x.Unsubscribe(ch)
 		if !stop() {
-			// The context was already cancelled: Unsubscribe has already run (or
-			// is running) via the AfterFunc callback, so there is nothing to
-			// yield. Returning here matches the original intent; the guard
-			// exists so the iterator never reads a closed channel twice.
+			// The context was already cancelled, or this iterator has already
+			// been run: there is nothing to yield.
 			return
 		}
-		defer x.Unsubscribe(ch) // ensure cleanup when the iterator exits.
 
 		for {
 			select {

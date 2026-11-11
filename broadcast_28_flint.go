@@ -16,6 +16,15 @@
 
 package bigbuff
 
+// Provenance: response 28.
+//
+// Repair made in the completion phase. Send restarted its walk from the head
+// whenever it met a retired subscriber that was not the head, and never
+// unlinked that subscriber: the subscribers in front of it were handed the
+// value again on every restart and Send did not return. Send now steps past
+// a retired subscriber and unlinks it with a compare-and-swap on its
+// predecessor. Regression tests: broadcast_28_flint_test.go.
+
 import (
 	"context"
 	"sync/atomic"
