@@ -6,11 +6,13 @@
 #
 # Module targets use the `site.` prefix per AGENTS.md and compose into standard root targets.
 #
-# Wiring rewrites the measurement reports in place (they gain navigation and
-# backlinks), and every run manifest records the SHA-256 of its report. The
-# index therefore always runs after the wiring, never before it: both steps
-# are idempotent, so `make site` on an up-to-date tree changes nothing, and a
-# tree where a report was added ends with manifests that match the files.
+# `site` does three things in a fixed order. It wires the reports (they gain
+# navigation and backlinks, so they are rewritten in place); it re-indexes the
+# run manifests, which record the SHA-256 of those reports and verify each run
+# against its own registry dump; and it writes index.html from the manifests,
+# the newest registry dump, the newest scores CSV, the tracker and the
+# report-NN-* files. Every step is idempotent: `make site` on an up-to-date
+# tree changes nothing. It exits non-zero if a run fails verification.
 
 # WARNING: Must be before any includes (same contract as the root Makefile).
 SITE_MK := $(abspath $(lastword $(MAKEFILE_LIST)))
@@ -19,9 +21,8 @@ PROJECT_ROOT ?= $(patsubst %/,%,$(dir $(SITE_MK)))
 SITE_HARNESS ?= go test -run=NONE -count=1 -timeout=$(GO_TEST_TIMEOUT) -args bigbuff-measure
 
 .PHONY: site.build
-site.build: ## Generate/update index.html, wire backlinks across all reports, then re-index the run manifests.
+site.build: ## Wire backlinks across all reports, re-index the run manifests, and generate index.html from them.
 	cd $(PROJECT_ROOT) && $(SITE_HARNESS) site
-	cd $(PROJECT_ROOT) && $(SITE_HARNESS) index --dir .
 
 .PHONY: site.wire
 site.wire: site.build ## Alias for site.build.

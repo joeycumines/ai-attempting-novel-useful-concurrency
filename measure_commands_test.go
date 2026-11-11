@@ -582,7 +582,8 @@ func cmdMeasureVerify(args []string) int {
 //
 //	rr  run sequence, zero-padded (00 = documentation group, 01.. = runs)
 //	ss  slot within the run, zero-padded (00 = manifest, 01 = JSONL results,
-//	    02 = registry dump, 03 = HTML report, 04 = metrics CSV, 05 = scores CSV)
+//	    02 = registry dump, 03 = HTML report, 04 = metrics CSV, 05 = scores CSV,
+//	    06 = gates record, 07 = generated evaluation)
 //
 // Enumerating a directory listing of results-*-*-* and iterating it in sorted
 // order yields, per run, the manifest first and then its artifacts; the run
@@ -741,6 +742,12 @@ func cmdMeasureIndex(args []string) int {
 			case strings.HasSuffix(m.name, ".csv"):
 				e["generator"] = "bigbuff-measure report"
 				e["kind"] = "csv-export"
+			case strings.HasSuffix(m.name, "gates.json"):
+				e["generator"] = "bigbuff-measure gates"
+				e["kind"] = "gates-record"
+			case strings.HasSuffix(m.name, "evaluation.md"):
+				e["generator"] = "bigbuff-measure evaluate"
+				e["kind"] = "evaluation"
 			case strings.HasSuffix(m.name, ".md"):
 				e["kind"] = "documentation"
 			default:

@@ -17,15 +17,15 @@ const landingPageBody = `</head>
   <nav class="nav-links">
     <a href="#reports">Reports</a>
     <a href="#leaderboard">Leaderboard</a>
-    <a href="#responses">58 Responses</a>
+    <a href="#responses">__N_RESPONSES__ Responses</a>
     <a href="#paradigms">Paradigms</a>
     <a href="#baselines">Baselines</a>
     <a href="#pathology">Pathology Lab</a>
     <a href="#downloads">Datasets</a>
   </nav>
   <div class="nav-actions">
-    <a href="results-01-03-report.html" class="btn btn-primary" title="Launch Run 01 Measurement Report">Measurement Report (Run 01)</a>
-    <a href="report-01-gemini-flash-3.8-high.html" class="btn" title="View Architectural Evolution Analysis">Architectural Analysis</a>
+    <a href="__LATEST_REPORT__" class="btn btn-primary" title="Open the newest measurement report">Measurement Report (Run __LATEST_RUN__)</a>
+    <a href="#reports" class="btn" title="Every report and analysis">All Reports</a>
     <a href="__GITHUB_REPO_URL__" target="_blank" rel="noopener" class="btn" title="GitHub Repository">GitHub Repo</a>
   </div>
 </header>
@@ -37,40 +37,37 @@ const landingPageBody = `</head>
     <div class="kicker"><span>Empirical Concurrency Research</span> &middot; <span>Deterministic Harness</span></div>
     <h2>AI Attempting <em>Novel Useful Concurrency</em> in Go</h2>
     <p class="lead">
-      We challenged <strong>58 AI model configurations</strong> with a one-shot prompt requiring novel, low-allocation Go concurrency primitives for synchronous channel broadcast. We then extracted, repaired in spirit, and measured <strong>116 concurrent primitives</strong> against 10 staff-engineer baselines across 18 scenarios and 2,013 deterministic benchmark runs.
+      <strong>__N_RESPONSES__ responses</strong> from AI models to a one-shot prompt asking for novel, low-allocation Go concurrency primitives for synchronous channel broadcast. The implementations in them were extracted, repaired where the tracker says so, and measured: <strong>__N_IMPLS__ implementations</strong>, __N_BASELINES__ hand-written baselines among them, across __N_SCENARIOS__ scenarios.
     </p>
     <div class="hero-cta">
-      <a href="results-01-03-report.html" class="btn btn-primary">Measurement Report (Run 01 &middot; Standard)</a>
-      <a href="results-02-03-report.html" class="btn">Measurement Report (Run 02 &middot; Quick)</a>
-      <a href="report-01-gemini-flash-3.8-high.html" class="btn">Architectural &amp; Empirical Analysis</a>
-      <a href="#responses" class="btn">Browse 58 Responses</a>
+__HERO_BUTTONS__      <a href="#responses" class="btn">Browse __N_RESPONSES__ Responses</a>
       <a href="__GITHUB_REPO_URL__" target="_blank" rel="noopener" class="btn">GitHub Repository</a>
     </div>
     <div class="kpis">
       <div class="kpi">
-        <div class="v">58</div>
+        <div class="v">__N_RESPONSES__</div>
         <div class="l">Model Responses</div>
-        <div class="s">OpenAI, Anthropic, Google, DeepSeek, Qwen...</div>
+        <div class="s">Responses __RESP_FIRST__ to __RESP_LAST__, archived verbatim</div>
       </div>
       <div class="kpi">
-        <div class="v">116</div>
-        <div class="l">Evaluated Primitives</div>
-        <div class="s">Casters, PubSubs, Rings, Epochs, Fans</div>
+        <div class="v">__N_IMPLS__</div>
+        <div class="l">Implementations Measured</div>
+        <div class="s">Run __LATEST_RUN__; __N_RANKED__ of them in families large enough to rank</div>
       </div>
       <div class="kpi">
-        <div class="v">18 / 291</div>
+        <div class="v">__N_SCENARIOS__ / __N_ATTACHMENTS__</div>
         <div class="l">Scenarios / Attachments</div>
-        <div class="s">Strict exhaustiveness invariants</div>
+        <div class="s">Each implementation is attached to the scenarios it claims</div>
       </div>
       <div class="kpi">
-        <div class="v">2,013</div>
-        <div class="l">Measurements (Run 01)</div>
-        <div class="s">Verified PASS across all batteries</div>
+        <div class="v">__LATEST_RECORDS__</div>
+        <div class="l">Records (Run __LATEST_RUN__)</div>
+        <div class="s">__LATEST_PROFILE__ profile, __LATEST_CPUS__ logical CPUs</div>
       </div>
       <div class="kpi">
-        <div class="v">0</div>
-        <div class="l">Test Flakiness</div>
-        <div class="s">100% deterministic ack/ready synchronization</div>
+        <div class="v">__N_RUNS_VERIFIED__ / __N_RUNS__</div>
+        <div class="l">Runs Verified</div>
+        <div class="s">Each against the registry dump it was made from</div>
       </div>
     </div>
   </section>
@@ -80,85 +77,19 @@ const landingPageBody = `</head>
     <div class="kicker">Interactive Analysis &amp; Data Hub</div>
     <h3 class="section-title">Comprehensive Reports &amp; Artifacts</h3>
     <p class="lede">
-      Every report is completely self-contained with embedded data &mdash; no CDNs or external assets. Open them online or locally from disk via <code>file://</code>.
+      Every measurement run, newest first, then every written analysis. The HTML reports are self-contained (no CDNs or external assets) and open from disk via <code>file://</code>.
     </p>
 
     <div class="reports-grid">
-      <!-- Card 1: Measurement Report Run 01 -->
-      <div class="report-card meas">
-        <div>
-          <span class="report-badge">Interactive Report &middot; Run 01 (Standard Profile)</span>
-          <h4>Measurement Report (Run 01 &middot; Standard)</h4>
-          <p>
-            The master decision-grade benchmark report computed from 2,013 JSONL records. Features interactive throughput scaling curves (1&rarr;64 subscribers), adoptability radar, latency percentiles (p50/p90/p99), memory allocations, churn costs, and the Pathology Lab.
-          </p>
-          <ul class="report-features">
-            <li><span class="dot"></span> <strong>Interactive Scaling Curves:</strong> Toggle implementations, inspect log&sup2; fan-out scaling</li>
-            <li><span class="dot"></span> <strong>Adoptability Leaderboard:</strong> 116 primitives scored by throughput, latency, memory &amp; stability</li>
-            <li><span class="dot"></span> <strong>Pathology Lab:</strong> Concrete case studies of races, deadlocks, and silent drops</li>
-            <li><span class="dot"></span> <strong>Scenario Coverage Matrix:</strong> Complete 18-scenario attachment and baseline grid</li>
-          </ul>
-        </div>
-        <div class="report-actions">
-          <a href="results-01-03-report.html" class="btn btn-primary">Open Run 01 Report &rarr;</a>
-          <div style="display:flex;gap:8px">
-            <a href="results-01-04-metrics_wide.csv" download class="btn" title="Download Flattened Metrics CSV">Metrics CSV</a>
-            <a href="results-01-05-scores.csv" download class="btn" title="Download Scores CSV">Scores CSV</a>
-          </div>
-        </div>
-      </div>
-
-      <!-- Card 2: Measurement Report Run 02 -->
-      <div class="report-card meas">
-        <div>
-          <span class="report-badge">Interactive Report &middot; Run 02 (Quick Profile)</span>
-          <h4>Measurement Report (Run 02 &middot; Quick)</h4>
-          <p>
-            The fast smoke / CI-grade benchmark report computed from 1,479 JSONL records. Provides rapid verification across all registered primitives with identical visual tooling and metric exports.
-          </p>
-          <ul class="report-features">
-            <li><span class="dot"></span> <strong>CI-Grade Verification:</strong> 1,479 verified records across all scenario attachments</li>
-            <li><span class="dot"></span> <strong>Identical Analytics:</strong> Full scaling charts, adoptability scorecards, and data downloads</li>
-            <li><span class="dot"></span> <strong>Run Comparison:</strong> Evaluates consistency across toolchain revisions</li>
-          </ul>
-        </div>
-        <div class="report-actions">
-          <a href="results-02-03-report.html" class="btn btn-primary">Open Run 02 Report &rarr;</a>
-          <div style="display:flex;gap:8px">
-            <a href="results-02-04-metrics_wide.csv" download class="btn" title="Download Flattened Metrics CSV">Metrics CSV</a>
-            <a href="results-02-05-scores.csv" download class="btn" title="Download Scores CSV">Scores CSV</a>
-          </div>
-        </div>
-      </div>
-
-      <!-- Card 3: Architectural Analysis Report -->
-      <div class="report-card arch">
-        <div>
-          <span class="report-badge">Structural Analysis &middot; Gemini 3.8 Flash</span>
-          <h4>Architectural &amp; Empirical Evolution Report</h4>
-          <p>
-            An in-depth structural review of Go channel broadcast evolution. Unpacks protocol constructions, explicit registration/receive contracts, safe mid-flight withdrawal mechanics, O(1) control-plane state, and select compatibility.
-          </p>
-          <ul class="report-features">
-            <li><span class="dot"></span> <strong>Protocol Taxonomy:</strong> Lock-step vs Cursor Rings vs Epoch Gates vs RCU Fanout</li>
-            <li><span class="dot"></span> <strong>Zero-Allocation Analysis:</strong> Probing runtime slice escapes and interface conversions</li>
-            <li><span class="dot"></span> <strong>State Machine Teardown:</strong> Safe cancellation vs deadlock on blocked receivers</li>
-          </ul>
-        </div>
-        <div class="report-actions">
-          <a href="report-01-gemini-flash-3.8-high.html" class="btn btn-primary">Read Architectural Analysis &rarr;</a>
-          <a href="01-readme.md" class="btn">Extraction Tracker</a>
-        </div>
-      </div>
-    </div>
+__REPORT_CARDS__    </div>
   </section>
 
   <!-- LEADERBOARD -->
   <section class="block" id="leaderboard">
     <div class="kicker">Adoptability Leaderboard</div>
-    <h3 class="section-title">Empirical Scorecards (116 Primitives)</h3>
+    <h3 class="section-title">Scorecards (__N_IMPLS__ implementations &middot; Run __LATEST_RUN__)</h3>
     <p class="lede">
-      Adoptability scores (0&ndash;100) computed from multi-dimensional statistical metrics: throughput, tail latency, allocation rate, subscriber churn resistance, fan-out scalability, and stall resilience.
+      Scores (0&ndash;100) from run __LATEST_RUN__ (__LATEST_PROFILE__ profile). A score is a weighted mean of percentile ranks <em>within a family</em> on throughput, latency, allocations, churn, scaling and stall resilience, over the dimensions the family has data for. It places an implementation among its peers on one __LATEST_CPUS__-CPU machine; it is not comparable between families or between runs, and it does not say an implementation is correct. Families with fewer than __MIN_RANKED__ implementations are not ranked.
     </p>
 
     <div class="card pad">
@@ -199,6 +130,7 @@ const landingPageBody = `</head>
               <th>Memory</th>
               <th>Scaling</th>
               <th>Churn</th>
+              <th>Stall</th>
             </tr>
           </thead>
           <tbody id="scoresBody"></tbody>
@@ -207,10 +139,10 @@ const landingPageBody = `</head>
     </div>
   </section>
 
-  <!-- MODEL RESPONSES (58 RESPONSES) -->
+  <!-- MODEL RESPONSES -->
   <section class="block" id="responses">
     <div class="kicker">One-Shot Prompt Archive</div>
-    <h3 class="section-title">58 AI Model Responses (03 &rarr; 58)</h3>
+    <h3 class="section-title">__N_RESPONSES__ AI Model Responses (__RESP_FIRST__ &rarr; __RESP_LAST__)</h3>
     <p class="lede">
       Filter, search, and inspect the raw outputs, prompt variants, extracted Go code, and chat links across all tested model providers.
     </p>
@@ -262,7 +194,7 @@ const landingPageBody = `</head>
   <!-- ARCHITECTURAL PARADIGMS -->
   <section class="block" id="paradigms">
     <div class="kicker">Architectural Taxonomy</div>
-    <h3 class="section-title">7 Core Concurrency Paradigms</h3>
+    <h3 class="section-title">9 Core Concurrency Paradigms</h3>
     <p class="lede">
       How AI models attempted to evolve beyond linear rendezvous and lock-step barriers.
     </p>
@@ -310,15 +242,27 @@ const landingPageBody = `</head>
           Inverted fan-in signal collection (<code>ChanGatherer</code>) and loss-tracking atomic state beacons (<code>ChanBeacon</code>, <code>RingBeacon</code>).
         </p>
       </div>
+      <div class="f-card info">
+        <h4>8. Symmetric Pairwise Exchange</h4>
+        <p>
+          Two parties meet and swap one value each, with no sender or receiver role (<code>SymExchanger72Gemini</code>, <code>BaselineExchanger</code>). A cancelled party gets its own value back; a value is never duplicated or lost.
+        </p>
+      </div>
+      <div class="f-card info">
+        <h4>9. Deadline-Bounded Barrier Broadcast</h4>
+        <p>
+          A send waits for every member, but only until a deadline, and reports who did not acknowledge (<code>Cohort73Meta</code>, <code>Fanout74Deepseek</code>, <code>PhaseCaster72Gemini</code>, <code>BaselineDeadlineBarrier</code>). One stalled member delays a send by at most the deadline.
+        </p>
+      </div>
     </div>
   </section>
 
   <!-- BASELINES -->
   <section class="block" id="baselines">
     <div class="kicker">Textbook Standard Practice</div>
-    <h3 class="section-title">10 Staff-Engineer Baselines</h3>
+    <h3 class="section-title">__N_BASELINES__ Baselines for __N_SCENARIOS__ Scenarios</h3>
     <p class="lede">
-      Every scenario is anchored by a textbook baseline (see <code>baseline.go</code>) &mdash; the simplest sound design an expert staff engineer would write in a vacuum.
+      Every scenario names a baseline: the simplest sound design an experienced engineer would write for it with no prompt to be novel. The table is read from the registry dump of run __REGISTRY_RUN__.
     </p>
 
     <div class="card pad">
@@ -326,74 +270,14 @@ const landingPageBody = `</head>
         <table class="tbl">
           <thead>
             <tr>
-              <th>Variant / Scenario</th>
-              <th>Baseline Implementation</th>
-              <th>Source File</th>
-              <th>Textbook Design Rationale</th>
+              <th>Scenario</th>
+              <th>Delivery</th>
+              <th>Baseline</th>
+              <th>What the registry says of it</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td><strong>Lock-step Pub-Sub</strong></td>
-              <td><code>BaselineBarrierPubSub</code></td>
-              <td><code>baseline.go</code></td>
-              <td>Lossless synchronous broadcast using slice of subscriber channels with mutex barrier</td>
-            </tr>
-            <tr>
-              <td><strong>Rendezvous Caster</strong></td>
-              <td><code>BaselineRendezvousCaster</code></td>
-              <td><code>baseline.go</code></td>
-              <td>Rendezvous fan-out with explicit registration and per-send slice snapshot</td>
-            </tr>
-            <tr>
-              <td><strong>Latest-Value Coalescing</strong></td>
-              <td><code>BaselineLatestBroadcast</code></td>
-              <td><code>baseline.go</code></td>
-              <td>Single-slot atomic value buffer with rotating notification channel</td>
-            </tr>
-            <tr>
-              <td><strong>Buffered Lossless Broadcast</strong></td>
-              <td><code>BaselineBufferedBroadcast</code></td>
-              <td><code>baseline.go</code></td>
-              <td>Bounded per-subscriber channel buffers with backpressure blocking</td>
-            </tr>
-            <tr>
-              <td><strong>Work Distribution</strong></td>
-              <td><code>BaselineScatterQueue</code></td>
-              <td><code>baseline.go</code></td>
-              <td>Single-item dispatch to exactly one available worker via synchronized queue</td>
-            </tr>
-            <tr>
-              <td><strong>Signal Gathering</strong></td>
-              <td><code>BaselineGatherBarrier</code></td>
-              <td><code>baseline.go</code></td>
-              <td>N senders coordinate to unblock a single waiter via sync.WaitGroup / barrier</td>
-            </tr>
-            <tr>
-              <td><strong>Async Fan-Out</strong></td>
-              <td><code>BaselineFanout</code></td>
-              <td><code>baseline.go</code></td>
-              <td>Non-blocking worker goroutine per subscriber with unbounded channel queue</td>
-            </tr>
-            <tr>
-              <td><strong>Unbounded Queued Fan-Out</strong></td>
-              <td><code>BaselineQueuedFanout</code></td>
-              <td><code>baseline_queued.go</code></td>
-              <td>COW subscriber registry with non-blocking per-consumer FIFO mailboxes</td>
-            </tr>
-            <tr>
-              <td><strong>Bounded Scatter Queue</strong></td>
-              <td><code>BaselineBoundedScatterQueue</code></td>
-              <td><code>baseline_scatter_bounded.go</code></td>
-              <td>Fixed-ring competing consumer queue with exact overflow eviction</td>
-            </tr>
-            <tr>
-              <td><strong>Bounded Catch-up Replay</strong></td>
-              <td><code>BaselineBoundedReplay</code></td>
-              <td><code>baseline_replay_test.go</code></td>
-              <td>Synchronized live handoff with bounded history ring for late joiners</td>
-            </tr>
-          </tbody>
+__BASELINE_ROWS__          </tbody>
         </table>
       </div>
     </div>
@@ -435,7 +319,7 @@ const landingPageBody = `</head>
       <div class="f-card info">
         <h4>5. Zero-Allocation Illusions</h4>
         <p>
-          Over 60% of models claimed "0 allocations per send", but runtime profiling detected hidden allocations from interface boxing (<code>any</code>), slice headers escaping to heap, or ephemeral notification channels.
+Several responses claim "0 allocations per send" and allocate when measured: a per-publish node or notification channel, interface boxing (<code>any</code>), or a slice header that escapes. The tracker (<code>01-readme.md</code>) records each claim that the allocation tests contradict.
         </p>
       </div>
     </div>
@@ -446,7 +330,7 @@ const landingPageBody = `</head>
     <div class="kicker">Raw Data &amp; Verification</div>
     <h3 class="section-title">Committed Runs &amp; Datasets</h3>
     <p class="lede">
-      All raw data is committed directly at repository root in the zero-padded run log (<code>results-*-*-*</code>).
+      Every file of every run is committed at the repository root as <code>results-NN-SS-name</code>. A run is verified against the registry dump it was made from; its manifest records the SHA-256 of each file.
     </p>
 
     <div class="card pad">
@@ -463,103 +347,7 @@ const landingPageBody = `</head>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td><strong>Run 01</strong></td>
-              <td><span class="tag tag-prompt">standard</span></td>
-              <td><code>results-01-03-report.html</code></td>
-              <td>Interactive Concurrency Measurement Report (2,013 records)</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-01-03-report.html" class="btn btn-primary">Open Report</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 01</strong></td>
-              <td><span class="tag tag-prompt">standard</span></td>
-              <td><code>results-01-01-results.jsonl</code></td>
-              <td>Raw JSONL benchmark records (2.59 MB)</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-01-01-results.jsonl" download class="btn">Download JSONL</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 01</strong></td>
-              <td><span class="tag tag-prompt">standard</span></td>
-              <td><code>results-01-04-metrics_wide.csv</code></td>
-              <td>Flattened wide metrics CSV (294 KB)</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-01-04-metrics_wide.csv" download class="btn">Download CSV</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 01</strong></td>
-              <td><span class="tag tag-prompt">standard</span></td>
-              <td><code>results-01-05-scores.csv</code></td>
-              <td>Adoptability scores &amp; dimension verdicts CSV</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-01-05-scores.csv" download class="btn">Download CSV</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 01</strong></td>
-              <td><span class="tag tag-prompt">standard</span></td>
-              <td><code>results-01-02-registry.json</code></td>
-              <td>Scenario/Case/Attachment registry snapshot</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-01-02-registry.json" download class="btn">Download JSON</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 01</strong></td>
-              <td><span class="tag tag-prompt">standard</span></td>
-              <td><code>results-01-00-manifest.json</code></td>
-              <td>Run environment fingerprint &amp; SHA-256 manifest</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-01-00-manifest.json" download class="btn">Download JSON</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 02</strong></td>
-              <td><span class="tag tag-prov">quick</span></td>
-              <td><code>results-02-03-report.html</code></td>
-              <td>Interactive Concurrency Measurement Report (1,479 records)</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-02-03-report.html" class="btn btn-primary">Open Report</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 02</strong></td>
-              <td><span class="tag tag-prov">quick</span></td>
-              <td><code>results-02-01-results.jsonl</code></td>
-              <td>Smoke / CI profile JSONL (1.53 MB)</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-02-01-results.jsonl" download class="btn">Download JSONL</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 02</strong></td>
-              <td><span class="tag tag-prov">quick</span></td>
-              <td><code>results-02-04-metrics_wide.csv</code></td>
-              <td>Flattened wide metrics CSV (Run 02)</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-02-04-metrics_wide.csv" download class="btn">Download CSV</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 02</strong></td>
-              <td><span class="tag tag-prov">quick</span></td>
-              <td><code>results-02-05-scores.csv</code></td>
-              <td>Adoptability scores CSV (Run 02)</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-02-05-scores.csv" download class="btn">Download CSV</a></td>
-            </tr>
-            <tr>
-              <td><strong>Run 02</strong></td>
-              <td><span class="tag tag-prov">quick</span></td>
-              <td><code>results-02-00-manifest.json</code></td>
-              <td>Run 02 environment fingerprint &amp; SHA-256 manifest</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="results-02-00-manifest.json" download class="btn">Download JSON</a></td>
-            </tr>
-            <tr>
-              <td><strong>Analysis</strong></td>
-              <td><span class="tag tag-prov">empirical</span></td>
-              <td><code>report-01-gemini-flash-3.8-high.html</code></td>
-              <td>Architectural &amp; Empirical Evolution Analysis</td>
-              <td><span class="v-strong">PASS</span></td>
-              <td><a href="report-01-gemini-flash-3.8-high.html" class="btn">Open Analysis</a></td>
-            </tr>
-          </tbody>
+__DATASET_ROWS__          </tbody>
         </table>
       </div>
     </div>
@@ -579,10 +367,7 @@ const landingPageBody = `</head>
     <div>
       <div style="font-weight:600;color:var(--ink);margin-bottom:8px">Reports &amp; Analysis</div>
       <div style="display:flex;flex-direction:column;gap:5px">
-        <a href="results-01-03-report.html">Measurement Report (Run 01 &middot; Standard)</a>
-        <a href="results-02-03-report.html">Measurement Report (Run 02 &middot; Quick)</a>
-        <a href="report-01-gemini-flash-3.8-high.html">Architectural Evolution Report</a>
-        <a href="results-00-00-readme.md">Run Log Documentation</a>
+__FOOTER_REPORT_LINKS__        <a href="results-00-00-readme.md">Run Log Documentation</a>
       </div>
     </div>
     <div>

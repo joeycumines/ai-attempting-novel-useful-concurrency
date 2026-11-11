@@ -14,6 +14,17 @@ const landingPageScript = `<script>
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  // GitHub Pages builds every root Markdown file into a page at name.html
+  // and does not serve name.md. Opened from disk, the .md file is what
+  // exists. Links are written as .md and pointed at the page when hosted.
+  function hostedMarkdownLinks(){
+    if (!/\.github\.io$/.test(location.hostname)) return;
+    document.querySelectorAll('a[href$=".md"]').forEach(function(a){
+      var href = a.getAttribute('href');
+      if (!/^[a-z]+:/i.test(href)) a.setAttribute('href', href.replace(/\.md$/, '.html'));
+    });
+  }
+
   // --- Render Leaderboard Scores Table ---
   var currentFamily = 'all';
   var currentVerdict = 'all';
@@ -53,11 +64,12 @@ const landingPageScript = `<script>
         '<td>' + (r.allocations || '-') + '</td>' +
         '<td>' + (r.scaling || '-') + '</td>' +
         '<td>' + (r.churn || '-') + '</td>' +
+        '<td>' + (r.stall_resilience || '-') + '</td>' +
         '</tr>';
     });
 
     if (!filtered.length) {
-      html = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--ink3)">No implementations matched your filter criteria.</td></tr>';
+      html = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--ink3)">No implementations matched your filter criteria.</td></tr>';
     }
     document.getElementById('scoresBody').innerHTML = html;
   }
@@ -111,13 +123,10 @@ const landingPageScript = `<script>
     filtered.forEach(function(r){
       var chatBtn = r.chat_link ? '<a href="' + esc(r.chat_link) + '" target="_blank" rel="noopener" class="tag" style="color:var(--cyan)">Chat &nearr;</a>' : '<span style="color:var(--ink3)">-</span>';
       
-      var fileLinks = r.files.split(',').map(function(f){
-        f = f.trim();
-        if (f && f !== '-') {
-          return '<a href="' + esc(f) + '" style="font-family:var(--mono);font-size:11.5px">' + esc(f) + '</a>';
-        }
-        return esc(f);
-      }).join(', ');
+      // file_list is the tracker's files cell resolved to files that exist.
+      var fileLinks = (r.file_list || []).map(function(f){
+        return '<a href="' + esc(f) + '" style="font-family:var(--mono);font-size:11.5px">' + esc(f) + '</a>';
+      }).join(', ') || '<span style="color:var(--ink3)">' + esc(r.files || '-') + '</span>';
 
       html += '<tr>' +
         '<td style="font-family:var(--mono);color:var(--cyan);font-weight:700">' + esc(r.num) + '</td>' +
@@ -135,6 +144,7 @@ const landingPageScript = `<script>
       html = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--ink3)">No model responses matched your search criteria.</td></tr>';
     }
     document.getElementById('respBody').innerHTML = html;
+    hostedMarkdownLinks();
   }
 
   document.getElementById('respSearch').addEventListener('input', function(e){
@@ -163,6 +173,7 @@ const landingPageScript = `<script>
   // Initial renders
   renderScores();
   renderResponses();
+  hostedMarkdownLinks();
 })();
 </script>
 `

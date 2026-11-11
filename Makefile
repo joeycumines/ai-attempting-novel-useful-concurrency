@@ -164,6 +164,12 @@ measure-report: measure.report ## Rebuild the interactive HTML report + CSVs fro
 .PHONY: measure-registry
 measure-registry: measure.registry ## Dump the scenario/attachment registry to JSON.
 
+.PHONY: measure-evaluate
+measure-evaluate: measure.evaluate ## Regenerate the newest run's evaluation (results-NN-07-evaluation.md) from its own files.
+
+.PHONY: measure-gates
+measure-gates: measure.gates ## Run `make verify`, record the result with the newest run, and regenerate its evaluation.
+
 .PHONY: measure-index
 measure-index: measure.index ## Rebuild every results-NN-00-manifest.json (SHA-256 index of committed run groups).
 
