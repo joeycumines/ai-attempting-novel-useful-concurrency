@@ -344,11 +344,8 @@ func renderSiteFacts(page string, cat siteCatalog, facts siteFacts) string {
 		if i == len(facts.Runs)-1 {
 			cards.WriteString(`            <li><span class="dot"></span> <strong>Newest run:</strong> the scorecards below are read from it</li>` + "\n")
 		}
-		if r.Generator == "1.0.0" {
-			cards.WriteString(`            <li><span class="dot"></span> <strong>Record contract 1.0.0:</strong> stall resilience was not recorded and small families were scored; its scores are not comparable with later runs</li>` + "\n")
-		}
-		if generatorBefore(r.Generator, casterDeliveryContract) {
-			cards.WriteString(`            <li><span class="dot"></span> <strong>Caster family not ranked:</strong> this run's caster batteries timed Sends that delivered nothing; runs under record contract ` + casterDeliveryContract + ` or later measure delivery</li>` + "\n")
+		if generatorBefore(r.Generator, isolationContract) {
+			cards.WriteString(`            <li><span class="dot"></span> <strong>Not ranked:</strong> the run was one process, and publishers left spinning by an early stalled-consumer probe kept the CPUs busy for everything measured after it; runs under record contract ` + isolationContract + ` or later measure each battery in a process of its own</li>` + "\n")
 		}
 		if _, ok := r.file("06"); ok {
 			cards.WriteString(`            <li><span class="dot"></span> <strong>Gates recorded:</strong> the evaluation states what <code>make verify</code> reported</li>` + "\n")

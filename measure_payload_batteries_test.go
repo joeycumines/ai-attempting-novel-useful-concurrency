@@ -36,14 +36,14 @@ func startPayloadDrains(x asyncAPI, n int) *payloadDrain {
 	for i := 0; i < n; i++ {
 		iters[i] = iterator{i: i, subs: x.subscribe(ctx)}
 	}
+	var started sync.WaitGroup // see startBroadcastDrains
+	started.Add(n)
 	for _, it := range iters {
 		it := it
 		g.wg.Add(1)
 		go func() {
 			defer g.wg.Done()
-			defer func() {
-				// drain iterators exit on ctx cancel
-			}()
+			started.Done()
 			it.subs(func(v pv) bool {
 				if v[0] != v[1] || v[1] != v[2] || v[2] != v[3] {
 					g.torn.Add(1)
@@ -53,6 +53,7 @@ func startPayloadDrains(x asyncAPI, n int) *payloadDrain {
 			})
 		}()
 	}
+	started.Wait()
 	return g
 }
 
@@ -89,18 +90,14 @@ func measurePayloadThroughput(ctx *measureContext, mk func() asyncAPI, name stri
 		for r := 0; r < ctx.profile.Reps; r++ {
 			x := mk()
 			g := startPayloadDrains(x, subs)
-			const warmup = 16
-			w0 := time.Now()
-			for i := 0; i < warmup; i++ {
-				x.send(mkpv(i + 1))
+			warmup := warmOps(ctx.profile.TargetPerRep, ctx.profile.MaxOps, func(i int) { x.send(mkpv(i + 1)) })
+			budget := newOpBudget(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps)
+			for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+				for i := from; i < to; i++ {
+					x.send(mkpv(i + 1 + warmup))
+				}
 			}
-			est := time.Since(w0) / warmup
-			n := calibrateOps(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps, est)
-			s := time.Now()
-			for i := 0; i < n; i++ {
-				x.send(mkpv(i + 1 + warmup))
-			}
-			d := time.Since(s)
+			n, d := budget.done()
 			if !g.stop(3 * time.Second) {
 				ctx.fail("%s: payload drains did not exit (subs=%d)", name, subs)
 			}
