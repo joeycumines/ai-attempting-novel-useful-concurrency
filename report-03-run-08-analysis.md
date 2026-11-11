@@ -146,9 +146,9 @@ No adapter is exempt from the concurrent churn tests any more.
 
 ## Correctness gates
 
-`results-08-06-gates.json` records what `make verify` reported and on which commit: vet for four build configurations, the full suite at GOMAXPROCS 1, 2 and 4, the full suite under the race detector, the allocation assertions, and every fuzz target for 10 seconds each. Every leg passed. The evaluation of run 08 prints each one, with its commands. The arm64 leg is recorded as not run.
+`results-08-06-gates.json` records what `make verify` reported and on which commit: vet for four build configurations, the full suite at GOMAXPROCS 1, 2 and 4, the full suite under the race detector, the allocation assertions, and every fuzz target for 10 seconds each. Every leg that was run passed. The evaluation of run 08 prints each one, with its commands. The arm64 leg is recorded as not run.
 
-The gates ran after the measurements, on a later commit; the evaluation names both commits and lists every file that differs. Those files are documents, tests, the report, evaluation and landing-page code, and two harness changes that touch no battery (the `--impl` filter, and a check that a measuring process measured something). No implementation and no adapter changed.
+The gates ran after the measurements, on a later commit; the evaluation names both commits and lists every file that differs. Those files are documents, tests, the report, evaluation and landing-page code, two harness changes that touch no battery (the `--impl` filter, and a check that a measuring process measured something), and the two implementations the gates themselves caught: `horizon_70_meta.go` and `broadcast_28_flint.go` (see "Source defects"). The first run of the race gate on the final code failed in those two; the record committed is the run after their repair.
 
 Runs 06 and 07 have no gates record. Run 05 has one.
 
