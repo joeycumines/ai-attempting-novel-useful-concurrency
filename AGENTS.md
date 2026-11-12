@@ -170,6 +170,10 @@ Policy that the documentation of the mechanics does not carry:
   Every run states whether the instructions ran on arm64 hardware or were
   emulated, and the gate record repeats it. So far it has passed emulated only
   (qemu on x86-64), which cannot show a wrong memory fence.
+- **A run owns the machine.** Process isolation separates one battery from the
+  next, not from a shell command. A `git status` issued during run 12 put a
+  hundredfold excursion into the cells being timed, and that run was discarded.
+  Start a run or the gates, then issue nothing until they exit.
 - **Record the gates with the run.** A statement that the suite passed is worth
   what its record is worth: which commit, whether the tree was clean, which
   legs ran, what each reported. `make measure-gates` writes that record.

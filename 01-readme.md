@@ -31,6 +31,18 @@ The interesting things these bring to the table are:
 
 I also performed empirical evaluation showing the memory benefit and the throughput trade-off.
 
+## Prompts
+
+A response's file name says which prompt it answers; no suffix means the original.
+
+- [02-prompt.md](02-prompt.md): the original. One paragraph asking for the two implementations to be advanced or complemented, then their source.
+- [02-prompt-mini.md](02-prompt-mini.md): the original, plus a closing line asking for a full, novel implementation not based on the two.
+- [02-prompt-safe.md](02-prompt-safe.md): the original, plus a note asking the model to finish within its limits.
+- [02-prompt-bait.md](02-prompt-bait.md): an open challenge. The model chooses its own scenario, and `unsafe`, assembly and C are invited.
+- [02-prompt-simd.md](02-prompt-simd.md): the open challenge with a section on SIMD techniques.
+- [02-prompt-apex.md](02-prompt-apex.md): the open challenge restricted to primitives that compose with `select` or have coordination semantics of their own; plain rings are ruled out.
+- [02-prompt-kernel.md](02-prompt-kernel.md): one fixed problem. Part 1 asks what the two reference files do in five named schedules, answered as tests. Part 2 asks for a single small waiting primitive (the kernel) under eight laws. Part 3 builds fixed-signature structures on it in three tiers: a lossless broadcast, a watched value, and one of the model's choosing. The reply has fixed headings, and names the mutations and the tests that catch them. No response has been taken with it yet. `prompt_kernel_reference_test.go` holds what the reference does in the schedules of Part 1, which makes it the key to that part.
+
 ## Responses
 
 I've tried to encode the more important details like provider, model, effort, and prompt, in the filename, where possible.
