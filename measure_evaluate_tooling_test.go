@@ -36,6 +36,16 @@ func TestGateLogParsing(t *testing.T) {
 	if l := leg("arm64", "verify.arm64: FAILED (the arm64 assembly was not executed)\n"); l.Status != "fail" {
 		t.Errorf("arm64: %+v", l)
 	}
+	// A pass says where the binary ran: an emulator is not arm64 hardware.
+	if l := leg("arm64", "== native arm64\nok  \tbigbuff\t9.1s\nverify.arm64: ok\n"); l.Status != "pass" || l.Detail != "the arm64 test binary executed on an arm64 host" {
+		t.Errorf("arm64 native: %+v", l)
+	}
+	if l := leg("arm64", "== GOARCH=arm64 under /opt/qemu-aarch64\n== emulator: qemu-aarch64 version 5.2.0\nok  \tbigbuff\t170.2s\nverify.arm64: ok\n"); l.Status != "pass" || l.Detail != "the arm64 test binary executed under an emulator (qemu-aarch64 version 5.2.0), not on arm64 hardware" {
+		t.Errorf("arm64 emulated: %+v", l)
+	}
+	if l := leg("arm64", "== GOARCH=arm64 under /opt/qemu-aarch64\n--- FAIL: TestX (0.01s)\nFAIL\tbigbuff\t170.2s\n"); l.Status != "fail" {
+		t.Errorf("arm64 emulated and failing: %+v", l)
+	}
 
 	const fuzzLog = `== FuzzA (10s)
 fuzz: elapsed: 0s, gathering baseline coverage: 0/5 completed

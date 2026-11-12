@@ -268,6 +268,8 @@ var harnessRunnables = map[string]string{
 	"TestOpBudgetEndsNearItsTarget":                     "measurement battery tooling",
 	"TestLandingPageSaysWhichRunsAreNotRanked":          "measurement evaluation tooling",
 	"TestMeasureGlobTreatsSlashAsOrdinary":              "measurement battery tooling",
+	"TestMeasuringProcessesStartThroughTheNamedCommand": "measurement battery tooling",
+	"TestEvaluationComparesWithThePreviousRun":          "measurement evaluation tooling",
 	"TestMeasureUnitThatMatchesNothingFails":            "measurement battery tooling",
 	"TestWarmOpsIsSizedByTheClock":                      "measurement battery tooling",
 	"TestDeliveryFieldsRecordTheShareDelivered":         "measurement battery tooling",

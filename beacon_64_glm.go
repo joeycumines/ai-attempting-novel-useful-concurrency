@@ -141,10 +141,12 @@ const padConst64GLM = slotHeaderSize64GLM - 1
 
 // slot64GLM is one cell of the ring: a seqlock header line followed by the value.
 type slot64GLM[V any] struct {
-	// seq counts writes to THIS slot64GLM: writers do seq+=1 (odd: writing),
-	// write payload, seq+=1 (even: stable). An even seq s means the slot64GLM
-	// holds the (s/2)-th write to this slot64GLM, whose absolute sequence
-	// number is (s/2-1)*size + idx (mod 2^32).
+	// seq names the value in THIS slot64GLM. An even seq s means the slot64GLM
+	// holds the value of lap s/2 (the first lap is 1), whose absolute
+	// sequence number is (s/2-1)*size + idx + 1 (mod 2^32); 0 means never
+	// written. An odd seq 2k-1 means a writer holds the slot and is storing
+	// the value of lap k. See storeClaimed for why this is not a count of
+	// writes, which is what the response had.
 	seq atomic.Uint64
 	_   [slotHeaderSize64GLM - 8]byte // header line: seq alone
 	val V
@@ -269,9 +271,11 @@ func unpack64GLM(w uint64) (epoch, cursor uint32) {
 
 // Publish appends value to the ring, overwriting the oldest retained value
 // if the history is full, and wakes all blocked watchers whose target
-// generation is covered. Wait-free with respect to consumers: bounded
-// retries only under producer-vs-producer claim contention (bounded by
-// ringSize). Returns the absolute sequence number assigned to the value,
+// generation is covered. It never waits for a consumer. It retries under
+// producer-vs-producer claim contention, and it can wait for another producer
+// that is mid-write in the same slot, which happens only when one of the two
+// has been lapped by a whole ring between its claim and its write (see
+// storeClaimed); a value lapped in that way is not stored. Returns the absolute sequence number assigned to the value,
 // or ErrClosed64GLM after Close.
 func (b *Beacon64GLM[V]) Publish(value V) (seq uint32, err error) {
 	if b.closed.Load() {
@@ -292,19 +296,7 @@ func (b *Beacon64GLM[V]) Publish(value V) (seq uint32, err error) {
 			continue // producer contention only; retry
 		}
 		// We own absolute sequence `next` (first value = 1; 0 = empty).
-		idx := (next - 1) & b.mask
-		sp := &b.slots[idx]
-
-		// seqlock write: odd -> write payload -> even. The payload write is
-		// fenced so no watcher can observe seq-even with a stale payload.
-		w := sp.seq.Add(1) // now odd
-		_ = w
-		storeSlotVal64GLM(sp, value) // build-tag dispatch (fast: plain+fence, race: atomic)
-		fenceRelease64GLM()          // payload visible BEFORE seq goes even
-		sp.seq.Add(1)                // even again; slot64GLM stable at write #(w/2+... )
-		// NOTE: storeSlotVal64GLM handled the val write; seq bookkeeping above
-		// keeps slot64GLM validation exact: after this store, slot64GLM idx holds the
-		// value with absolute sequence cur (see slotHolds64GLM).
+		b.storeClaimed(next, value)
 
 		// Wake watchers (only when someone is parked): swap in a fresh gate64GLM
 		// and close the old one, releasing ALL parked waiters in ONE channel
@@ -315,6 +307,73 @@ func (b *Beacon64GLM[V]) Publish(value V) (seq uint32, err error) {
 		// this publish completed, not an epoch.
 		b.armGate(next)
 		return next, nil
+	}
+}
+
+// storeClaimed writes value into the slot of the absolute sequence next, which
+// the caller has claimed and nobody else can claim.
+//
+// seqlock write: odd -> write payload -> even. The payload write is fenced so
+// no watcher can observe seq-even with a stale payload.
+//
+// Repair (run 09 pass). The response wrote the slot with two unconditional
+// seq.Add(1) calls, which makes the slot's counter a count of writes, and
+// slotHolds64GLM turns that count back into a sequence on the assumption that
+// the writes to one slot arrive in claim order. Between the claim and the write
+// a producer can be descheduled, and with more producers than CPUs it is: if
+// the others publish a whole ring meanwhile, the producer that claimed
+// next+size writes this slot first. Its value was then labelled as sequence
+// next, so a watcher was handed a value a ring ahead of its cursor, and the
+// late producer's write then replaced the newer value and was labelled as
+// sequence next+size, so a watcher was handed a stale value as a new one. If
+// the two writes overlapped, the counter went odd, even, odd, even while both
+// wrote the payload, and a torn value could pass the seqlock check. The
+// response's own TestMultiProducerStress reports it (2 rounds in 90 on two
+// CPUs).
+//
+// The counter is now the sequence itself, not a count: a writer takes the slot
+// with a compare-and-swap from an even value to its own odd one, so two
+// writers never hold a slot together, and it stores the even value that names
+// its own sequence, whatever order the writers arrive in. A writer that finds
+// a value at or after its own already in the slot has been lapped before it
+// wrote, and leaves the slot alone: the value is one the ring had overwritten,
+// which every watcher already accounts for as skipped (the claim word says the
+// sequence is more than a ring behind). The cost is that a producer can now
+// wait for another producer that is mid-write in the same slot, which happens
+// only when one has been lapped by a whole ring. A producer still never waits
+// for a watcher.
+func (b *Beacon64GLM[V]) storeClaimed(next uint32, value V) {
+	idx := (next - 1) & b.mask
+	sp := &b.slots[idx]
+	size := uint32(len(b.slots))
+	for spins := 0; ; spins++ {
+		s := sp.seq.Load()
+		if s&1 == 1 {
+			// Another producer is writing this slot. It is a whole ring
+			// away from this one, so one of the two was descheduled.
+			if spins > 64 {
+				runtime.Gosched()
+			}
+			continue
+		}
+		// k is the slot's write number that stands for sequence next: the
+		// first lap is 1. It is taken forward from the occupant's so that the
+		// 64-bit counter never repeats, even when the 32-bit sequence wraps.
+		k := uint64((next-1)>>b.log2) + 1
+		if held, ok := slotHolds64GLM(idx, uint32(s), size); ok {
+			ahead := int32(next - held)
+			if ahead <= 0 {
+				return // lapped before writing; the newer value stays
+			}
+			k = s/2 + uint64(uint32(ahead)>>b.log2)
+		}
+		if !sp.seq.CompareAndSwap(s, 2*k-1) { // odd: this writer owns the slot
+			continue
+		}
+		storeSlotVal64GLM(sp, value) // build-tag dispatch (fast: plain+fence, race: atomic)
+		fenceRelease64GLM()          // payload visible BEFORE seq goes even
+		sp.seq.Store(2 * k)          // even: the slot holds sequence next
+		return
 	}
 }
 

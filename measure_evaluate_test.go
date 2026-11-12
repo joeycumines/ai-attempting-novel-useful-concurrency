@@ -219,6 +219,21 @@ func parseGateLog(leg, text string) (gateLeg, []gateFuzzTarget) {
 		if strings.Contains(text, "verify.arm64: ok") && !failed {
 			out.Status = "pass"
 			out.Detail = "the arm64 test binary executed"
+			// Where it ran is part of what the leg shows: an emulator
+			// executes the instructions and says nothing about the memory
+			// ordering of real arm64 hardware.
+			switch {
+			case strings.Contains(text, "== native arm64"):
+				out.Detail += " on an arm64 host"
+			case strings.Contains(text, "== GOARCH=arm64 under "):
+				emulator := "an emulator"
+				for _, line := range strings.Split(text, "\n") {
+					if v, ok := strings.CutPrefix(line, "== emulator: "); ok && strings.TrimSpace(v) != "" {
+						emulator = "an emulator (" + strings.TrimSpace(v) + ")"
+					}
+				}
+				out.Detail += " under " + emulator + ", not on arm64 hardware"
+			}
 		} else {
 			out.Detail = "the arm64 assembly was not executed"
 		}
@@ -380,6 +395,7 @@ func cmdMeasureEvaluate(args []string) int {
 		data: data, registry: registry, derived: deriveReport(data, registry), gates: gates,
 		resultsName: base, registryName: filepath.Base(*registryPath), registryNote: registryNote, gatesName: filepath.Base(*gatesPath),
 		verified: verified,
+		previous: loadPreviousRun(*in),
 	})
 	if err := os.WriteFile(*out, []byte(page), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "evaluate: %v\n", err)
@@ -404,6 +420,8 @@ type evaluationInput struct {
 	registryNote string // set when the dump is not the run group's own
 	gatesName    string
 	verified     bool
+	// previous is the run numbered one below this one, when it is on disk.
+	previous *evalPrevious
 }
 
 // mdCell makes a value safe inside a Markdown table cell. Braces are spaced
@@ -1050,6 +1068,8 @@ func renderEvaluation(in evaluationInput) string {
 			fmt.Sprintf("%d (%.0f%%)", over, 100*float64(over)/float64(len(vals)))})
 	}
 	mdTable(&b, []string{"Metric", "Records", "Median CV", "90th percentile CV", "Records with CV above 10%"}, rows)
+
+	evalAgreement(&b, in, families)
 
 	// --- Limits ---
 	b.WriteString("## What this run cannot show\n\n")

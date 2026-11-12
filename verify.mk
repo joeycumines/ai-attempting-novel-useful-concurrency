@@ -30,7 +30,22 @@
 #                 user-mode emulator (VERIFY_ARM64_EXEC, default qemu-aarch64
 #                 from PATH) and FAILS when there is none, because the whole
 #                 point is that the assembly executes. Not part of
-#                 `make verify` for that reason.
+#                 `make verify` for that reason; `make measure-gates` runs it
+#                 when the host is arm64 or an emulator is configured, and
+#                 records it as not run otherwise.
+#                 Under an emulator two things are set for the test binary.
+#                 BIGBUFF_MEASURE_EXEC names the emulator, so that the
+#                 measurement harness starts its measuring processes through
+#                 it (the host cannot start an arm64 binary by itself).
+#                 GODEBUG gets VERIFY_ARM64_GODEBUG, by default madvdontneed=0:
+#                 qemu-user before 7.1 accepts madvise(MADV_DONTNEED) and does
+#                 nothing, and the Go runtime relies on that call returning
+#                 zeroed pages, so without the setting freshly allocated
+#                 objects hold old contents and the binary fails in the
+#                 runtime at random (seen with qemu 5.2.0 and go1.27.3). The
+#                 setting makes the runtime release memory with MADV_FREE,
+#                 after which it zeroes what it reuses. It does not touch the
+#                 code under test.
 #
 # Configuration & Overrides
 # ---
@@ -46,7 +61,8 @@
 #                     and verify.all writes stamp.txt (commit, dirty-file
 #                     count, start time) first. Keep it outside the repository.
 #   VERIFY_ARM64_EXEC emulator used to run arm64 test binaries (default: qemu-aarch64 if on PATH)
-#   VERIFY_ARM64_RUN  -run regexp for verify.arm64             (default: 64-GLM and 72-Gemini tests)
+#   VERIFY_ARM64_RUN  -run regexp for verify.arm64             (default: every top-level test; of the registry's subtests, the 64-GLM and 72-Gemini ones)
+#   VERIFY_ARM64_GODEBUG  GODEBUG for the emulated arm64 binary (default: madvdontneed=0; see verify.arm64 above)
 #
 # Cross-architecture vet type-checks and assembles the per-architecture files;
 # it does not execute them. verify.arm64 does.
@@ -65,6 +81,7 @@ VERIFY_BENCHTIME ?= 200x
 VERIFY_ARCHES ?= arm64 386
 VERIFY_LOG ?=
 VERIFY_ARM64_EXEC ?= $(shell command -v qemu-aarch64 2>/dev/null || command -v qemu-aarch64-static 2>/dev/null)
+VERIFY_ARM64_GODEBUG ?= madvdontneed=0
 VERIFY_ARM64_RUN ?= Beacon|Watcher|Bitmap72|PhaseCaster72|SymExchanger|TestScenarioBarrier|TestScenarioExchange|/.*(64-GLM|72-Gemini)
 
 # $(call verify_tee,<leg>) expands to a pipeline suffix that copies the leg's
@@ -132,7 +149,9 @@ verify.arm64: ## Execute the tests of the arm64-assembly implementations as an a
 	    go test -count=1 -cpu $(VERIFY_CPUS) -run '$(VERIFY_ARM64_RUN)' -timeout $(VERIFY_TIMEOUT) .; \
 	  elif [ -n '$(VERIFY_ARM64_EXEC)' ]; then \
 	    echo '== GOARCH=arm64 under $(VERIFY_ARM64_EXEC)'; \
-	    GOARCH=arm64 go test -exec '$(VERIFY_ARM64_EXEC)' -count=1 -cpu $(VERIFY_CPUS) -run '$(VERIFY_ARM64_RUN)' -timeout $(VERIFY_TIMEOUT) .; \
+	    $(VERIFY_ARM64_EXEC) --version 2>/dev/null | head -n 1 | sed 's/^/== emulator: /'; \
+	    echo '== GODEBUG=$(VERIFY_ARM64_GODEBUG) BIGBUFF_MEASURE_EXEC=$(VERIFY_ARM64_EXEC)'; \
+	    GODEBUG='$(VERIFY_ARM64_GODEBUG)' BIGBUFF_MEASURE_EXEC='$(VERIFY_ARM64_EXEC)' GOARCH=arm64 go test -exec '$(VERIFY_ARM64_EXEC)' -count=1 -cpu $(VERIFY_CPUS) -run '$(VERIFY_ARM64_RUN)' -timeout $(VERIFY_TIMEOUT) .; \
 	  else \
 	    echo 'verify.arm64: this host is not arm64 and no emulator was found.'; \
 	    echo 'verify.arm64: install qemu-user (qemu-aarch64) or set VERIFY_ARM64_EXEC=<emulator>.'; \
