@@ -32,6 +32,15 @@
 //     loss accounting (Skip64GLM) when a watcher laps the ring; never a torn
 //     value; producers are NEVER blocked by consumers (publish is
 //     wait-free regardless of N).
+//     [Repository note: that holds with respect to watchers, and it is all
+//     that holds. Publish was never wait-free among producers: the claim is
+//     a compare-and-swap loop, which is lock-free. Since the repair in
+//     storeClaimed a producer can also wait for another producer that is
+//     mid-write in the same slot, which needs one of them to have been
+//     lapped by a whole ring between its claim and its write. Where a
+//     comment below says a writer is "wait-free", read "does not wait for
+//     a watcher, and finishes its write in a bounded number of its own
+//     steps once it holds the slot".]
 //
 // # Why the standard runtime loses here
 //
@@ -282,7 +291,7 @@ func (b *Beacon64GLM[V]) Publish(value V) (seq uint32, err error) {
 		return 0, ErrClosed64GLM
 	}
 	for attempts := 0; ; attempts++ {
-		if attempts > 1<<20 { // wait-free guard against pathological livelock
+		if attempts > 1<<20 { // guard against pathological livelock (the claim loop is lock-free, not wait-free)
 			runtime.Gosched()
 			attempts = 0
 		}

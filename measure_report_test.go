@@ -487,6 +487,41 @@ func stalledOpsCompleted(metrics []map[string]any, family string) map[string]flo
 	return out
 }
 
+// stalledBusyCores returns, for each implementation of a family whose
+// publisher was blocked by the stalled-consumer probe, how many CPUs the
+// process used while it was blocked (blocked_cpu_cores, record contract 1.5.0
+// on). Earlier runs did not measure it and return nothing, so their scores
+// are what their own reports say. (Runs under 1.3.0 and 1.4.0 hold a related
+// figure in their residue records, taken after the probe returned; the
+// evaluation lists it, and it is not used to re-score them.)
+func stalledBusyCores(data *reportData, family string) map[string]float64 {
+	out := map[string]float64{}
+	for _, m := range data.metrics {
+		if m["metric"] != "stalled_consumer_ops_completed" || m["family"] != family || m["outcome"] != "publisher_blocked" {
+			continue
+		}
+		impl, _ := m["impl"].(string)
+		if v, ok := m["blocked_cpu_cores"].(float64); ok {
+			out[impl] = v
+		}
+	}
+	return out
+}
+
+// stallRank is the value the stall-resilience dimension ranks, higher being
+// better: the logarithm of the publishes completed by the deadline, except
+// that a publisher which was blocked and waited by spinning ranks below every
+// publisher that parked or completed. Completing few publishes behind a
+// subscriber that never reads is what a lossless design is specified to do;
+// holding a CPU while waiting is a cost the others do not have, and before
+// this rule the dimension could not see it.
+func stallRank(ops, cores float64, measured bool) float64 {
+	if measured && cores >= stallBusyCores {
+		return -1
+	}
+	return math.Log10(ops + 1)
+}
+
 func integrityOf(metrics []map[string]any, impl, family string) (string, float64) {
 	if family == "payload" {
 		for _, m := range metrics {
@@ -622,6 +657,11 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			"broadcast": "publish_ns_op", "payload": "publish_ns_op", "caster": "send_ns_op",
 		}[family], family, 64)
 		stallAll := stalledOpsCompleted(data.metrics, family)
+		stallCores := stalledBusyCores(data, family)
+		stallRankOf := func(impl string) float64 {
+			cores, measured := stallCores[impl]
+			return stallRank(stallAll[impl], cores, measured)
+		}
 		dd.Scores[family] = map[string]implScore{}
 		anyRanked, firstReason, firstSince := false, "", ""
 		for gi, grp := range groups {
@@ -660,8 +700,8 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 				if v, ok := churnAll[impl]; ok {
 					churnVals = append(churnVals, v)
 				}
-				if v, ok := stallAll[impl]; ok {
-					stallVals = append(stallVals, math.Log10(v+1))
+				if _, ok := stallAll[impl]; ok {
+					stallVals = append(stallVals, stallRankOf(impl))
 				}
 				lo, okLo := ns1[impl]
 				hi, okHi := ns64[impl]
@@ -701,7 +741,7 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 					churnScore = percentileRank(churnVals, churn, true)
 				}
 				if hasStall {
-					stallScore = percentileRank(stallVals, math.Log10(stall+1), false)
+					stallScore = percentileRank(stallVals, stallRankOf(impl), false)
 				}
 				if hasScale {
 					scaleScore = percentileRank(scaleVals, scale, true)
@@ -794,6 +834,10 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 				}
 				if hasStall {
 					metrics["stalled_ops_completed"] = stall
+					if cores, ok := stallCores[impl]; ok {
+						metrics["stalled_blocked_cpu_cores"] = cores
+						metrics["stalled_publisher_spins"] = cores >= stallBusyCores
+					}
 				}
 				if hasScale {
 					metrics["scaling_ratio_64_over_1"] = scale

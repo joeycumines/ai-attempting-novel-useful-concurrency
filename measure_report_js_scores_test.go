@@ -30,7 +30,9 @@ function lbRows(group){
       alloc: am ? meanOf(am) : null,
       ratio: (s.metrics && typeof s.metrics.scaling_ratio_64_over_1 === 'number') ? s.metrics.scaling_ratio_64_over_1 : null,
       delivered: (s.metrics && typeof s.metrics['delivered_fraction@8'] === 'number') ? s.metrics['delivered_fraction@8'] : null,
-      stall: stallOps
+      stall: stallOps,
+      spins: !!(s.metrics && s.metrics.stalled_publisher_spins === true),
+      spinCores: (s.metrics && typeof s.metrics.stalled_blocked_cpu_cores === 'number') ? s.metrics.stalled_blocked_cpu_cores : null
     });
   });
   return rows;
@@ -81,7 +83,7 @@ function lbRender(){
       + '<td class="barnum">'+fmtNs(r.lat)+'</td>'
       + '<td class="barnum">'+(r.alloc!=null?r.alloc.toFixed(2):'—')+'</td>'
       + '<td class="barnum">'+(r.ratio!=null?r.ratio.toFixed(2)+'×':'—')+'</td>'
-      + '<td class="barnum">'+(r.stall!=null?fmtNum(r.stall):'—')+'</td>'
+      + '<td class="barnum"'+(r.spins?' title="blocked behind the stalled subscriber, the publisher used '+r.spinCores.toFixed(2)+' of a CPU: it waits by spinning, and ranks last on stall resilience"':'')+'>'+(r.stall!=null?fmtNum(r.stall):'—')+(r.spins?' · spins':'')+'</td>'
       + '<td class="barnum">'+fmtShare(r.delivered)+'</td>'
       + '<td>'+kind+'</td>';
     tbody.appendChild(tr);

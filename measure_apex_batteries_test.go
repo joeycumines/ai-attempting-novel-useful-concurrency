@@ -324,7 +324,6 @@ func measureBarrierSend(ctx *measureContext, name string, mk func() barrierLike)
 			}
 			const warmup = 16
 			failed := false
-			w0 := time.Now()
 			for i := 0; i < warmup; i++ {
 				if err := x.send(context.Background(), i); err != nil {
 					ctx.fail("%s: barrier send failed during warm-up (members=%d): %v", name, members, err)
@@ -334,18 +333,20 @@ func measureBarrierSend(ctx *measureContext, name string, mk func() barrierLike)
 			}
 			n := 0
 			if !failed {
-				est := time.Since(w0) / warmup
-				n = calibrateOps(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps, est)
-				s := time.Now()
-				for i := 0; i < n; i++ {
-					if err := x.send(context.Background(), warmup+i); err != nil {
-						ctx.fail("%s: barrier send %d failed (members=%d): %v", name, i, members, err)
-						failed = true
-						break
+				budget := newOpBudget(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps)
+				for from, to, ok := budget.next(); ok && !failed; from, to, ok = budget.next() {
+					for i := from; i < to; i++ {
+						if err := x.send(context.Background(), warmup+i); err != nil {
+							ctx.fail("%s: barrier send %d failed (members=%d): %v", name, i, members, err)
+							failed = true
+							break
+						}
 					}
 				}
 				if !failed {
-					samples = append(samples, float64(time.Since(s))/float64(n))
+					var d time.Duration
+					n, d = budget.done()
+					samples = append(samples, float64(d)/float64(n))
 					lastOps = n
 				}
 			}

@@ -132,7 +132,7 @@ const reportHTMLBody = `<body>
       <div>
         <div class="toolbar" style="margin-top:0"><select class="sel" id="radarImpl"></select><button class="sbtn" id="radarAdd" title="Add to radar">＋</button></div>
         <div class="score-rows" id="radarRows"></div>
-        <p class="small" style="margin-top:10px">Stall resilience uses log₁₀(ops completed by a publisher whose sibling stalled forever, shared deadline) — higher means it kept delivering. Scaling is the 64/1 relative cost ratio (lower ratio → higher score). Every axis is percentile within the measured family.</p>
+        <p class="small" style="margin-top:10px">Stall resilience uses log₁₀(ops completed by a publisher whose sibling stalled forever, shared deadline) — higher means it kept delivering. A publisher that was blocked and used half a CPU or more while blocked waits by spinning: it is marked “· spins” in the table and ranks below every publisher that parked or completed. Scaling is the 64/1 relative cost ratio (lower ratio → higher score). Every axis is percentile within the measured family.</p>
       </div>
     </div>
   </div>
@@ -255,7 +255,7 @@ const reportHTMLBody = `<body>
   </div></details>
 
   <details class="mdetail"><summary>Adoptability score</summary><div>
-    <p>Percentile rank within family, weighted: throughput .28 · stall resilience .20 · scaling .16 · latency .14 · allocations .14 · churn .08. Stall resilience uses log₁₀(completed ops) vs family peers. Any torn read or exactly-once scatter violation caps the score at 50 and marks the implementation “Do not adopt”. A 100 means “best in class on measured axes”, not “use everywhere” — read the radar, not just the number.</p>
+    <p>Percentile rank within family, weighted: throughput .28 · stall resilience .20 · scaling .16 · latency .14 · allocations .14 · churn .08. Stall resilience uses log₁₀(completed ops) vs family peers, with a blocked publisher that spins ranked last. Any torn read or exactly-once scatter violation caps the score at 50 and marks the implementation “Do not adopt”. A 100 means “best in class on measured axes”, not “use everywhere” — read the radar, not just the number.</p>
   </div></details>
 
   <details class="mdetail"><summary>Threats to validity</summary><div>

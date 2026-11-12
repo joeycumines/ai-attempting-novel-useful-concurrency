@@ -280,6 +280,10 @@ func measurePayloadStalledConsumer(ctx *measureContext, mk func() asyncAPI, name
 	// Read at the deadline. Releasing the fast subscribers below can let a
 	// blocked publisher run on, and that progress is not what is measured.
 	opsCompleted := opsDone.Load()
+	blockedCores, blockedMeasured := 0.0, false
+	if outcome == "publisher_blocked" {
+		blockedCores, blockedMeasured = blockedCPUCores()
+	}
 	cancelFast()
 	drained := make(chan struct{})
 	go func() { wg.Wait(); close(drained) }()
@@ -302,7 +306,7 @@ func measurePayloadStalledConsumer(ctx *measureContext, mk func() asyncAPI, name
 	if m1 > m0 {
 		retained = m1 - m0
 	}
-	ctx.writeMetric(map[string]any{
+	ctx.writeMetric(withBlockedCPU(map[string]any{
 		"metric":                "stalled_consumer_ops_completed",
 		"family":                "payload",
 		"impl":                  name,
@@ -319,7 +323,7 @@ func measurePayloadStalledConsumer(ctx *measureContext, mk func() asyncAPI, name
 		"scenarios":             scen,
 		"expected_good_fit":     goodFit,
 		"exposure_limited":      expLimit,
-	}, nil)
+	}, blockedCores, blockedMeasured), nil)
 }
 
 func measurePayloadChurn(ctx *measureContext, mk func() asyncAPI, name string) {
@@ -328,26 +332,20 @@ func measurePayloadChurn(ctx *measureContext, mk func() asyncAPI, name string) {
 	lastOps := 0
 	for r := 0; r < ctx.profile.ChurnReps; r++ {
 		x := mk()
-		for i := 0; i < 4; i++ {
+		const churnTarget, churnMinOps, churnMaxOps = 10 * time.Millisecond, 16, 20000
+		churn := func(int) {
 			c, cancel := context.WithCancel(context.Background())
 			_ = x.subscribe(c)
 			cancel()
 		}
-		w0 := time.Now()
-		for i := 0; i < 8; i++ {
-			c, cancel := context.WithCancel(context.Background())
-			_ = x.subscribe(c)
-			cancel()
+		warmOps(churnTarget, churnMaxOps, churn)
+		budget := newOpBudget(churnTarget, churnMinOps, churnMaxOps)
+		for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+			for i := from; i < to; i++ {
+				churn(i)
+			}
 		}
-		est := time.Since(w0) / 16
-		n := calibrateOps(10*time.Millisecond, 16, 20000, est*2)
-		s := time.Now()
-		for i := 0; i < n; i++ {
-			c, cancel := context.WithCancel(context.Background())
-			_ = x.subscribe(c)
-			cancel()
-		}
-		d := time.Since(s)
+		n, d := budget.done()
 		lastOps = n
 		samples = append(samples, float64(d)/float64(n))
 	}
@@ -459,17 +457,19 @@ func runGatherBatteries(ctx *measureContext) {
 			lastOps := 0
 			for r := 0; r < ctx.profile.ChurnReps; r++ {
 				x := mk()
-				for i := 0; i < 4; i++ {
+				const churnTarget, churnMinOps, churnMaxOps = 10 * time.Millisecond, 16, 50000
+				warmOps(churnTarget, churnMaxOps, func(int) {
 					x.add(1)
 					x.add(-1)
+				})
+				budget := newOpBudget(churnTarget, churnMinOps, churnMaxOps)
+				for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+					for i := from; i < to; i++ {
+						x.add(1)
+						x.add(-1)
+					}
 				}
-				n := calibrateOps(10*time.Millisecond, 16, 50000, 300*time.Nanosecond)
-				s := time.Now()
-				for i := 0; i < n; i++ {
-					x.add(1)
-					x.add(-1)
-				}
-				d := time.Since(s)
+				n, d := budget.done()
 				lastOps = n
 				samples = append(samples, float64(d)/float64(n))
 			}

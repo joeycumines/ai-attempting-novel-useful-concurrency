@@ -64,25 +64,14 @@ func batteryIDs() []string {
 	return ids
 }
 
-// calibrateOps sizes the operation count for a timed cell given an observed
-// per-op estimate, clamped to [minOps, maxOps] and the per-rep time target.
-func calibrateOps(target time.Duration, minOps, maxOps int, est time.Duration) int {
-	if est <= 0 {
-		est = time.Microsecond
-	}
-	n := int(target / est)
-	if n < minOps {
-		n = minOps
-	}
-	if n > maxOps {
-		n = maxOps
-	}
-	return n
-}
-
 // opBudget sizes a timed repetition by the clock instead of by an estimate
 // taken before it: the caller runs batches of operations until the target
 // time has passed, with at least minOps and at most maxOps operations.
+//
+// Every timed repetition of every battery is sized this way from record
+// contract 1.5.0. Before it only the broadcast and payload throughput and
+// latency batteries were; the rest fixed the count from a short estimate
+// (calibrateOps, now gone), which is what the next paragraph describes.
 //
 // The throughput batteries of the families whose subscribers run freely
 // (broadcast, payload) used to estimate the cost of a publish from 16
@@ -479,20 +468,19 @@ func measureBroadcastAllocations(ctx *measureContext, factory func() Broadcaster
 				// keep a live instance without subscribers
 				_ = b
 			}
-			const warmup = 16
-			w0 := time.Now()
-			for i := 0; i < warmup; i++ {
-				b.Publish(i + 1)
-			}
-			est := time.Since(w0) / warmup
-			n := calibrateOps(25*time.Millisecond, 32, 30000, est)
+			const allocTarget, allocMinOps, allocMaxOps = 25 * time.Millisecond, 32, 30000
+			warmup := warmOps(allocTarget, allocMaxOps, func(i int) { b.Publish(i + 1) })
 			runtime.GC()
 			var m0, m1 runtime.MemStats
 			runtime.ReadMemStats(&m0)
-			for i := 0; i < n; i++ {
-				b.Publish(i + 1 + warmup)
+			budget := newOpBudget(allocTarget, allocMinOps, allocMaxOps)
+			for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+				for i := from; i < to; i++ {
+					b.Publish(i + 1 + warmup)
+				}
 			}
 			runtime.ReadMemStats(&m1)
+			n, _ := budget.done()
 			lastOps = n
 			if g != nil {
 				clean := g.stop(3 * time.Second)
@@ -549,28 +537,23 @@ func measureBroadcastChurn(ctx *measureContext, factory func() Broadcaster, name
 	lastOps := 0
 	for r := 0; r < ctx.profile.ChurnReps; r++ {
 		b := factory()
-		// warmup
-		for i := 0; i < 4; i++ {
+		const churnTarget, churnMinOps, churnMaxOps = 20 * time.Millisecond, 16, 4000
+		warmOps(churnTarget, churnMaxOps, func(int) {
 			s := b.Subscribe()
 			s.Unsubscribe()
-		}
-		w0 := time.Now()
-		for i := 0; i < 8; i++ {
-			s := b.Subscribe()
-			s.Unsubscribe()
-		}
-		est := time.Since(w0) / 8
-		n := calibrateOps(20*time.Millisecond, 16, 4000, est)
+		})
 		runtime.GC()
 		var m0, m1 runtime.MemStats
 		runtime.ReadMemStats(&m0)
-		t0 := time.Now()
-		for i := 0; i < n; i++ {
-			s := b.Subscribe()
-			s.Unsubscribe()
+		budget := newOpBudget(churnTarget, churnMinOps, churnMaxOps)
+		for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+			for i := from; i < to; i++ {
+				s := b.Subscribe()
+				s.Unsubscribe()
+			}
 		}
-		d := time.Since(t0)
 		runtime.ReadMemStats(&m1)
+		n, d := budget.done()
 		closeWithWatchdog(b, 2*time.Second)
 		lastOps = n
 		samples = append(samples, float64(d)/float64(n))
@@ -644,6 +627,48 @@ func measureBroadcastMemPerSubscriber(ctx *measureContext, factory func() Broadc
 // how much the fast subscribers observed, and how much backlog memory is
 // retained. The probe is bounded by a watchdog deadline; a blocked publisher
 // is a valid, recorded outcome, never a hang.
+// A publisher that is blocked behind a subscriber that never reads can wait
+// in two ways: parked, which costs nothing, or in a loop that polls, which
+// holds a CPU for as long as the subscriber stays away. The stalled-consumer
+// probes tell the two apart by reading the process's CPU time over
+// blockedCPUWindow while the publisher is still blocked, before anything is
+// released. The figure is for the whole process, which at that moment is the
+// blocked publisher, the subscribers waiting for a value and this goroutine
+// asleep; whichever of them is busy, the implementation is burning a CPU
+// because one subscriber stopped reading.
+const (
+	blockedCPUWindow = 100 * time.Millisecond
+	// stallBusyCores is the CPU use, in CPUs, from which a blocked publisher
+	// counts as spinning. A parked process measures 0.00 to 0.02; one
+	// spinning goroutine measures about 1.
+	stallBusyCores = 0.5
+)
+
+// blockedCPUCores returns the CPUs' worth of time this process uses over
+// blockedCPUWindow. ok is false where the platform cannot say.
+func blockedCPUCores() (cores float64, ok bool) {
+	c0, ok := processCPUTime()
+	if !ok {
+		return 0, false
+	}
+	t0 := time.Now()
+	time.Sleep(blockedCPUWindow)
+	c1, ok := processCPUTime()
+	if !ok {
+		return 0, false
+	}
+	return float64(c1-c0) / float64(time.Since(t0)), true
+}
+
+// withBlockedCPU adds blocked_cpu_cores to a stalled-consumer record when the
+// publisher was blocked and the platform could measure it.
+func withBlockedCPU(rec map[string]any, cores float64, measured bool) map[string]any {
+	if measured {
+		rec["blocked_cpu_cores"] = cores
+	}
+	return rec
+}
+
 func measureBroadcastStalledConsumer(ctx *measureContext, factory func() Broadcaster, name string) {
 	scen, goodFit, expLimit := broadcastAttachmentMeta(name)
 	const fastSubs = 2
@@ -701,6 +726,10 @@ func measureBroadcastStalledConsumer(ctx *measureContext, factory func() Broadca
 	// Read at the deadline. Releasing the fast subscribers below can let a
 	// blocked publisher run on, and that progress is not what is measured.
 	opsCompleted := opsDone.Load()
+	blockedCores, blockedMeasured := 0.0, false
+	if outcome == "publisher_blocked" {
+		blockedCores, blockedMeasured = blockedCPUCores()
+	}
 	cancelFast()
 	drained := make(chan struct{})
 	go func() { wg.Wait(); close(drained) }()
@@ -748,7 +777,7 @@ func measureBroadcastStalledConsumer(ctx *measureContext, factory func() Broadca
 	if m1 > m0 {
 		retained = m1 - m0
 	}
-	ctx.writeMetric(map[string]any{
+	ctx.writeMetric(withBlockedCPU(map[string]any{
 		"metric":                "stalled_consumer_ops_completed",
 		"family":                "broadcast",
 		"impl":                  name,
@@ -764,30 +793,25 @@ func measureBroadcastStalledConsumer(ctx *measureContext, factory func() Broadca
 		"scenarios":             scen,
 		"expected_good_fit":     goodFit,
 		"exposure_limited":      expLimit,
-	}, nil)
+	}, blockedCores, blockedMeasured), nil)
 }
 
 func measureBroadcastZeroSubscriber(ctx *measureContext, factory func() Broadcaster, name string) {
 	scen, goodFit, expLimit := broadcastAttachmentMeta(name)
 	b := factory()
-	const warmup = 64
-	for i := 0; i < warmup; i++ {
-		b.Publish(i + 1)
-	}
+	const zeroTarget, zeroMinOps, zeroMaxOps = 15 * time.Millisecond, 64, 100000
+	published := warmOps(zeroTarget, zeroMaxOps, func(i int) { b.Publish(i + 1) })
 	samples := make([]float64, 0, 3)
 	lastOps := 0
 	for r := 0; r < 3; r++ {
-		w0 := time.Now()
-		for i := 0; i < warmup; i++ {
-			b.Publish(i + 1 + warmup*r)
+		budget := newOpBudget(zeroTarget, zeroMinOps, zeroMaxOps)
+		for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+			for i := from; i < to; i++ {
+				b.Publish(published + i + 1)
+			}
 		}
-		est := time.Since(w0) / warmup
-		n := calibrateOps(15*time.Millisecond, 64, 100000, est)
-		s := time.Now()
-		for i := 0; i < n; i++ {
-			b.Publish(i + 1 + warmup*(r+3))
-		}
-		d := time.Since(s)
+		n, d := budget.done()
+		published += n
 		lastOps = n
 		samples = append(samples, float64(d)/float64(n))
 	}
