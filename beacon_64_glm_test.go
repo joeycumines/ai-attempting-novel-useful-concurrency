@@ -410,6 +410,123 @@ func TestNoGoroutineLeakUnderChurn(t *testing.T) {
 // Multi-producer stress: sequence uniqueness + value integrity
 // ---------------------------------------------------------------------------
 
+// A producer that is descheduled between claiming a sequence and writing its
+// slot can be lapped: another producer claims the sequence one ring later and
+// writes the same slot first. The slot's counter was a count of writes, so
+// the newer value was labelled with the older sequence and the late write
+// then replaced it under the newer one. This test plays the late producer by
+// hand: claim, let a whole ring go by, then write.
+func TestBeaconProducerLappedBetweenClaimAndWrite(t *testing.T) {
+	const size = 8
+	b := NewBeacon64GLM[int](size)
+	defer b.Close()
+	// Every value is its own sequence number, so a watcher can check each one.
+	for i := 1; i <= 3; i++ {
+		if seq, err := b.Publish(i); err != nil || seq != uint32(i) {
+			t.Fatalf("Publish(%d) = %d, %v", i, seq, err)
+		}
+	}
+	// The late producer claims sequence 4 exactly as Publish does, and stops.
+	old := b.claim.Load()
+	_, cur := unpack64GLM(old)
+	late := cur + 1
+	if late != 4 || !b.claim.CompareAndSwap(old, pack64GLM(late>>b.log2, late)) {
+		t.Fatalf("claiming sequence 4: cursor %d", cur)
+	}
+	// A whole ring goes by: sequences 5 to 12. Sequence 12 lands in the slot
+	// that sequence 4 was claimed for.
+	for i := 5; i <= 12; i++ {
+		if seq, err := b.Publish(i); err != nil || seq != uint32(i) {
+			t.Fatalf("Publish(%d) = %d, %v", i, seq, err)
+		}
+	}
+	check := func(when string) {
+		t.Helper()
+		// The ring holds sequences 5 to 12, each with its own value. The
+		// slots are read directly first: a watcher retries a slot that does
+		// not hold its sequence, and would retry a mislabelled one for ever.
+		for want := 5; want <= 12; want++ {
+			if got, _, ok := b.readSlotAt(uint32(want)); !ok || got != want {
+				t.Fatalf("%s: the slot of sequence %d read as (%d, %v)", when, want, got, ok)
+			}
+		}
+		w := b.Watch()
+		if w.Cursor() != 5 {
+			t.Fatalf("%s: the oldest retained sequence is %d, want 5", when, w.Cursor())
+		}
+		for want := 5; want <= 12; want++ {
+			got, skip, ok := w.Next(ModeNonBlock64GLM, nil)
+			if !ok || skip != 0 || got != want {
+				t.Fatalf("%s: sequence %d read as (%d, skip %d, %v)", when, want, got, uint32(skip), ok)
+			}
+		}
+		if v, total, ok := b.Snapshot(); !ok || v != 12 || total != 12 {
+			t.Fatalf("%s: Snapshot = (%d, %d, %v), want (12, 12, true)", when, v, total, ok)
+		}
+	}
+	check("before the late write")
+	// Now the late producer writes. Its value was overwritten a ring ago and
+	// must not come back as sequence 12, or as anything else.
+	b.storeClaimed(late, 4)
+	check("after the late write")
+
+	// The ring carries on from there.
+	if seq, err := b.Publish(13); err != nil || seq != 13 {
+		t.Fatalf("Publish(13) = %d, %v", seq, err)
+	}
+	if v, total, ok := b.Snapshot(); !ok || v != 13 || total != 13 {
+		t.Fatalf("after one more publish: Snapshot = (%d, %d, %v), want (13, 13, true)", v, total, ok)
+	}
+}
+
+// The other order: the late producer writes its slot while the producer a ring
+// later is still on its way to it. The later value must replace the earlier
+// one, and be the one the ring reports.
+func TestBeaconLateWriteThenTheNewerOne(t *testing.T) {
+	const size = 8
+	b := NewBeacon64GLM[int](size)
+	defer b.Close()
+	claim := func() uint32 {
+		old := b.claim.Load()
+		_, cur := unpack64GLM(old)
+		if !b.claim.CompareAndSwap(old, pack64GLM((cur+1)>>b.log2, cur+1)) {
+			t.Fatal("claim failed with one producer")
+		}
+		return cur + 1
+	}
+	for i := 1; i <= 3; i++ {
+		b.Publish(i)
+	}
+	late := claim() // 4
+	for i := 5; i <= 11; i++ {
+		b.Publish(i)
+	}
+	newer := claim() // 12, the same slot as 4
+	if late != 4 || newer != 12 {
+		t.Fatalf("claimed %d and %d, want 4 and 12", late, newer)
+	}
+	b.storeClaimed(late, 4)
+	// Sequence 12 is claimed and not yet written: nothing may be read as 12.
+	if v, _, ok := b.readSlotAt(newer); ok {
+		t.Fatalf("sequence 12 read as %d before it was written", v)
+	}
+	b.storeClaimed(newer, 12)
+	for want := 5; want <= 12; want++ {
+		if got, _, ok := b.readSlotAt(uint32(want)); !ok || got != want {
+			t.Fatalf("the slot of sequence %d read as (%d, %v)", want, got, ok)
+		}
+	}
+	if v, total, ok := b.Snapshot(); !ok || v != 12 || total != 12 {
+		t.Fatalf("Snapshot = (%d, %d, %v), want (12, 12, true)", v, total, ok)
+	}
+	w := b.Watch()
+	for want := 5; want <= 12; want++ {
+		if got, skip, ok := w.Next(ModeNonBlock64GLM, nil); !ok || skip != 0 || got != want {
+			t.Fatalf("sequence %d read as (%d, skip %d, %v)", want, got, uint32(skip), ok)
+		}
+	}
+}
+
 func TestMultiProducerStress(t *testing.T) {
 	b := NewBeacon64GLM[int](256)
 	defer b.Close()

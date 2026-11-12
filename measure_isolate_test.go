@@ -216,6 +216,25 @@ func measureResidue(before int) (goroutines int, cpuCores float64, measured bool
 	return goroutines, float64(c1-c0) / float64(time.Since(t0)), true
 }
 
+// measureExecEnv names a command that the measuring processes are started
+// through: the parent runs `<command> <this executable> <arguments>`. It is
+// for a test binary that the host cannot start by itself, which is the case
+// when it was built for another architecture and is running under an
+// emulator (`go test -exec`): the parent runs inside the emulator and sees
+// nothing unusual, and its children need the same emulator. `make
+// verify-arm64` sets it.
+const measureExecEnv = "BIGBUFF_MEASURE_EXEC"
+
+// measureChildCommand is the command that runs this executable with args as a
+// measuring process.
+func measureChildCommand(ctx context.Context, exe string, args ...string) *exec.Cmd {
+	if prefix := strings.Fields(os.Getenv(measureExecEnv)); len(prefix) > 0 {
+		argv := append(append(append([]string{}, prefix[1:]...), exe), args...)
+		return exec.CommandContext(ctx, prefix[0], argv...)
+	}
+	return exec.CommandContext(ctx, exe, args...)
+}
+
 // runMeasureIsolated is the parent: it runs every unit of the plan in a child
 // process of its own and copies the records into ctx.out in plan order.
 func runMeasureIsolated(ctx *measureContext) {
@@ -239,7 +258,7 @@ func runMeasureIsolated(ctx *measureContext) {
 		}
 		out := filepath.Join(dir, "unit-"+strconv.Itoa(i)+".jsonl")
 		runCtx, cancel := context.WithTimeout(context.Background(), measureUnitTimeout)
-		cmd := exec.CommandContext(runCtx, exe, "-test.run=NONE", measureSentinel, "run",
+		cmd := measureChildCommand(runCtx, exe, "-test.run=NONE", measureSentinel, "run",
 			"--profile", ctx.profile.Name,
 			"--seed", strconv.FormatInt(ctx.seed, 10),
 			"--out", out,

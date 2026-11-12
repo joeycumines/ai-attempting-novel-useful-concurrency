@@ -19,9 +19,20 @@ package bigbuff
 // Provenance: 10-gemini-argon-medium.md. Cross-checked against the delivered Markdown source;
 // see extraction_audit.md for the comparison method and repair/exposure notes.
 
+// Repair (run 09 pass). The delivered source is a bare seqlock; this port put
+// the slot's value behind a sync.RWMutex so that the race detector can follow
+// it. The publisher marks the slot odd and then takes that lock, which waits
+// for any reader that is inside it. A reader that found the slot odd retried
+// at once, without yielding, so with more readers than CPUs the retrying
+// readers held every CPU while the one reader the publisher was waiting for
+// sat in the run queue, until the scheduler preempted somebody (about 10 ms).
+// Measurement run 08 shows it: 97 ns a publish with one subscriber and
+// 596,687 ns with 256. TryNext now yields when it finds a write in progress.
+
 import (
 	"context"
 	"iter"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -252,6 +263,12 @@ func (s *EpochSub[V]) TryNext() (value V, missed uint64, closed bool, ok bool) {
 		if seq1 != expectedSeq {
 			// Slot was overwritten concurrently while we were reading; retry and
 			// advance s.next to the new oldest available sequence.
+			if seq1&1 == 1 {
+				// A write is in progress, and the publisher may be waiting
+				// for a reader that is not running. Let it run (see the
+				// repair note at the top of the file).
+				runtime.Gosched()
+			}
 			pubRaw = s.tape.published.Load()
 			pub = pubRaw &^ epochClosedBit
 			if pub >= capLen && s.next < pub-capLen+1 {

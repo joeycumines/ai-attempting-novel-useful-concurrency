@@ -131,6 +131,44 @@ func TestChanPubSub57AdapterTryReceive(t *testing.T) {
 	t.Fatal("TryReceive did not observe the pending publication")
 }
 
+// The primitive's Subscribe waits for an in-flight Send, and that Send may be
+// waiting for a subscriber that will never receive and is about to leave. The
+// adapter once held an exclusive lock round Subscribe; the departing
+// subscriber needed the same lock, and all three waited on each other.
+func TestChanPubSub57AdapterUnsubscribeDuringBlockedSubscribe(t *testing.T) {
+	b := newChanPubSub57Adapter()
+	stalled := b.Subscribe() // never receives
+	sent := make(chan int, 1)
+	go func() { sent <- b.Publish(1) }()
+	// Let the Send reach the stalled subscriber, then start a Subscribe that
+	// has to wait for it. If either has not got that far when the subscriber
+	// leaves, the test passes without having exercised the window; it never
+	// fails for that reason.
+	time.Sleep(20 * time.Millisecond)
+	joined := make(chan BroadcastSubscriber, 1)
+	go func() { joined <- b.Subscribe() }()
+	time.Sleep(20 * time.Millisecond)
+
+	left := make(chan struct{})
+	go func() { stalled.Unsubscribe(); close(left) }()
+	select {
+	case <-left:
+	case <-timeAfterGuard():
+		t.Fatal("Unsubscribe did not return while a Subscribe was waiting for the Send that was waiting for it")
+	}
+	select {
+	case <-sent:
+	case <-timeAfterGuard():
+		t.Fatal("the Send did not return after the subscriber it was waiting for left")
+	}
+	select {
+	case s := <-joined:
+		s.Unsubscribe()
+	case <-timeAfterGuard():
+		t.Fatal("the Subscribe did not return after the Send ended")
+	}
+}
+
 func BenchmarkChanPubSub57Send(b *testing.B) {
 	const nsubs = 8
 	x := NewChanPubSub57DeepSeek[chan int, int](make(chan int))

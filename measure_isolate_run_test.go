@@ -2,9 +2,13 @@ package bigbuff
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -454,5 +458,99 @@ func TestEvaluationListsOnlyResidueThatUsesACPU(t *testing.T) {
 	// A run that was one process recorded no residue; the section says nothing.
 	if out := render("1.2.0", spinning); out != "" {
 		t.Errorf("a run before process isolation printed a residue section:\n%s", out)
+	}
+}
+
+// A test binary built for another architecture runs under an emulator, and
+// the processes it starts need the same one.
+func TestMeasuringProcessesStartThroughTheNamedCommand(t *testing.T) {
+	// An emulator, if this binary is running under one, has to stay in front
+	// of the executable in the whole runs further down.
+	outer := os.Getenv(measureExecEnv)
+	t.Setenv(measureExecEnv, "")
+	if got := measureChildCommand(context.Background(), "/x/bb.test", "-a", "b").Args; !reflect.DeepEqual(got, []string{"/x/bb.test", "-a", "b"}) {
+		t.Errorf("with no command named: %q", got)
+	}
+	t.Setenv(measureExecEnv, "  /opt/qemu-aarch64   -cpu max ")
+	cmd := measureChildCommand(context.Background(), "/x/bb.test", "-a", "b")
+	if want := []string{"/opt/qemu-aarch64", "-cpu", "max", "/x/bb.test", "-a", "b"}; !reflect.DeepEqual(cmd.Args, want) || cmd.Path != "/opt/qemu-aarch64" {
+		t.Errorf("through a command: path %q, args %q, want %q", cmd.Path, cmd.Args, want)
+	}
+
+	// And a whole run through one: `env` starts the executable it is given,
+	// and a command that cannot start it fails every unit.
+	env, err := exec.LookPath("env")
+	if err != nil {
+		t.Skip("no env command on this system")
+	}
+	const impl = "BaselineFanout (standard)"
+	run := func(prefix string) (int, map[string][]map[string]any) {
+		t.Setenv(measureExecEnv, prefix)
+		out := filepath.Join(t.TempDir(), "results.jsonl")
+		rc := cmdMeasureRun([]string{"--profile", "quick", "--impl", impl, "--battery", "broadcast.zero_subscriber", "--no-verify", "--out", out})
+		return rc, readMeasureRecords(t, out)
+	}
+	if rc, recs := run(strings.TrimSpace(env + " " + outer)); rc != 0 || len(recs["metric"]) == 0 {
+		t.Errorf("through env: exit %d, %d metric records", rc, len(recs["metric"]))
+	}
+	if rc, recs := run(env + " --no-such-option-of-env"); rc == 0 || len(recs["metric"]) != 0 {
+		t.Errorf("through a command that fails: exit %d, %d metric records", rc, len(recs["metric"]))
+	}
+}
+
+// The evaluation of a run says what the run before it said, when the two are
+// the same measurement, and says that nothing was reproduced when they are
+// not.
+func TestEvaluationComparesWithThePreviousRun(t *testing.T) {
+	// Six implementations, 100 to 600 ns; in the earlier run the fastest and
+	// the slowest had each other's figures.
+	run := func(generator string, swap bool) *reportData {
+		data := &reportData{meta: map[string]any{"generator_version": generator, "profile": "standard", "commit": "abc"}}
+		for i := 0; i < 6; i++ {
+			j := i
+			if swap && (i == 0 || i == 5) {
+				j = 5 - i
+			}
+			mean := 100 * float64(j+1)
+			data.metrics = append(data.metrics, map[string]any{"type": "metric", "family": "caster", "impl": fmt.Sprintf("C%d", i), "metric": "send_ns_op",
+				"dims": map[string]any{"receivers": 8.0}, "mean": mean, "ci95_low": mean - 5, "ci95_high": mean + 5, "unit": "ns"})
+		}
+		return data
+	}
+	render := func(prev *evalPrevious) string {
+		data := run(measureGeneratorVersion, false)
+		page := renderEvaluation(evaluationInput{data: data, derived: deriveReport(data, nil), resultsName: "results-09-01-results.jsonl", registryName: "r.json", previous: prev})
+		i := strings.Index(page, "## Agreement with the previous run")
+		j := strings.Index(page, "## What this run cannot show")
+		if i < 0 || j < i {
+			t.Fatalf("no agreement section before the limits:\n%s", page)
+		}
+		return page[i:j]
+	}
+	if out := render(nil); !strings.Contains(out, "There is no earlier run") || !strings.Contains(out, "has been reproduced") {
+		t.Errorf("no previous run:\n%s", out)
+	}
+	old := run("0.9.0", true)
+	if out := render(&evalPrevious{label: "08", data: old, derived: deriveReport(old, nil)}); !strings.Contains(out, "Run 08 was taken under record contract 0.9.0") || !strings.Contains(out, "not compared") || strings.Contains(out, "| caster |") {
+		t.Errorf("a previous run under another contract:\n%s", out)
+	}
+	same := run(measureGeneratorVersion, true)
+	out := render(&evalPrevious{label: "08", data: same, derived: deriveReport(same, nil)})
+	// Places 1..6 against 6,2,3,4,5,1: Spearman 1 - 6*50/(6*35) = -0.43; the
+	// four in the middle keep their verdicts and places; C0 went from 6th to
+	// 1st; of this run's top five (C0..C4) four were in the other's top five.
+	for _, want := range []string{"| caster | 6 | -0.43 |", "C0 (6 to 1)", "No implementation changed delivery class", "| caster | 6 | 4 (67%) |"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the agreement section lacks %q:\n%s", want, out)
+		}
+	}
+	if rho, ok := spearman([]float64{1, 2, 3, 4}, []float64{10, 20, 30, 40}); !ok || rho != 1 {
+		t.Errorf("spearman of an identical order = %v, %v", rho, ok)
+	}
+	if rho, ok := spearman([]float64{1, 2, 2, 3}, []float64{3, 2, 2, 1}); !ok || rho != -1 {
+		t.Errorf("spearman of a reversed order with a tie = %v, %v", rho, ok)
+	}
+	if _, ok := spearman([]float64{1, 1, 1}, []float64{1, 2, 3}); ok {
+		t.Error("spearman of a constant series is defined")
 	}
 }
