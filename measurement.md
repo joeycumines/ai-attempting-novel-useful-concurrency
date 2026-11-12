@@ -163,6 +163,7 @@ One JSON object per line. Every committed run has one (`results-NN-01-results.js
 | `exactly_once_violations` | scatter: items neither delivered exactly once nor counted as evicted, i.e. `|sent − (received + evicted)|` (all receivers, warmup included). Any non-zero value fails the implementation's integrity gate |
 | `evicted`, `delivered_fraction` | scatter: items a bounded queue evicted by contract (its own eviction counter), and the fraction of sent items that were delivered. `dispatch_ns_op` is wall time per **delivered** item, so an evicting queue is not credited with the items it dropped. Always `0` and `1` for implementations without an eviction counter |
 | `publishes`, `receives`, `delivered_fraction` | broadcast and payload `publish_ns_op` (contract 1.4.0 on): the publishes made over all repetitions of the cell, warm-up included; the values the subscribers received; and `receives / (publishes × subscribers)`. `publish_ns_op` is the cost of the call whatever became of the value. The count is read once the subscribers have gone 50 ms without receiving, so a backlog that is still draining is waited for; a cell whose subscribers are still receiving after 20 s fails the run. `verify` rejects a 1.4.0 run whose throughput records lack `publishes` or `receives` |
+| `blocked_cpu_cores` | broadcast and payload `stalled_consumer_ops_completed` with outcome `publisher_blocked` (contract 1.5.0 on): the process's CPU time over 100 ms taken while the publisher was blocked, in CPUs. A parked publisher reads 0.00 to 0.01; one that waits by spinning reads about 1 |
 | `torn_reads`, `checked` | payload: multi-word ([4]uint64) read integrity vs loads checked |
 | `deliveries`, `deliveries_expected`, `deliveries_missing` | caster throughput and latency: values the receivers took, values the timed Sends should have delivered, and the difference. A Send is timed only once every receiver is registered for it. Any missing delivery fails the implementation's integrity gate |
 | `withdrawal_compensation_success` | caster: fraction of rounds where `Add(-1)` unstuck a parked `Send` |
@@ -222,8 +223,9 @@ with an explicit GC; latency batteries use a bounded reservoir; stalled-consumer
 run a shared wall-clock deadline after which a still-parked publisher is *recorded*,
 not killed.
 
-A throughput repetition of the broadcast and payload families is sized by the
-clock, not by an estimate: the publisher warms up for an eighth of the target
+A timed repetition is sized by the clock, not by an estimate (the broadcast
+and payload throughput and latency batteries from contract 1.3.0, every
+battery from 1.5.0): the publisher warms up for an eighth of the target
 time, then publishes in batches until the target has passed (`opBudget`), and
 the subscribers' goroutines are running before either starts. `ops` is what the
 last repetition ran. Until contract 1.3.0 the count was fixed from 16 publishes
@@ -336,6 +338,20 @@ resilience uses log₁₀(completed ops) under a shared stalled-consumer deadlin
 better). Payload integrity failure caps the score at 50. A 100 means *best measured
 on these axes within this group*, not “use everywhere” — read the radar chart, the
 pathology panel, and the registry remarks.
+
+Two rules from contract 1.5.0 (run 09) on. A run under an earlier contract is
+scored without them.
+
+- **A publisher that spins while blocked ranks last on stall resilience.** When
+  the stalled-consumer probe leaves the publisher blocked and the process used
+  half a CPU or more meanwhile (`blocked_cpu_cores`), the implementation ranks
+  below every member of its group that parked or completed, however many
+  publishes it had completed. The report marks it "spins".
+- **Allocations rank to a tenth of an allocation per publish.** The figure is
+  rounded to 0.1 before ranking and equal figures tie. The battery counts the
+  process's allocations, so an implementation that allocates nothing measures
+  a small figure that differs in every run; ranked as measured, those
+  implementations were ordered by it. The report prints the figure as measured.
 
 A scoring group is a family, or, for broadcast and payload, one **delivery class**
 of the family:
@@ -455,9 +471,14 @@ same code. The fuzz leg records the command line it ran.
 `make verify-arm64` executes the tests of the implementations that ship arm64
 assembly (64 and 72) as an arm64 binary: natively on an arm64 host, otherwise under
 `qemu-aarch64`. It fails when neither is available, and it is not part of
-`make verify` for that reason. It has not been run for real: the machine this
-repository was developed on is amd64 with no emulator. What has been done instead
-is recorded in `extraction_audit.md` ("arm64 assembly: executed under emulation").
+`make verify` for that reason. It has been run under an emulator
+(`make verify-arm64 VERIFY_ARM64_EXEC=/path/to/qemu-aarch64`, qemu 5.2.0 from the
+PyPI package `shellphish-qemu`, on an amd64 host) and passes; `make measure-gates`
+runs it as a leg when `VERIFY_ARM64_EXEC` is set and records `not-run` when it is
+not. It has not been run on arm64 hardware. An emulator on an x86-64 host shows
+that the instructions execute correctly inside the test suite; it cannot show a
+missing or wrong memory fence, because the host orders memory more strongly than
+arm64 does. See `extraction_audit.md` ("arm64 assembly: executed under emulation").
 
 ## Known limitations
 
@@ -478,16 +499,23 @@ is recorded in `extraction_audit.md` ("arm64 assembly: executed under emulation"
   can be told apart; the score does not weigh it.
 - A ranked group is one whose headline cost separates at least half of its
   pairs. That is a floor, not a guarantee: adjacent places in a ranked class
-  can still be within each other's intervals, and only the broadcast and
-  payload classes of run 08 have been through it with a run that is not
-  otherwise withdrawn.
-- The broadcast and payload throughput and latency batteries size a repetition
-  by the clock while it runs (`opBudget`). The churn and stalled-consumer
-  probes, and the caster, scatter, exchange and barrier batteries, still size
-  it once from a short estimate (`calibrateOps`). That is sound where an
-  operation completes before the next begins, which is what those batteries
-  measure, and wrong for an operation that is cheap until something else
-  wakes; the per-unit timeout is what stands behind it.
+  can still be within each other's intervals. Runs 09 and 10 measured the
+  same code twice: an implementation in the middle of a broadcast class moved
+  up to ten places between them (`results-10-07-evaluation.md`, "Agreement
+  with the previous run").
+- Every battery sizes a repetition by the clock while it runs (`opBudget`)
+  from contract 1.5.0; the estimate taken before the timed loop
+  (`calibrateOps`) is deleted. This did not make the figures steadier: the
+  median within-run variation of `churn_ns_op` was 26 percent in run 08 and
+  19 and 23 percent in runs 09 and 10, and that of `send_ns_op` 7, 11 and 9
+  percent. What it removes is a repetition count fixed from the wrong cost.
+- The latency dimension reproduces poorly between two runs of the same code
+  in the classes that drop (rank correlation 0.77 in broadcast and 0.42 in
+  payload, runs 09 and 10). It is still 14 percent of the score.
+- The allocation battery counts the process's allocations, the runtime's
+  included. The score ranks the figure to a tenth of an allocation per
+  publish for that reason, and so cannot tell an implementation that
+  allocates once in 35 publishes from one that never does.
 - Isolation covers what one battery leaves for the next. It does not cover what
   else the machine is doing: another tenant of the host still shows up as noise,
   and the within-run variation in the evaluation is the only measure of it.

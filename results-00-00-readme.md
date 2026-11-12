@@ -63,9 +63,12 @@ added later. Whether the newest run still covers the live registry is a
 separate question, which `bigbuff-measure index` answers with a note and the
 landing page shows.
 
-**Run 08 is the first run whose rankings mean what they say. No family of runs
-01 to 06 is ranked, and the broadcast and payload families of run 07 are not
-either.** Four defects of the measurement were found, each by looking at what a
+**Run 10 is the current run, and run 09 is the same code measured ten minutes
+earlier.** They are the first pair of runs that can be compared, and
+`report-04-run-10-analysis.md` is the written account of both. Run 08 is the
+first run whose rankings mean what they say. **No family of runs 01 to 06 is
+ranked, and the broadcast and payload families of run 07 are not either.**
+Five defects of the measurement were found, each by looking at what a
 suspicious number was made of, and each has its own record contract
 (`generator_version` in the meta record and the manifest):
 
@@ -75,14 +78,19 @@ suspicious number was made of, and each has its own record contract
 | 1.1.0 | 05 | `ops_completed` is recorded, a dimension without data is left out of the composite, `verify` rejects a metric record without its value, and families of fewer than five are not ranked. Exchange and barrier batteries. |
 | 1.2.0 | 06 | The caster batteries time a `Send` only once every receiver is registered, and count the deliveries. Before, they timed Sends that found no receiver and delivered nothing (2 to 8 ns each). |
 | 1.3.0 | 07 | Every battery of every implementation is measured in a process of its own. Before, the run was one process, and the publishers left spinning by the stall probes of the eleventh broadcast implementation held both CPUs for the rest of it. Throughput repetitions are sized by the clock. |
-| 1.4.0 | 08 on | The broadcast and payload throughput records say how much of what was published the subscribers received, and the two families are scored in two delivery classes: implementations that delivered everything, and implementations that dropped or coalesced. Before, the record gave the cost of calling Publish only, and in run 07 the eight top broadcast places went to implementations that delivered 0.1 to 79 percent of their values. A tie counts as half a place in a percentile rank, and a dimension on which a whole class has one value is left out. |
+| 1.4.0 | 08 | The broadcast and payload throughput records say how much of what was published the subscribers received, and the two families are scored in two delivery classes: implementations that delivered everything, and implementations that dropped or coalesced. Before, the record gave the cost of calling Publish only, and in run 07 the eight top broadcast places went to implementations that delivered 0.1 to 79 percent of their values. A tie counts as half a place in a percentile rank, and a dimension on which a whole class has one value is left out. |
+| 1.5.0 | 09 on | Three things. Every timed repetition of every battery is sized by the clock; before, the churn, allocation, caster, scatter, gather and barrier batteries fixed their count from a short estimate. The stalled-consumer probes record the CPU a blocked publisher uses (`blocked_cpu_cores`), and one that uses half a CPU or more ranks last on stall resilience; before, `EpochCaster (13-OpenRouter)`, which waits by spinning, was 2nd of 50. The allocation dimension ranks to a tenth of an allocation per publish; before, the 53 or so implementations that allocate nothing were ordered by stray allocations of the runtime, differently in each run. The third was found by comparing runs 09 and 10, so their reports, score files and evaluations were regenerated after they were first committed. |
 
 One more rule came out of comparing runs 07 and 08: a group whose members the
 measurement cannot tell apart is not ranked. The caster family's 13
 implementations lie within 800 to 1,130 ns with overlapping intervals, and the
 two runs ordered them differently. It is reported with its measurements and
-the verdict `Not ranked (not distinguishable)` in both runs. In run 08 the
-same rule withholds the ranking of the payload implementations that drop.
+the verdict `Not ranked (not distinguishable)` in every run since, and runs 09
+and 10 again order it differently (the fastest of run 09 is 10th of 13 in run
+10). In run 08 the same rule withholds the ranking of the payload
+implementations that drop; in runs 09 and 10 that class is ranked, because the
+repair of `EpochTape` removed the one very wide interval that overlapped most
+of it.
 
 The fourth is why the broadcast and payload tables of run 07 are withdrawn. Its
 measurements are sound (they were taken in isolation); what was wrong was ranking a publish that delivers against one that
@@ -108,15 +116,21 @@ that delivers everything (`GenCaster (06-Meta)`) lossy. The rule was replaced
 (50 ms of quiet, and a run that is still receiving after 20 s fails), and the
 run was taken again from a clean tree. The committed run 08 is the second one.
 
-**One implementation changed after run 08.** `Horizon70Meta (70-Meta)` had a
-lost wakeup, found by the gates of run 08 and repaired
-(`extraction_audit.md`, "Fifth pass"). Run 08 measured it before the repair,
-at 132 ns per publish to 8 subscribers; two trial passes afterwards gave 236
-and 516 ns. Its row in run 08 is too favourable. Nothing else that run 08
-measured has changed.
+**Three implementations changed after run 08, and runs 09 and 10 measure the
+repaired code** (`extraction_audit.md`, "Fifth pass" and "Sixth pass").
+`Horizon70Meta (70-Meta)` had a lost wakeup: run 08 has it at 132 ns per
+publish to 8 subscribers and 8th of 44, runs 09 and 10 at 317 and 286 ns and
+17th and 15th. `EpochTape (10-Gemini)` had a reader that starved the writer:
+184 µs in run 08, 271 and 294 ns after. `Beacon64GLM (64-GLM)` could deliver a
+value under the wrong sequence number: 422 ns in run 08, 544 and 628 ns after
+the repair. Run 08's rows for these three describe code that no longer
+exists. Its scores are not recomputed under the rules of contract 1.5.0.
 
-**Gates.** Runs 05 and 08 have a gates record (slot 06). Runs 06 and 07 do
-not: nothing recorded what `make verify` reported for their trees.
+**Gates.** Runs 05, 08 and 10 have a gates record (slot 06). Runs 06, 07 and
+09 do not: nothing recorded what `make verify` reported for their trees. Run
+10's record is the first whose arm64 leg ran (under `qemu-aarch64`, not on
+hardware); it was taken five tooling files after the measured commit, which
+the record and the evaluation name.
 
 **Families with fewer than five measured implementations are not ranked.** They
 are measured, checked for integrity and reported with their raw numbers. See
