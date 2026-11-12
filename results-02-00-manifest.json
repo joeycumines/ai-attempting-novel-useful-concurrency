@@ -38,11 +38,11 @@
       "verified_against": "results-01-02-registry.json (nearest earlier registry dump; this run group has none)"
     },
     {
-      "bytes": 1885123,
+      "bytes": 1885286,
       "generator": "bigbuff-measure report",
       "kind": "interactive-report",
       "path": "results-02-03-report.html",
-      "sha256": "6a0dfa1b50b25d080b31f131391c50d6cfb2112d248dee48e7feba5a4afe5252",
+      "sha256": "9169cb5d4295b2b6fc4b04e2b06faf489930aced44003b18c33540b6be5751e4",
       "slot": "03"
     },
     {
@@ -62,7 +62,7 @@
       "slot": "05"
     }
   ],
-  "generated": "2026-11-12T03:05:34.151664751Z",
+  "generated": "2026-11-12T03:42:41.733958494Z",
   "generator": "bigbuff-measure",
   "generator_version": "1.0.0",
   "go": "go1.27.3",
