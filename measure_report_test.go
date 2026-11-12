@@ -283,6 +283,33 @@ const casterDeliveryContract = "1.2.0"
 // payload throughput records say what was delivered.
 const deliveryClassContract = "1.4.0"
 
+// allocResolution is the step, in allocations per publish, to which the
+// allocation dimension ranks from record contract allocResolutionContract.
+//
+// The battery counts the process's mallocs over the timed publishes, so the
+// count includes whatever the runtime allocated meanwhile. For the
+// implementations whose publish allocates nothing that stray count is the
+// whole figure: between 0 and 0.02 allocations per publish, different in
+// every repetition (a coefficient of variation of 224 percent is one
+// repetition in five with a single stray allocation). Ranked as measured, 40
+// implementations that do not allocate were put in an order that the next
+// run reshuffled: runs 09 and 10 measured RingPubSub at 0.00006 and 0.00002
+// and EpochCaster at 0.00004 and 0, and their allocation scores moved from 76
+// to 92 and from 80 to 98 on that alone. A tenth of an allocation per publish
+// is five times the largest stray figure seen, and smaller than the gap
+// between any two implementations whose publish does allocate a different
+// number of objects. Implementations that round to the same figure tie.
+const (
+	allocResolution         = 0.1
+	allocResolutionContract = "1.5.0"
+)
+
+// allocRankValue is an allocations-per-publish figure as the allocation
+// dimension ranks it: rounded to allocResolution.
+func allocRankValue(v float64) float64 {
+	return math.Round(v/allocResolution) * allocResolution
+}
+
 // The two delivery classes. An implementation is in classDeliversAll when,
 // in every cell and repetition of its family's throughput battery, its
 // subscribers received every value that was published to them, and in
@@ -644,8 +671,17 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			"broadcast": "publish_latency_ns", "payload": "publish_latency_ns", "caster": "send_latency_ns",
 		}[family], family, -1)
 		var allocAll map[string]float64
+		allocRaw := map[string]float64{}
 		if family == "broadcast" {
 			allocAll = metricMeans(data.metrics, "publish_allocs_op", "broadcast", 8)
+			for impl, v := range allocAll {
+				allocRaw[impl] = v
+			}
+			if !generatorBefore(generator, allocResolutionContract) {
+				for impl, v := range allocAll {
+					allocAll[impl] = allocRankValue(v)
+				}
+			}
 		} else {
 			allocAll = nil
 		}
@@ -827,6 +863,11 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 					metrics["publish_latency_ns@8"] = lat
 				}
 				if hasAlloc {
+					// The figure as measured; the rank above used it to
+					// allocResolution.
+					if raw, ok := allocRaw[impl]; ok {
+						alloc = raw
+					}
 					metrics["publish_allocs_op@8"] = alloc
 				}
 				if hasChurn {

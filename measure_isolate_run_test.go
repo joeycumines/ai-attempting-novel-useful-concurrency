@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -569,7 +570,10 @@ func TestEvaluationComparesWithThePreviousRun(t *testing.T) {
 	// Places 1..6 against 6,2,3,4,5,1: Spearman 1 - 6*50/(6*35) = -0.43; the
 	// four in the middle keep their verdicts and places; C0 went from 6th to
 	// 1st; of this run's top five (C0..C4) four were in the other's top five.
-	for _, want := range []string{"| caster | 6 | -0.43 |", "C0 (6 to 1)", "No implementation changed delivery class", "| caster | 6 | 4 (67%) |"} {
+	// The dimension table: the caster fixture has throughput and nothing else.
+	for _, want := range []string{"| caster | 6 | -0.43 |", "C0 (6 to 1)", "No implementation changed delivery class", "| caster | 6 | 4 (67%) |",
+		"| Group | throughput | latency | allocations | churn | scaling | stall_resilience |",
+		"| caster | -0.43 | no data | no data | no data | no data | no data |"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the agreement section lacks %q:\n%s", want, out)
 		}
@@ -681,7 +685,7 @@ func TestBlockedPublisherThatSpinsRanksLastOnStall(t *testing.T) {
 			for _, subs := range []float64{1, 8, 64} {
 				data.metrics = append(data.metrics, map[string]any{
 					"type": "metric", "metric": "publish_ns_op", "family": "broadcast", "impl": im.name,
-					"dims": map[string]any{"subscribers": subs}, "mean": ns, "ci95_low": ns - 1, "ci95_high": ns + 1,
+					"dims": map[string]any{"subs": subs}, "mean": ns, "ci95_low": ns - 1, "ci95_high": ns + 1,
 					"samples": []any{ns - 1, ns, ns + 1}, "publishes": 1000.0, "receives": 1000.0 * subs, "delivered_fraction": 1.0,
 				})
 			}
@@ -730,5 +734,65 @@ func TestBlockedPublisherThatSpinsRanksLastOnStall(t *testing.T) {
 	old := derive(measureGeneratorVersion, false)
 	if stall(old, "Spinner") != stall(old, "ParksLate") {
 		t.Errorf("without a CPU figure the spinner scores %d and its equal %d", stall(old, "Spinner"), stall(old, "ParksLate"))
+	}
+}
+
+// The allocation dimension ranks allocations per publish to a tenth. The
+// battery counts the process's mallocs, and for a publish that allocates
+// nothing the stray ones are the whole figure: ranked as measured, the
+// implementations that do not allocate were ordered by noise, differently in
+// each run.
+func TestAllocationDimensionRanksToATenth(t *testing.T) {
+	for v, want := range map[float64]float64{0: 0, 0.00004: 0, 0.02: 0, 0.049: 0, 0.0745: 0.1, 1.0004: 1, 1.27: 1.3, 2: 2} {
+		if got := allocRankValue(v); math.Abs(got-want) > 1e-9 {
+			t.Errorf("allocRankValue(%v) = %v, want %v", v, got, want)
+		}
+	}
+	allocs := map[string]float64{"Zero": 0, "Stray": 0.00004, "StrayMore": 0.02, "One": 1, "OneStray": 1.0004, "Two": 2}
+	names := []string{"Zero", "Stray", "StrayMore", "One", "OneStray", "Two"}
+	derive := func(generator string) map[string]implScore {
+		data := &reportData{meta: map[string]any{"generator_version": generator, "profile": "quick"}}
+		for i, name := range names {
+			ns := float64(100 + 40*i)
+			for _, subs := range []float64{1, 8, 64} {
+				data.metrics = append(data.metrics, map[string]any{
+					"type": "metric", "metric": "publish_ns_op", "family": "broadcast", "impl": name,
+					"dims": map[string]any{"subs": subs}, "mean": ns, "ci95_low": ns - 1, "ci95_high": ns + 1,
+					"samples": []any{ns - 1, ns, ns + 1}, "publishes": 1000.0, "receives": 1000.0 * subs, "delivered_fraction": 1.0,
+				})
+			}
+			data.metrics = append(data.metrics, map[string]any{
+				"type": "metric", "metric": "publish_allocs_op", "family": "broadcast", "impl": name,
+				"dims": map[string]any{"subs": 8.0}, "mean": allocs[name],
+			})
+		}
+		return deriveReport(data, nil).Scores["broadcast"]
+	}
+	dim := func(s map[string]implScore, name string) int { return s[name].Dims["allocations"] }
+
+	now := derive(measureGeneratorVersion)
+	for _, name := range names {
+		if !now[name].Ranked {
+			t.Fatalf("%s is not ranked (%s); the fixture is meant to be", name, now[name].UnrankedReason)
+		}
+		// The figure reported is the one measured, not the rounded one.
+		if got := now[name].Metrics["publish_allocs_op@8"]; got != allocs[name] {
+			t.Errorf("%s: reported %v allocations per publish, measured %v", name, got, allocs[name])
+		}
+	}
+	if a, b, c := dim(now, "Zero"), dim(now, "Stray"), dim(now, "StrayMore"); a != b || b != c {
+		t.Errorf("publishes that allocate nothing score %d, %d and %d on allocations; they must tie", a, b, c)
+	}
+	if a, b := dim(now, "One"), dim(now, "OneStray"); a != b {
+		t.Errorf("one allocation per publish scores %d and %d with and without a stray count", a, b)
+	}
+	if !(dim(now, "Zero") > dim(now, "One") && dim(now, "One") > dim(now, "Two")) {
+		t.Errorf("0, 1 and 2 allocations per publish score %d, %d and %d", dim(now, "Zero"), dim(now, "One"), dim(now, "Two"))
+	}
+
+	// A run under the contract before is scored as its own report scored it.
+	before := derive(deliveryClassContract)
+	if !(dim(before, "Zero") > dim(before, "Stray") && dim(before, "Stray") > dim(before, "StrayMore")) {
+		t.Errorf("under %s the three were ranked as measured; got %d, %d, %d", deliveryClassContract, dim(before, "Zero"), dim(before, "Stray"), dim(before, "StrayMore"))
 	}
 }

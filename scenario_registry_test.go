@@ -272,6 +272,7 @@ var harnessRunnables = map[string]string{
 	"TestEvaluationComparesWithThePreviousRun":          "measurement evaluation tooling",
 	"TestStalledProbeMeasuresTheCPUOfABlockedPublisher": "measurement battery tooling",
 	"TestBlockedPublisherThatSpinsRanksLastOnStall":     "measurement evaluation tooling",
+	"TestAllocationDimensionRanksToATenth":              "measurement evaluation tooling",
 	"TestMeasureUnitThatMatchesNothingFails":            "measurement battery tooling",
 	"TestWarmOpsIsSizedByTheClock":                      "measurement battery tooling",
 	"TestDeliveryFieldsRecordTheShareDelivered":         "measurement battery tooling",

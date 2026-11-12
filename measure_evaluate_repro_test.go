@@ -122,6 +122,20 @@ func headlineRecords(data *reportData, family string) map[string]map[string]any 
 	return out
 }
 
+// agreementDims are the dimensions of the score, in the order the evaluation
+// prints them.
+var agreementDims = []string{"throughput", "latency", "allocations", "churn", "scaling", "stall_resilience"}
+
+// dimMissing reports whether an implementation has no data for a dimension.
+func dimMissing(s implScore, dim string) bool {
+	for _, m := range s.DimsMissing {
+		if m == dim {
+			return true
+		}
+	}
+	return false
+}
+
 // evalAgreement writes the section that says what of this run was also true
 // of the run before it. A ranking that one run produced and the next did not
 // is not a finding, and one run cannot tell which kind it has.
@@ -142,6 +156,7 @@ func evalAgreement(b *strings.Builder, in evaluationInput, families []string) {
 	fmt.Fprintf(b, "Run %s was taken under the same record contract (%s) and profile (`%s`), at commit `%s`; this run is at `%s`. The table compares the two, group by group, over the implementations ranked in both. Rank correlation is Spearman's, on the scores: 1 means the same order, 0 means no relation. A place is a position in the group by score, ties sharing one.\n\n", prev.label, gen, prof, evalStr(pmeta, "commit"), evalStr(meta, "commit"))
 
 	rows := [][]string{}
+	dimRows := [][]string{}
 	var moved []string
 	for _, f := range families {
 		cur, old := in.derived.Scores[f], prev.derived.Scores[f]
@@ -210,6 +225,37 @@ func evalAgreement(b *strings.Builder, in evaluationInput, families []string) {
 			if r, ok := spearman(a, c); ok {
 				rho = fmt.Sprintf("%.2f", r)
 			}
+			// The same for each dimension the score is made of. A score can
+			// reproduce while one of its parts does not: the parts that
+			// do carry it.
+			dimRow := []string{group}
+			for _, dim := range agreementDims {
+				left := false
+				for _, lists := range [][]implScore{list, oldList} {
+					for _, u := range lists[0].DimsUniform {
+						left = left || u == dim
+					}
+				}
+				var x, y []float64
+				for _, s := range list {
+					o, ok := oldScore[s.Impl]
+					if !ok || dimMissing(s, dim) || dimMissing(o, dim) {
+						continue
+					}
+					x, y = append(x, float64(s.Dims[dim])), append(y, float64(o.Dims[dim]))
+				}
+				switch r, ok := spearman(x, y); {
+				case left:
+					dimRow = append(dimRow, "left out")
+				case len(x) == 0:
+					dimRow = append(dimRow, "no data")
+				case !ok:
+					dimRow = append(dimRow, "not defined")
+				default:
+					dimRow = append(dimRow, fmt.Sprintf("%.2f", r))
+				}
+			}
+			dimRows = append(dimRows, dimRow)
 			sort.Float64s(shifts)
 			rows = append(rows, []string{group, strconv.Itoa(common), rho,
 				fmt.Sprintf("%d of %d", sameVerdict, common),
@@ -221,6 +267,10 @@ func evalAgreement(b *strings.Builder, in evaluationInput, families []string) {
 		b.WriteString("No group is ranked in both runs.\n\n")
 	} else {
 		mdTable(b, []string{"Group", "Ranked in both", "Rank correlation of scores", "Same verdict", "Median places moved", "Most places moved", "Of this run's top five places, in the other's top five"}, rows)
+	}
+	if len(dimRows) > 0 {
+		b.WriteString("The same rank correlation for each dimension of the score, on the dimension's own percentile ranks. A dimension that reproduces poorly contributes its weight in noise; \"left out\" is a dimension on which the whole group is tied in one of the runs, which is not part of the score.\n\n")
+		mdTable(b, append([]string{"Group"}, agreementDims...), dimRows)
 	}
 	sort.Strings(moved)
 	if len(moved) > 0 {
