@@ -320,9 +320,9 @@ The publisher is given a fixed number of publishes and a deadline while one subs
 
 A blocked publisher is not always an idle one. After these batteries the measuring process was still using at least half a CPU with nothing left to do: the publisher waits for the subscriber that never reads by spinning, and goes on using a CPU until the process ends. Each battery runs in a process of its own, so this costs the other measurements nothing; in a program it would.
 
-| Family | Implementation | Batteries that left it | CPUs in use afterwards |
-|---|---|---|---|
-| broadcast | EpochCaster (13-OpenRouter) | broadcast.stalled_consumer, broadcast.trace_stalled_consumer | 1.08 |
+| Family | Implementation | Batteries that left it | CPUs in use afterwards | CPUs in use while the stalled-consumer probe's publisher was blocked |
+|---|---|---|---|---|
+| broadcast | EpochCaster (13-OpenRouter) | broadcast.stalled_consumer, broadcast.trace_stalled_consumer | 1.08 | not recorded |
 
 ## Skipped
 
@@ -366,6 +366,10 @@ Coefficient of variation (standard deviation over mean) across the repetitions o
 | `send_ns_op` | 85 | 7.2% | 15.7% | 25 (29%) |
 | `wait_ns_op` | 2 | 138.8% | 176.3% | 2 (100%) |
 | `zero_subscriber_ns_op` | 94 | 3.7% | 22.7% | 28 (30%) |
+
+## Agreement with the previous run
+
+Run 07 was taken under record contract 1.3.0 with the `standard` profile; this run is under 1.4.0 with `standard`. Their numbers are not the same measurement, so they are not compared, and no ranking of this run has been reproduced.
 
 ## What this run cannot show
 

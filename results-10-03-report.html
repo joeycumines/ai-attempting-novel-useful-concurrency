@@ -357,7 +357,7 @@ table.gloss td:first-child{font-family:var(--mono);white-space:nowrap;color:#a5f
 <section class="block" id="latency">
   <div class="kicker">Tail behaviour</div>
   <h2 class="title">Latency distribution @ 8 subscribers</h2>
-  <p class="lede">p50 / p90 / p99 / max from reservoir-sampled publish→delivery latency (ADR-004 harness, warm). Sorted by p99. Whiskers show the 95% confidence interval around the mean where available.</p>
+  <p class="lede">p50 / p90 / p99 / max of the time one publish call takes to return with 8 subscribers draining, after a warm-up, over every timed publish of the battery. From record contract 1.6.0 the battery times several fresh instances (episodes), the whiskers are the 95% confidence interval of the mean across episodes, and the score ranks the mean over episodes of the 90th percentile. Sorted by p99.</p>
   <div class="tabs" id="latTabs"></div>
   <div class="card pad"><div id="latChart"></div><p class="small" style="margin-top:10px">Values in nanoseconds; lower is better. Histogram buckets in <a href="#methodology" style="color:var(--cyan)">Methodology</a>.</p></div>
 </section>
@@ -457,7 +457,7 @@ table.gloss td:first-child{font-family:var(--mono);white-space:nowrap;color:#a5f
     <div class="scroll-x"><table class="gloss">
       <tr><td>metric</td><td>record kind; dims carry the sweep dimension (<code class="k">subs</code> / <code class="k">receivers</code> / <code class="k">senders</code>)</td></tr>
       <tr><td>mean / stddev / cv</td><td>distributional summaries over <code class="k">reps</code> repetitions of <code class="k">ops</code> operations each</td></tr>
-      <tr><td>p50 / p90 / p99 / max</td><td>reservoir-sampled latencies (ADR-004 HDR-ish reservoir, per-run)</td></tr>
+      <tr><td>p50 / p90 / p99 / max</td><td>percentiles and the largest of the timed operations of a latency battery; from contract 1.6.0 over every episode, with each episode's own in <code class="k">episode_p50</code>, <code class="k">episode_p90</code>, <code class="k">episode_p99</code></td></tr>
       <tr><td>ci95_low / ci95_high</td><td>Welch-adjusted 95% half-width on the per-op mean (t-distribution, df = n−1)</td></tr>
       <tr><td>approx_retained_bytes</td><td>post-GC heap growth attributable to a permanently stalled subscriber</td></tr>
       <tr><td>exactly_once_violations</td><td>scatter items neither delivered exactly once nor counted as evicted, summed over all receivers incl. warmup; non-zero fails the integrity gate</td></tr>
@@ -985,6 +985,7 @@ function renderChurn(){
 
 /* ── Leaderboard ── */
 var lbGroup = 0, lbSort = {k:'score', dir:-1};
+var latHeader = 'p99 latency';
 function lbRows(group){
   var family = group.family;
   var sc = derivedGroup(group);
@@ -998,7 +999,14 @@ function lbRows(group){
   Object.keys(sc).forEach(function(impl){
     var s = sc[impl];
     var tm = thr[impl], lm = lat[impl], am = allocs[impl], sm = stalls[impl];
+    // What the latency dimension ranks: from record contract 1.6.0 the mean over
+    // episodes of the 90th percentile; before it the column showed the single
+    // episode's 99th percentile.
     var p99 = lm && typeof lm.p99 === 'number' ? lm.p99 : null;
+    if (lm && Array.isArray(lm.episode_p90) && lm.episode_p90.length) {
+      p99 = lm.episode_p90.reduce(function(a, b){ return a + b; }, 0) / lm.episode_p90.length;
+      latHeader = 'p90 latency';
+    }
     var stallOps = sm && typeof sm.ops_completed === 'number' ? sm.ops_completed : (sm ? meanOf(sm) : null);
     rows.push({
       impl: impl, score: s.score, ranked: isRanked(s), verdict: s.verdict, integrity: s.integrity,
@@ -1028,12 +1036,15 @@ function lbRender(){
   if (!scoreGroups.length) return;
   var q = ($('lbSearch').value||'').toLowerCase();
   var baseOnly = $('lbBaselinesOnly').checked, goodOnly = $('lbGoodFitOnly').checked;
+  latHeader = 'p99 latency';
   var rows = lbRows(scoreGroups[lbGroup]).filter(function(r){
     if (q && r.impl.toLowerCase().indexOf(q) < 0) return false;
     if (baseOnly && !r.baseline) return false;
     if (goodOnly && !r.goodFit) return false;
     return true;
   });
+  var latTh = document.querySelector('#leaderboard th[data-k="lat"]');
+  if (latTh && latTh.textContent !== latHeader) latTh.textContent = latHeader;
   var dir = lbSort.dir, key = lbSort.k;
   rows.sort(function(a,b){
     var av = a[key], bv = b[key];
@@ -1566,7 +1577,7 @@ function downloadBlob(name, content, mime){
 (function renderMethodology(){
   var batteries = [
     ['broadcast.throughput', 'publish_ns_op', 'cost per publish vs subscriber count (1…64/256/512)'],
-    ['broadcast.latency', 'publish_latency_ns', 'publish→receipt latency, 8 subscribers, p50…p99/max + reservoir histogram'],
+    ['broadcast.latency', 'publish_latency_ns', 'time for one publish call to return, 8 subscribers receiving: p50, p90, p99, max and a log2 histogram, over the fresh instances the record counts in episodes (one before contract 1.6.0)'],
     ['broadcast.allocs', 'publish_allocs_op / publish_bytes_op', 'allocator pressure per publish at 8 subscribers, GOGC=off, post-GC measurement'],
     ['broadcast.allocs_zerosubs', 'publish_allocs_op_zerosubs / publish_bytes_op_zerosubs', 'same, publishing into the void'],
     ['broadcast.mem_per_subscriber', 'mem_per_subscriber_bytes', 'post-GC heap retained per idle subscriber (16 idle subscriptions)'],

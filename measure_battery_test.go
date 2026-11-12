@@ -405,12 +405,13 @@ func measureBroadcastThroughput(ctx *measureContext, factory func() Broadcaster,
 // warmed and then timed for LatencySamples publishes.
 //
 // Until record contract 1.6.0 a latency battery was one episode: 400
-// publishes of one instance, 40 µs to 2 ms of wall time in all. Whatever the
-// machine was doing in that instant was in every sample, the confidence
-// interval was taken across those samples and so said nothing about it, and
-// between two runs of the same code the order of the implementations that
-// drop came out differently (rank correlation 0.77 in broadcast, 0.42 in
-// payload, runs 09 and 10).
+// publishes of one instance, half a millisecond of wall time for the median
+// implementation of run 10 and 14 ms for the slowest. Whatever the machine
+// was doing in that instant was in every sample, the confidence interval was
+// taken across those samples and so said nothing about it, and between two
+// runs of the same code the order of the implementations that drop came out
+// differently (rank correlation 0.77 in broadcast, 0.42 in payload, runs 09
+// and 10).
 type latencyEpisodes struct {
 	episodes [][]float64
 	hist     *histogram

@@ -138,6 +138,10 @@ Coefficient of variation (standard deviation over mean) across the repetitions o
 | `wait_ns_op` | 2 | 150.9% | 248.0% | 2 (100%) |
 | `zero_subscriber_ns_op` | 94 | 5.6% | 30.3% | 36 (38%) |
 
+## Agreement with the previous run
+
+Run 04 was taken under record contract 1.0.0 with the `quick` profile; this run is under 1.1.0 with `standard`. Their numbers are not the same measurement, so they are not compared, and no ranking of this run has been reproduced.
+
 ## What this run cannot show
 
 - It is one run on one machine with 2 logical CPUs at GOMAXPROCS 2. Nothing here describes behaviour with more parallelism, on another processor, or on another architecture.
