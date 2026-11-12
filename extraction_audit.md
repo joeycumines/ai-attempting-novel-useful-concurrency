@@ -910,6 +910,9 @@ favourably. Runs 09 and 10 measure the code after these changes;
   replace hardware: the emulator executes on x86-64, whose memory ordering is
   stronger than arm64's, so the `DMB` fences and acquire loads are still
   untested for what they are there to do.
+  (Later: the leg now goes through `platform.mk`, which picks the means of
+  execution per machine; the emulator's environment is `PLATFORM_QEMU_ENV`
+  and `VERIFY_ARM64_GODEBUG` no longer exists.)
 - **Measurement.** Record contract 1.5.0: every repetition sized by the clock
   (`calibrateOps` deleted), the blocked publisher's CPU measured and scored,
   allocations ranked to a tenth. The evaluation compares a run with the one

@@ -33,17 +33,26 @@ func TestGateLogParsing(t *testing.T) {
 	if l := leg("alloc", "--- PASS: TestAllocA (0.00s)\n--- PASS: TestAllocB (0.00s)\n--- SKIP: TestAllocC (0.00s)\nok  \tbigbuff\t2.5s\n"); l.Status != "pass" || !strings.HasPrefix(l.Detail, "2 passing, 0 failing, 1 skipped") {
 		t.Errorf("alloc: %+v", l)
 	}
-	if l := leg("arm64", "verify.arm64: FAILED (the arm64 assembly was not executed)\n"); l.Status != "fail" {
-		t.Errorf("arm64: %+v", l)
+	if l := leg("arm64", "platform: no runner on this machine can execute a linux/arm64 binary\nverify.arm64: FAILED (see above)\n"); l.Status != "fail" || l.Detail != "the arm64 assembly was not executed" {
+		t.Errorf("arm64 without a runner: %+v", l)
 	}
 	// A pass says where the binary ran: an emulator is not arm64 hardware.
-	if l := leg("arm64", "== native arm64\nok  \tbigbuff\t9.1s\nverify.arm64: ok\n"); l.Status != "pass" || l.Detail != "the arm64 test binary executed on an arm64 host" {
+	const arm64Head = "== platform: linux/arm64 on host linux/amd64, CPU amd64\n"
+	if l := leg("arm64", "== platform: darwin/arm64 on host darwin/arm64, CPU arm64\n== runner: native: the host starts the binary\n== execution: hardware\nPASS\nverify.arm64: ok\n"); l.Status != "pass" || l.Detail != "the darwin/arm64 test binary executed on an arm64 CPU (runner native: the host starts the binary)" {
 		t.Errorf("arm64 native: %+v", l)
 	}
-	if l := leg("arm64", "== GOARCH=arm64 under /opt/qemu-aarch64\n== emulator: qemu-aarch64 version 5.2.0\nok  \tbigbuff\t170.2s\nverify.arm64: ok\n"); l.Status != "pass" || l.Detail != "the arm64 test binary executed under an emulator (qemu-aarch64 version 5.2.0), not on arm64 hardware" {
+	if l := leg("arm64", arm64Head+"== runner: qemu: /opt/qemu-aarch64 (qemu-aarch64 version 5.2.0)\n== execution: emulated\nPASS\nverify.arm64: ok\n"); l.Status != "pass" || l.Detail != "the linux/arm64 test binary executed under emulation, not on arm64 hardware (runner qemu: /opt/qemu-aarch64 (qemu-aarch64 version 5.2.0))" {
 		t.Errorf("arm64 emulated: %+v", l)
 	}
-	if l := leg("arm64", "== GOARCH=arm64 under /opt/qemu-aarch64\n--- FAIL: TestX (0.01s)\nFAIL\tbigbuff\t170.2s\n"); l.Status != "fail" {
+	if l := leg("arm64", arm64Head+"== runner: custom: ssh pi\n== execution: unknown\nPASS\nverify.arm64: ok\n"); l.Status != "pass" || !strings.Contains(l.Detail, "does not say whether on arm64 hardware") {
+		t.Errorf("arm64 through a custom runner: %+v", l)
+	}
+	// An ok line without the statement of how it ran is not a pass: the
+	// record must be able to say whether it was hardware.
+	if l := leg("arm64", "PASS\nverify.arm64: ok\n"); l.Status != "fail" {
+		t.Errorf("arm64 with no execution line: %+v", l)
+	}
+	if l := leg("arm64", arm64Head+"== runner: qemu: /opt/qemu-aarch64\n== execution: emulated\n--- FAIL: TestX (0.01s)\nFAIL\nverify.arm64: FAILED (see above)\n"); l.Status != "fail" || l.Detail != "reported a failure" {
 		t.Errorf("arm64 emulated and failing: %+v", l)
 	}
 
@@ -100,6 +109,13 @@ func TestGateRecordReadsTheStamp(t *testing.T) {
 	}
 	if len(rec.Legs) != len(gateLegOrder) || status["vet"] != "pass" || status["test"] != "not-run" || status["arm64"] != "not-run" {
 		t.Errorf("legs: %v", status)
+	}
+	// A leg skipped on purpose carries the reason it was skipped.
+	write("arm64.skip", "platform: no runner on this machine can execute a linux/arm64 binary (host linux/amd64).\nplatform: install one\n")
+	for _, l := range readGateLogs(dir).Legs {
+		if l.Leg == "arm64" && (l.Status != "not-run" || !strings.HasPrefix(l.Detail, "platform: no runner on this machine") || strings.Contains(l.Detail, "install one")) {
+			t.Errorf("skipped arm64 leg: %+v", l)
+		}
 	}
 	write("stamp.txt", "commit=0123456789ab\ndirty=0\nstarted=2026-01-02T03:04:05Z\n")
 	if rec := readGateLogs(dir); rec.Dirty {

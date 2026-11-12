@@ -24,29 +24,21 @@
 #                 target per invocation, hence the loop.
 #   verify.bench  Every benchmark matching VERIFY_BENCH. Produces numbers; it
 #                 only fails if a benchmark fails or does not terminate.
-#   verify.arm64  Runs the tests as an arm64 binary: every top-level test, and
-#                 of the registry-driven subtests those of the
-#                 implementations that ship arm64 assembly (VERIFY_ARM64_RUN).
-#                 On an arm64 host that is a plain `go test`; elsewhere it needs a
-#                 user-mode emulator (VERIFY_ARM64_EXEC, default qemu-aarch64
-#                 from PATH) and FAILS when there is none, because the whole
-#                 point is that the assembly executes. Not part of
-#                 `make verify` for that reason; `make measure-gates` runs it
-#                 when the host is arm64 or an emulator is configured, and
-#                 records it as not run otherwise.
-#                 Under an emulator two things are set for the test binary.
-#                 BIGBUFF_MEASURE_EXEC names the emulator, so that the
-#                 measurement harness starts its measuring processes through
-#                 it (the host cannot start an arm64 binary by itself).
-#                 GODEBUG gets VERIFY_ARM64_GODEBUG, by default madvdontneed=0:
-#                 qemu-user before 7.1 accepts madvise(MADV_DONTNEED) and does
-#                 nothing, and the Go runtime relies on that call returning
-#                 zeroed pages, so without the setting freshly allocated
-#                 objects hold old contents and the binary fails in the
-#                 runtime at random (seen with qemu 5.2.0 and go1.27.3). The
-#                 setting makes the runtime release memory with MADV_FREE,
-#                 after which it zeroes what it reuses. It does not touch the
-#                 code under test.
+#   verify.arm64  Executes the arm64 assembly: runs the tests as an arm64
+#                 binary, every top-level test and, of the registry-driven
+#                 subtests, those of the implementations that ship arm64
+#                 assembly (VERIFY_ARM64_RUN). How the binary is run depends
+#                 on the machine and is platform.mk's business: natively on an
+#                 arm64 host of any operating system, otherwise as a
+#                 linux/arm64 binary under a user-mode emulator or in a
+#                 container (`make platform.info PLATFORM_GOARCH=arm64` says
+#                 which). It FAILS when the machine has no way to do it,
+#                 because the whole point is that the assembly executes. Not
+#                 part of `make verify` for that reason; `make measure-gates`
+#                 runs it when verify.arm64.probe succeeds and records why it
+#                 did not otherwise. The log says whether the instructions ran
+#                 on an arm64 CPU or were emulated, and the gates record
+#                 repeats it.
 #
 # Configuration & Overrides
 # ---
@@ -61,12 +53,15 @@
 #   VERIFY_LOG        if set, a directory; each leg also writes <leg>.log there,
 #                     and verify.all writes stamp.txt (commit, dirty-file
 #                     count, start time) first. Keep it outside the repository.
-#   VERIFY_ARM64_EXEC emulator used to run arm64 test binaries (default: qemu-aarch64 if on PATH)
 #   VERIFY_ARM64_RUN  -run regexp for verify.arm64             (default: every top-level test, because the last alternative has an empty first element; every subtest of the tests the earlier alternatives name; of all other subtests, the 64-GLM and 72-Gemini ones)
-#   VERIFY_ARM64_GODEBUG  GODEBUG for the emulated arm64 binary (default: madvdontneed=0; see verify.arm64 above)
+#   VERIFY_ARM64_GOOS operating system of the arm64 binary     (default: the host's on an arm64 host, else linux)
+#   VERIFY_ARM64_EXEC a user-mode arm64 emulator; shorthand for PLATFORM_RUNNER=qemu PLATFORM_QEMU=<emulator>
+#   PLATFORM_*        everything else about how the binary is run (platform.mk): the runner, the
+#                     emulator's environment, the container image
 #
 # Cross-architecture vet type-checks and assembles the per-architecture files;
-# it does not execute them. verify.arm64 does.
+# it does not execute them. verify.arm64 does, and `make platform.test
+# PLATFORM_GOARCH=<arch>` does for any other architecture this machine can run.
 
 # WARNING: Must be before any includes (same contract as the root Makefile).
 VERIFY_MK := $(abspath $(lastword $(MAKEFILE_LIST)))
@@ -81,9 +76,11 @@ VERIFY_BENCH ?= .
 VERIFY_BENCHTIME ?= 200x
 VERIFY_ARCHES ?= arm64 386
 VERIFY_LOG ?=
-VERIFY_ARM64_EXEC ?= $(shell command -v qemu-aarch64 2>/dev/null || command -v qemu-aarch64-static 2>/dev/null)
-VERIFY_ARM64_GODEBUG ?= madvdontneed=0
+VERIFY_ARM64_EXEC ?=
+VERIFY_ARM64_GOOS ?= $(if $(filter arm64,$(PLATFORM_HOST_GOARCH)),$(PLATFORM_HOST_GOOS),linux)
 VERIFY_ARM64_RUN ?= Beacon|Watcher|Bitmap72|PhaseCaster72|SymExchanger|TestScenarioBarrier|TestScenarioExchange|/.*(64-GLM|72-Gemini)
+# What verify.arm64 asks of platform.mk.
+VERIFY_ARM64_PLATFORM = PLATFORM_GOOS=$(VERIFY_ARM64_GOOS) PLATFORM_GOARCH=arm64 PLATFORM_CPUS='$(VERIFY_CPUS)' PLATFORM_TIMEOUT='$(VERIFY_TIMEOUT)' PLATFORM_RUN='$(VERIFY_ARM64_RUN)' $(if $(VERIFY_ARM64_EXEC),PLATFORM_RUNNER=qemu PLATFORM_QEMU='$(VERIFY_ARM64_EXEC)',)
 
 # $(call verify_tee,<leg>) expands to a pipeline suffix that copies the leg's
 # output into $(VERIFY_LOG)/<leg>.log when VERIFY_LOG is set. Recipes that use
@@ -143,24 +140,19 @@ verify.bench: ## Run benchmarks matching VERIFY_BENCH (numbers, not a gate).
 	@$(VERIFY_SH) go test -run=NONE -bench '$(VERIFY_BENCH)' -benchtime=$(VERIFY_BENCHTIME) -benchmem -count=1 -timeout $(VERIFY_TIMEOUT) . $(call verify_tee,bench)
 
 .PHONY: verify.arm64
-verify.arm64: ## Execute the tests of the arm64-assembly implementations as an arm64 binary (native, or under VERIFY_ARM64_EXEC).
+verify.arm64: ## Execute the arm64 assembly: the tests of the implementations that ship it, as an arm64 binary, by whichever means this machine has (platform.mk).
 	@$(VERIFY_SH) { \
-	  if [ "$$(go env GOHOSTARCH)" = arm64 ]; then \
-	    echo '== native arm64'; \
-	    go test -count=1 -cpu $(VERIFY_CPUS) -run '$(VERIFY_ARM64_RUN)' -timeout $(VERIFY_TIMEOUT) .; \
-	  elif [ -n '$(VERIFY_ARM64_EXEC)' ]; then \
-	    echo '== GOARCH=arm64 under $(VERIFY_ARM64_EXEC)'; \
-	    $(VERIFY_ARM64_EXEC) --version 2>/dev/null | head -n 1 | sed 's/^/== emulator: /'; \
-	    echo '== GODEBUG=$(VERIFY_ARM64_GODEBUG) BIGBUFF_MEASURE_EXEC=$(VERIFY_ARM64_EXEC)'; \
-	    GODEBUG='$(VERIFY_ARM64_GODEBUG)' BIGBUFF_MEASURE_EXEC='$(VERIFY_ARM64_EXEC)' GOARCH=arm64 go test -exec '$(VERIFY_ARM64_EXEC)' -count=1 -cpu $(VERIFY_CPUS) -run '$(VERIFY_ARM64_RUN)' -timeout $(VERIFY_TIMEOUT) .; \
+	  if $(MAKE) --no-print-directory platform.test $(VERIFY_ARM64_PLATFORM); then \
+	    echo 'verify.arm64: ok'; \
 	  else \
-	    echo 'verify.arm64: this host is not arm64 and no emulator was found.'; \
-	    echo 'verify.arm64: install qemu-user (qemu-aarch64) or set VERIFY_ARM64_EXEC=<emulator>.'; \
-	    echo 'verify.arm64: FAILED (the arm64 assembly was not executed)'; \
+	    echo 'verify.arm64: FAILED (see above; if no runner was found, the arm64 assembly was not executed)'; \
 	    exit 1; \
 	  fi; \
-	  echo 'verify.arm64: ok'; \
 	} $(call verify_tee,arm64)
+
+.PHONY: verify.arm64.probe
+verify.arm64.probe: ## Succeeds when this machine can execute an arm64 test binary (see platform.probe).
+	@$(MAKE) --no-print-directory platform.probe $(VERIFY_ARM64_PLATFORM)
 
 # The stamp records which tree the gates ran on, at the moment they start, so
 # that a record made from the logs later (bigbuff-measure gates) cannot

@@ -469,16 +469,30 @@ so that a reader can see whether the gates and the measurement are about the
 same code. The fuzz leg records the command line it ran.
 
 `make verify-arm64` executes the tests of the implementations that ship arm64
-assembly (64 and 72) as an arm64 binary: natively on an arm64 host, otherwise under
-`qemu-aarch64`. It fails when neither is available, and it is not part of
-`make verify` for that reason. It has been run under an emulator
-(`make verify-arm64 VERIFY_ARM64_EXEC=/path/to/qemu-aarch64`, qemu 5.2.0 from the
-PyPI package `shellphish-qemu`, on an amd64 host) and passes; `make measure-gates`
-runs it as a leg when `VERIFY_ARM64_EXEC` is set and records `not-run` when it is
-not. It has not been run on arm64 hardware. An emulator on an x86-64 host shows
-that the instructions execute correctly inside the test suite; it cannot show a
-missing or wrong memory fence, because the host orders memory more strongly than
-arm64 does. See `extraction_audit.md` ("arm64 assembly: executed under emulation").
+assembly (64 and 72) as an arm64 binary. How it does so depends on the machine,
+and `platform.mk` chooses: the host itself when it is arm64, a user-mode
+`qemu-aarch64` on a Linux host, Apple's `container` on macOS, or a Linux
+container under docker, podman or nerdctl. `make platform.info
+PLATFORM_GOARCH=arm64` prints what was found, what was chosen and the command;
+`PLATFORM_RUNNER`, `PLATFORM_QEMU`, `PLATFORM_IMAGE` and `PLATFORM_EXEC` override
+it (the top of `platform.mk` lists every variable, and `config.mk` is the place
+for a machine's settings). `VERIFY_ARM64_EXEC=/path/to/qemu-aarch64` remains as
+shorthand for the qemu runner with that emulator. `make verify-platform
+PLATFORM_GOARCH=<arch>` runs the suite for any other platform the same way.
+
+The leg fails when no runner can execute the binary, and it is not part of
+`make verify` for that reason. `make measure-gates` runs it when
+`make verify.arm64.probe` succeeds and otherwise records it as not run, with the
+reason. Every run prints whether the instructions ran on arm64 hardware or were
+emulated, and the gate record carries that line.
+
+What has been executed: the whole leg under qemu-user 5.2.0 (the PyPI package
+`shellphish-qemu`) on an amd64 Linux host, passing. It has not been run on arm64
+hardware, and the container runners have been exercised only against stand-in
+scripts, not a real engine. An emulator on an x86-64 host shows that the
+instructions execute correctly inside the test suite; it cannot show a missing
+or wrong memory fence, because the host orders memory more strongly than arm64
+does. See `extraction_audit.md` ("arm64 assembly: executed under emulation").
 
 ## Known limitations
 

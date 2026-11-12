@@ -124,10 +124,14 @@ measure.evaluate: ## Regenerate the evaluation (slot 07) of the newest run (or M
 # into the record, and this target then fails.
 .PHONY: measure.gates
 measure.gates: SHELL := bash
-measure.gates: ## Run `make verify` (and `make verify-arm64` where the host is arm64 or VERIFY_ARM64_EXEC names an emulator), record what it reported as slot 06 of the newest run, and regenerate that run's evaluation.
+measure.gates: ## Run `make verify` (and `make verify-arm64` where this machine can execute an arm64 binary), record what it reported as slot 06 of the newest run, and regenerate that run's evaluation.
 	rm -rf $(MEASURE_GATES_LOG) && mkdir -p $(MEASURE_GATES_LOG)
 	cd $(PROJECT_ROOT) && { $(MAKE) --keep-going verify.all VERIFY_LOG=$(MEASURE_GATES_LOG) || true; } && \
-	  { if [ "$$(go env GOHOSTARCH)" = arm64 ] || [ -n '$(VERIFY_ARM64_EXEC)' ]; then $(MAKE) verify.arm64 VERIFY_LOG=$(MEASURE_GATES_LOG) || true; fi; } && \
+	  { if $(MAKE) --no-print-directory verify.arm64.probe > $(MEASURE_GATES_LOG)/arm64.probe 2>&1; then \
+	      $(MAKE) verify.arm64 VERIFY_LOG=$(MEASURE_GATES_LOG) || true; \
+	    else \
+	      grep '^platform' $(MEASURE_GATES_LOG)/arm64.probe | head -n 1 > $(MEASURE_GATES_LOG)/arm64.skip; \
+	    fi; } && \
 	  $(MEASURE_HARNESS) gates --log $(MEASURE_GATES_LOG) --run $(REPORT_IN) --out $(REPORT_STEM)-06-gates.json; rc=$$?; \
 	  $(MEASURE_HARNESS) evaluate --in $(REPORT_IN) && $(MAKE) site.build && exit $$rc
 
