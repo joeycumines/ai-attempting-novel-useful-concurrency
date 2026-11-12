@@ -67,33 +67,33 @@ The score is a weighted mean of percentile ranks within this class, so it says w
 |---|---|
 | Strong candidate | 6 |
 | Situational (strengths offset by trade-offs) | 6 |
-| Niche use only | 13 |
-| Avoid for most uses | 25 |
+| Niche use only | 12 |
+| Avoid for most uses | 26 |
 
 Highest 10 scores:
 
 | Rank | Implementation | Score | throughput | latency | allocations | churn | scaling | stall_resilience | Publish cost, 8 subscribers | Delivered, 8 subscribers | Delivered, least over all cells |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | Carillon (21-ClaudeHaiku) | 90 | 94 | 96 | 94 | 80 | 82 | 86 | 452 ns | 100% | 100% |
-| 1 | RingPubSub (18-ChatGPT) | 90 | 96 | 94 | 76 | 92 | 94 | 86 | 337 ns | 100% | 100% |
-| 3 | GenCaster (06-Meta) | 86 | 100 | 90 | 14 | 100 | 100 | 98 | 220 ns | 100% | 100% |
-| 4 | BaselineQueuedFanout (baseline) | 81 | 88 | 98 | 35 | 51 | 88 | 98 | 1.08 µs | 100% | 100% |
-| 4 | ChanHub (15-Nemotron) | 81 | 86 | 84 | 94 | 37 | 71 | 86 | 1.54 µs | 100% | 100% |
-| 6 | ChanRing47Gemini (47-Gemini) | 80 | 92 | 92 | 12 | 94 | 96 | 86 | 568 ns | 100% | 100% |
+| 1 | RingPubSub (18-ChatGPT) | 89 | 96 | 94 | 66 | 92 | 94 | 86 | 337 ns | 100% | 100% |
+| 2 | Carillon (21-ClaudeHaiku) | 86 | 94 | 96 | 66 | 80 | 82 | 86 | 452 ns | 100% | 100% |
+| 3 | BaselineQueuedFanout (baseline) | 85 | 88 | 98 | 66 | 51 | 88 | 98 | 1.08 µs | 100% | 100% |
+| 3 | GenCaster (06-Meta) | 85 | 100 | 90 | 9 | 100 | 100 | 98 | 220 ns | 100% | 100% |
+| 5 | ChanRing47Gemini (47-Gemini) | 80 | 92 | 92 | 9 | 94 | 96 | 86 | 568 ns | 100% | 100% |
+| 6 | ChanHub (15-Nemotron) | 77 | 86 | 84 | 66 | 37 | 71 | 86 | 1.54 µs | 100% | 100% |
 | 7 | QueuedFanout24Meta (24-MetaAI) | 74 | 80 | 88 | 16 | 47 | 84 | 98 | 2.21 µs | 100% | 100% |
-| 8 | BaselineBoundedReplay (baseline) | 73 | 84 | 80 | 31 | 39 | 86 | 86 | 2.08 µs | 100% | 100% |
-| 9 | EpochCaster (13-OpenRouter) | 72 | 98 | 100 | 80 | 57 | 92 | 0 | 284 ns | 100% | 100% |
-| 10 | ChanCascade52Opus (52-ClaudeOpus) | 70 | 76 | 78 | 78 | 96 | 90 | 24 | 2.91 µs | 100% | 100% |
+| 8 | BaselineBoundedReplay (baseline) | 72 | 84 | 80 | 26 | 39 | 86 | 86 | 2.08 µs | 100% | 100% |
+| 9 | EpochCaster (13-OpenRouter) | 70 | 98 | 100 | 66 | 57 | 92 | 0 | 284 ns | 100% | 100% |
+| 10 | ChanCascade52Opus (52-ClaudeOpus) | 68 | 76 | 78 | 66 | 96 | 90 | 24 | 2.91 µs | 100% | 100% |
 
 The baselines:
 
 | Rank | Implementation | Score | throughput | latency | allocations | churn | scaling | stall_resilience | Publish cost, 8 subscribers | Delivered, 8 subscribers | Delivered, least over all cells |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 4 | BaselineQueuedFanout (baseline) | 81 | 88 | 98 | 35 | 51 | 88 | 98 | 1.08 µs | 100% | 100% |
-| 8 | BaselineBoundedReplay (baseline) | 73 | 84 | 80 | 31 | 39 | 86 | 86 | 2.08 µs | 100% | 100% |
-| 17 | ChanPubSub (Baseline) | 54 | 53 | 59 | 53 | 86 | 73 | 24 | 3.78 µs | 100% | 100% |
-| 18 | BaselineBufferedBroadcast (baseline) | 53 | 45 | 71 | 27 | 2 | 49 | 93 | 4.62 µs | 100% | 100% |
-| 42 | BaselineBarrierPubSub (baseline) | 33 | 18 | 20 | 4 | 29 | 59 | 65 | 7.57 µs | 100% | 100% |
+| 3 | BaselineQueuedFanout (baseline) | 85 | 88 | 98 | 66 | 51 | 88 | 98 | 1.08 µs | 100% | 100% |
+| 8 | BaselineBoundedReplay (baseline) | 72 | 84 | 80 | 26 | 39 | 86 | 86 | 2.08 µs | 100% | 100% |
+| 14 | ChanPubSub (Baseline) | 56 | 53 | 59 | 66 | 86 | 73 | 24 | 3.78 µs | 100% | 100% |
+| 18 | BaselineBufferedBroadcast (baseline) | 53 | 45 | 71 | 26 | 2 | 49 | 93 | 4.62 µs | 100% | 100% |
+| 41 | BaselineBarrierPubSub (baseline) | 34 | 18 | 20 | 9 | 29 | 59 | 65 | 7.57 µs | 100% | 100% |
 
 ### broadcast, drops or coalesces: 44 implementations
 
@@ -101,33 +101,33 @@ The score is a weighted mean of percentile ranks within this class, so it says w
 
 | Verdict | Implementations |
 |---|---|
-| Strong candidate | 7 |
-| Situational (strengths offset by trade-offs) | 11 |
-| Niche use only | 5 |
+| Strong candidate | 8 |
+| Situational (strengths offset by trade-offs) | 8 |
+| Niche use only | 7 |
 | Avoid for most uses | 21 |
 
 Highest 10 scores:
 
 | Rank | Implementation | Score | throughput | latency | allocations | churn | scaling | stall_resilience | Publish cost, 8 subscribers | Delivered, 8 subscribers | Delivered, least over all cells |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | HorizonRing59Gemini (59-Gemini) | 91 | 93 | 86 | 90 | 72 | 100 | tied | 91 ns | 44% | 2.0% |
-| 2 | RingPubSub TrySend (18-ChatGPT) | 90 | 100 | 100 | 76 | 58 | 91 | tied | 40 ns | 1.0% | 0.54% |
-| 3 | Horizon66Gemini (66-Gemini) | 87 | 81 | 93 | 76 | 93 | 98 | tied | 180 ns | 30% | 2.2% |
-| 4 | ChanRing71Fable (71-Fable) | 84 | 98 | 91 | 58 | 81 | 79 | tied | 56 ns | 2.5% | 0.76% |
-| 5 | Pulse61Deepseek (61-DeepSeek) | 77 | 91 | 56 | 51 | 95 | 86 | tied | 103 ns | 0.43% | 0.04% |
-| 5 | StripedCombiner59Gemini (59-Gemini) | 77 | 67 | 77 | 71 | 84 | 95 | tied | 232 ns | 73% | 3.3% |
-| 7 | BaselineAsyncFanout (baseline) | 76 | 88 | 84 | 66 | 9 | 88 | tied | 103 ns | 0.61% | 0.21% |
-| 8 | RingFanOut14Xing (14-Xing) | 73 | 86 | 53 | 66 | 56 | 84 | tied | 148 ns | 1.9% | 0.82% |
-| 9 | Arcadia (30-dots3) | 71 | 95 | 79 | 30 | 2 | 93 | tied | 88 ns | 4.4% | 0.21% |
-| 10 | Latest3260Terra (60-Terra) | 66 | 84 | 40 | 90 | 79 | 28 | tied | 164 ns | 3.8% | 0.10% |
+| 1 | RingPubSub TrySend (18-ChatGPT) | 89 | 100 | 100 | 74 | 58 | 91 | tied | 40 ns | 1.0% | 0.54% |
+| 2 | HorizonRing59Gemini (59-Gemini) | 88 | 93 | 86 | 74 | 72 | 100 | tied | 91 ns | 44% | 2.0% |
+| 3 | ChanRing71Fable (71-Fable) | 87 | 98 | 91 | 74 | 81 | 79 | tied | 56 ns | 2.5% | 0.76% |
+| 4 | Horizon66Gemini (66-Gemini) | 86 | 81 | 93 | 74 | 93 | 98 | tied | 180 ns | 30% | 2.2% |
+| 5 | Pulse61Deepseek (61-DeepSeek) | 81 | 91 | 56 | 74 | 95 | 86 | tied | 103 ns | 0.43% | 0.04% |
+| 6 | BaselineAsyncFanout (baseline) | 77 | 88 | 84 | 74 | 9 | 88 | tied | 103 ns | 0.61% | 0.21% |
+| 6 | StripedCombiner59Gemini (59-Gemini) | 77 | 67 | 77 | 74 | 84 | 95 | tied | 232 ns | 73% | 3.3% |
+| 8 | RingFanOut14Xing (14-Xing) | 75 | 86 | 53 | 74 | 56 | 84 | tied | 148 ns | 1.9% | 0.82% |
+| 9 | Arcadia (30-dots3) | 71 | 95 | 79 | 29 | 2 | 93 | tied | 88 ns | 4.4% | 0.21% |
+| 10 | Ring62Haiku (62-Haiku) | 69 | 72 | 51 | 74 | 77 | 70 | tied | 227 ns | 35% | 1.9% |
 
 The baselines:
 
 | Rank | Implementation | Score | throughput | latency | allocations | churn | scaling | stall_resilience | Publish cost, 8 subscribers | Delivered, 8 subscribers | Delivered, least over all cells |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 7 | BaselineAsyncFanout (baseline) | 76 | 88 | 84 | 66 | 9 | 88 | tied | 103 ns | 0.61% | 0.21% |
-| 31 | BaselineFanout (standard) | 35 | 23 | 33 | 90 | 0 | 26 | tied | 704 ns | 22% | 21% |
-| 35 | BaselineLatestBroadcast (baseline) | 28 | 16 | 23 | 90 | 16 | 7 | tied | 1000 ns | 10% | 0.22% |
+| 6 | BaselineAsyncFanout (baseline) | 77 | 88 | 84 | 74 | 9 | 88 | tied | 103 ns | 0.61% | 0.21% |
+| 32 | BaselineFanout (standard) | 32 | 23 | 33 | 74 | 0 | 26 | tied | 704 ns | 22% | 21% |
+| 36 | BaselineLatestBroadcast (baseline) | 26 | 16 | 23 | 74 | 16 | 7 | tied | 1000 ns | 10% | 0.22% |
 
 ## Family payload: 19 implementations in delivery classes
 
