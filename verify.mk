@@ -24,9 +24,10 @@
 #                 target per invocation, hence the loop.
 #   verify.bench  Every benchmark matching VERIFY_BENCH. Produces numbers; it
 #                 only fails if a benchmark fails or does not terminate.
-#   verify.arm64  Runs the tests of the implementations that ship arm64
-#                 assembly (VERIFY_ARM64_RUN) as an arm64 binary. On an arm64
-#                 host that is a plain `go test`; elsewhere it needs a
+#   verify.arm64  Runs the tests as an arm64 binary: every top-level test, and
+#                 of the registry-driven subtests those of the
+#                 implementations that ship arm64 assembly (VERIFY_ARM64_RUN).
+#                 On an arm64 host that is a plain `go test`; elsewhere it needs a
 #                 user-mode emulator (VERIFY_ARM64_EXEC, default qemu-aarch64
 #                 from PATH) and FAILS when there is none, because the whole
 #                 point is that the assembly executes. Not part of
@@ -61,7 +62,7 @@
 #                     and verify.all writes stamp.txt (commit, dirty-file
 #                     count, start time) first. Keep it outside the repository.
 #   VERIFY_ARM64_EXEC emulator used to run arm64 test binaries (default: qemu-aarch64 if on PATH)
-#   VERIFY_ARM64_RUN  -run regexp for verify.arm64             (default: every top-level test; of the registry's subtests, the 64-GLM and 72-Gemini ones)
+#   VERIFY_ARM64_RUN  -run regexp for verify.arm64             (default: every top-level test, because the last alternative has an empty first element; every subtest of the tests the earlier alternatives name; of all other subtests, the 64-GLM and 72-Gemini ones)
 #   VERIFY_ARM64_GODEBUG  GODEBUG for the emulated arm64 binary (default: madvdontneed=0; see verify.arm64 above)
 #
 # Cross-architecture vet type-checks and assembles the per-architecture files;

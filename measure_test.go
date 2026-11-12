@@ -217,7 +217,17 @@ func cpuModel() string {
 //	       percent of what a fast publisher hands it above every
 //	       implementation that delivers all of it. From this contract the
 //	       two are scored in separate delivery classes (see deliveryClasses).
-const measureGeneratorVersion = "1.4.0"
+//	1.5.0  Two changes to what the numbers mean. Every timed repetition is
+//	       sized by the clock (opBudget); before this the allocation, churn,
+//	       zero-subscriber, caster, scatter, gather and barrier batteries
+//	       fixed the operation count from a short estimate, and a cell whose
+//	       cost moved after the estimate ran for a different time than its
+//	       neighbours. And the stalled-consumer probes record how much CPU
+//	       the process used while the publisher was blocked
+//	       (blocked_cpu_cores), so that a publisher that waits by spinning
+//	       is told apart from one that parks; the stall-resilience dimension
+//	       ranks a spinning publisher last (see stallRank).
+const measureGeneratorVersion = "1.5.0"
 
 // generatorBefore reports whether the record contract `have` is older than
 // `want`. A file without a contract (hand-built records in the tooling tests)

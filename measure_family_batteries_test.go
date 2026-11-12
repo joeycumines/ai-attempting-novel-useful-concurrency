@@ -189,15 +189,11 @@ func measureCasterThroughput(ctx *measureContext, mk func() casterLike, name str
 		for r := 0; r < ctx.profile.Reps; r++ {
 			rounds := startCasterRounds(mk(), receivers)
 			const warmup = 16
-			var warm time.Duration
 			ok := true
 			for i := 0; i < warmup && ok; i++ {
-				var d time.Duration
-				d, _, ok = rounds.send(i + 1)
-				warm += d
+				_, _, ok = rounds.send(i + 1)
 			}
 			warmReceived := int64(0)
-			n := calibrateOps(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps, warm/warmup)
 			var total time.Duration
 			if ok {
 				// Every warm-up value has been taken once the receivers that
@@ -205,15 +201,26 @@ func measureCasterThroughput(ctx *measureContext, mk func() casterLike, name str
 				ok = rounds.arm()
 				warmReceived = rounds.received.Load()
 			}
-			for i := 0; i < n && ok; i++ {
-				var d time.Duration
-				var k int
-				d, k, ok = rounds.send(i + 1 + warmup)
-				total += d
-				delivery.add(receivers, k)
+			// The repetition is sized by the clock, which includes the wait
+			// for the receivers to register again between Sends. The cost
+			// recorded is the Sends' own time, which does not.
+			n := 0
+			budget := newOpBudget(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps)
+			for from, to, more := budget.next(); more && ok; from, to, more = budget.next() {
+				for i := from; i < to && ok; i++ {
+					var d time.Duration
+					var k int
+					d, k, ok = rounds.send(i + 1 + warmup)
+					total += d
+					delivery.add(receivers, k)
+					n++
+				}
 			}
 			if ok {
 				ok = rounds.arm()
+			}
+			if n == 0 {
+				n = 1 // the failure below is recorded; the sample must not divide by zero
 			}
 			if !ok {
 				ctx.fail("%s: a Send reported a delivery that no receiver took (receivers=%d)", name, receivers)
@@ -310,23 +317,19 @@ func measureCasterChurn(ctx *measureContext, mk func() casterLike, name string) 
 	lastOps := 0
 	for r := 0; r < ctx.profile.ChurnReps; r++ {
 		x := mk()
-		for i := 0; i < 4; i++ {
+		const churnTarget, churnMinOps, churnMaxOps = 15 * time.Millisecond, 32, 50000
+		warmOps(churnTarget, churnMaxOps, func(int) {
 			x.add(1)
 			x.add(-1)
+		})
+		budget := newOpBudget(churnTarget, churnMinOps, churnMaxOps)
+		for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+			for i := from; i < to; i++ {
+				x.add(1)
+				x.add(-1)
+			}
 		}
-		w0 := time.Now()
-		for i := 0; i < 8; i++ {
-			x.add(1)
-			x.add(-1)
-		}
-		est := time.Since(w0) / 16
-		n := calibrateOps(15*time.Millisecond, 32, 50000, est*2)
-		s := time.Now()
-		for i := 0; i < n; i++ {
-			x.add(1)
-			x.add(-1)
-		}
-		d := time.Since(s)
+		n, d := budget.done()
 		if x.close != nil {
 			x.close()
 		}
@@ -533,18 +536,14 @@ func measureScatterDispatch(ctx *measureContext, name string, mk func() scatterL
 			for w := 0; w < receivers; w++ {
 				<-ready
 			}
-			const warmup = 16
-			w0 := time.Now()
-			for i := 0; i < warmup; i++ {
-				x.send(i + 1)
+			warmup := warmOps(ctx.profile.TargetPerRep, ctx.profile.MaxOps, func(i int) { x.send(i + 1) })
+			budget := newOpBudget(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps)
+			for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+				for i := from; i < to; i++ {
+					x.send(i + 1 + warmup)
+				}
 			}
-			est := time.Since(w0) / warmup
-			n := calibrateOps(ctx.profile.TargetPerRep, ctx.profile.MinOps, ctx.profile.MaxOps, est)
-			s := time.Now()
-			for i := 0; i < n; i++ {
-				x.send(i + 1 + warmup)
-			}
-			d := time.Since(s)
+			n, d := budget.done()
 			sent := int64(warmup + n)
 			// A receiver increments `received` after its wait returns; a send
 			// returns at handoff, so there is a small window before the count
@@ -620,17 +619,19 @@ func runScatterBatteries(ctx *measureContext) {
 			lastOps := 0
 			for r := 0; r < ctx.profile.ChurnReps; r++ {
 				x := mk()
-				for i := 0; i < 4; i++ {
+				const churnTarget, churnMinOps, churnMaxOps = 10 * time.Millisecond, 16, 50000
+				warmOps(churnTarget, churnMaxOps, func(int) {
 					x.add(1)
 					x.add(-1)
+				})
+				budget := newOpBudget(churnTarget, churnMinOps, churnMaxOps)
+				for from, to, ok := budget.next(); ok; from, to, ok = budget.next() {
+					for i := from; i < to; i++ {
+						x.add(1)
+						x.add(-1)
+					}
 				}
-				n := calibrateOps(10*time.Millisecond, 16, 50000, 300*time.Nanosecond)
-				s := time.Now()
-				for i := 0; i < n; i++ {
-					x.add(1)
-					x.add(-1)
-				}
-				d := time.Since(s)
+				n, d := budget.done()
 				lastOps = n
 				samples = append(samples, float64(d)/float64(n))
 			}

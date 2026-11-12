@@ -1093,7 +1093,7 @@ func evalResidue(b *strings.Builder, data *reportData) {
 	batteries := map[key][]string{}
 	for _, r := range data.residue {
 		cores, _ := r["cpu_cores"].(float64)
-		if cores < 0.5 {
+		if cores < stallBusyCores {
 			continue
 		}
 		family, _ := r["family"].(string)
@@ -1102,6 +1102,25 @@ func evalResidue(b *strings.Builder, data *reportData) {
 		k := key{family, impl}
 		worst[k] = math.Max(worst[k], cores)
 		batteries[k] = append(batteries[k], battery)
+	}
+	// From record contract 1.5.0 the stalled-consumer probe measures the
+	// same thing itself, while the publisher is blocked.
+	probe := map[key]float64{}
+	for _, m := range data.metrics {
+		if m["metric"] != "stalled_consumer_ops_completed" {
+			continue
+		}
+		cores, ok := m["blocked_cpu_cores"].(float64)
+		if !ok {
+			continue
+		}
+		family, _ := m["family"].(string)
+		impl, _ := m["impl"].(string)
+		k := key{family, impl}
+		probe[k] = cores
+		if _, listed := worst[k]; !listed && cores >= stallBusyCores {
+			worst[k] = 0
+		}
 	}
 	if len(worst) == 0 {
 		b.WriteString("No battery left a goroutine using a CPU in its measuring process: every publisher that was still blocked was parked.\n\n")
@@ -1120,10 +1139,24 @@ func evalResidue(b *strings.Builder, data *reportData) {
 	rows := [][]string{}
 	for _, k := range keys {
 		sort.Strings(batteries[k])
-		rows = append(rows, []string{k.family, k.impl, strings.Join(batteries[k], ", "), fmt.Sprintf("%.2f", worst[k])})
+		after, during := "under "+fmt.Sprintf("%.1f", stallBusyCores), "not recorded"
+		if worst[k] > 0 {
+			after = fmt.Sprintf("%.2f", worst[k])
+		}
+		if v, ok := probe[k]; ok {
+			during = fmt.Sprintf("%.2f", v)
+		}
+		left := strings.Join(batteries[k], ", ")
+		if left == "" {
+			left = "none"
+		}
+		rows = append(rows, []string{k.family, k.impl, left, after, during})
 	}
 	b.WriteString("A blocked publisher is not always an idle one. After these batteries the measuring process was still using at least half a CPU with nothing left to do: the publisher waits for the subscriber that never reads by spinning, and goes on using a CPU until the process ends. Each battery runs in a process of its own, so this costs the other measurements nothing; in a program it would.\n\n")
-	mdTable(b, []string{"Family", "Implementation", "Batteries that left it", "CPUs in use afterwards"}, rows)
+	mdTable(b, []string{"Family", "Implementation", "Batteries that left it", "CPUs in use afterwards", "CPUs in use while the stalled-consumer probe's publisher was blocked"}, rows)
+	if len(probe) > 0 {
+		fmt.Fprintf(b, "The stall-resilience dimension of the scores takes this into account: a publisher that the stalled-consumer probe left blocked and that used at least %.1f of a CPU while blocked ranks below every publisher in its group that parked or completed, however many publishes it had completed. The rule uses the probe's own figure, which the records have from contract 1.5.0; a run before that is scored without it.\n\n", stallBusyCores)
+	}
 }
 
 // evalHeadline is the one number a family's implementations are compared on

@@ -455,6 +455,36 @@ func TestEvaluationListsOnlyResidueThatUsesACPU(t *testing.T) {
 	if out := render(isolationContract, parked); !strings.Contains(out, "No battery left a goroutine using a CPU") || strings.Contains(out, "Parker") {
 		t.Errorf("only parked residue:\n%s", out)
 	}
+	if !strings.Contains(out, "| 1.08 | not recorded |") || strings.Contains(out, "stall-resilience dimension") {
+		t.Errorf("a run whose probe did not measure the blocked publisher says it did, or cites the scoring rule:\n%s", out)
+	}
+	// From record contract 1.5.0 the probe has its own figure, and an
+	// implementation is listed on that alone.
+	{
+		var b strings.Builder
+		evalResidue(&b, &reportData{
+			meta:    map[string]any{"generator_version": measureGeneratorVersion},
+			residue: []map[string]any{spinning, parked},
+			metrics: []map[string]any{
+				{"metric": "stalled_consumer_ops_completed", "family": "broadcast", "impl": "Spinner", "outcome": "publisher_blocked", "blocked_cpu_cores": 1.02},
+				{"metric": "stalled_consumer_ops_completed", "family": "broadcast", "impl": "Parker", "outcome": "publisher_blocked", "blocked_cpu_cores": 0.002},
+				{"metric": "stalled_consumer_ops_completed", "family": "payload", "impl": "QuietAfter", "outcome": "publisher_blocked", "blocked_cpu_cores": 0.97},
+			},
+		})
+		out := b.String()
+		for _, want := range []string{
+			"| broadcast | Spinner | broadcast.stalled_consumer | 1.08 | 1.02 |",
+			"| payload | QuietAfter | none | under 0.5 | 0.97 |",
+			"stall-resilience dimension",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("missing %q:\n%s", want, out)
+			}
+		}
+		if strings.Contains(out, "Parker") {
+			t.Errorf("a parked publisher is listed:\n%s", out)
+		}
+	}
 	// A run that was one process recorded no residue; the section says nothing.
 	if out := render("1.2.0", spinning); out != "" {
 		t.Errorf("a run before process isolation printed a residue section:\n%s", out)
@@ -552,5 +582,153 @@ func TestEvaluationComparesWithThePreviousRun(t *testing.T) {
 	}
 	if _, ok := spearman([]float64{1, 1, 1}, []float64{1, 2, 3}); ok {
 		t.Error("spearman of a constant series is defined")
+	}
+}
+
+// A publisher blocked behind a subscriber that never reads either parks or
+// spins, and the stalled-consumer probe says which: it reads the process's CPU
+// use while the publisher is blocked. EpochCaster (13-OpenRouter) waits in a
+// loop; ChanPubSub (Baseline) waits on a channel.
+func TestStalledProbeMeasuresTheCPUOfABlockedPublisher(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts measuring processes")
+	}
+	if _, ok := processCPUTime(); !ok {
+		t.Skip("this platform does not report process CPU time")
+	}
+	probe := func(family, impl string) map[string]any {
+		t.Helper()
+		out := filepath.Join(t.TempDir(), "results.jsonl")
+		if rc := cmdMeasureRun([]string{"--profile", "quick", "--impl", impl, "--battery", family + ".stalled_consumer", "--no-verify", "--out", out}); rc != 0 {
+			t.Fatalf("%s: run exited %d", impl, rc)
+		}
+		for _, m := range readMeasureRecords(t, out)["metric"] {
+			if m["metric"] == "stalled_consumer_ops_completed" && m["impl"] == impl {
+				return m
+			}
+		}
+		t.Fatalf("%s: no stalled-consumer record", impl)
+		return nil
+	}
+	for _, c := range []struct {
+		family, impl string
+		spins        bool
+	}{
+		{"broadcast", "EpochCaster (13-OpenRouter)", true},
+		{"broadcast", "ChanPubSub (Baseline)", false},
+		{"payload", "ChanHub_c16", false},
+	} {
+		rec := probe(c.family, c.impl)
+		if rec["outcome"] != "publisher_blocked" {
+			t.Errorf("%s: outcome %v; the probe is expected to block it", c.impl, rec["outcome"])
+			continue
+		}
+		cores, ok := rec["blocked_cpu_cores"].(float64)
+		if !ok {
+			t.Errorf("%s: the record of a blocked publisher has no blocked_cpu_cores: %v", c.impl, rec)
+			continue
+		}
+		// One spinning goroutine measures about 1 and a parked process
+		// about 0; the threshold between them is the one the scores use.
+		if spinning := cores >= stallBusyCores; spinning != c.spins {
+			t.Errorf("%s: %.2f CPUs in use while blocked; spins = %v, want %v", c.impl, cores, spinning, c.spins)
+		}
+	}
+	// A publisher that completes is not blocked, and its record says nothing
+	// about CPU use while blocked.
+	if rec := probe("broadcast", "BaselineFanout (standard)"); rec["outcome"] != "completed" {
+		t.Errorf("BaselineFanout: outcome %v", rec["outcome"])
+	} else if _, has := rec["blocked_cpu_cores"]; has {
+		t.Errorf("a publisher that completed has blocked_cpu_cores: %v", rec)
+	}
+}
+
+// The stall-resilience dimension ranks a blocked publisher that spins below
+// every publisher that parked or completed, however many publishes it had
+// completed by the deadline; a run whose records do not say (before record
+// contract 1.5.0) is ranked on the publishes alone.
+func TestBlockedPublisherThatSpinsRanksLastOnStall(t *testing.T) {
+	if got, parked := stallRank(64, 1.08, true), stallRank(0, 0.002, true); got >= parked {
+		t.Errorf("a spinner with 64 publishes ranks %v, a parked publisher with none %v", got, parked)
+	}
+	if a, b := stallRank(64, 0.49, true), stallRank(64, 0, false); a != b {
+		t.Errorf("under the threshold the CPU figure changes the rank: %v vs %v", a, b)
+	}
+	if a, b := stallRank(64, stallBusyCores, true), stallRank(64, 5, false); a >= b {
+		t.Errorf("at the threshold: %v; an unmeasured figure must be ignored: %v", a, b)
+	}
+
+	// A whole derivation: six broadcasters of one delivery class that differ
+	// only in the stalled-consumer record.
+	type impl struct {
+		name    string
+		ops     float64
+		outcome string
+		cores   float64 // -1: the record has no figure
+	}
+	impls := []impl{
+		{"Completes", 100, "completed", -1},
+		{"ParksLate", 64, "publisher_blocked", 0.002},
+		{"Spinner", 64, "publisher_blocked", 1.08},
+		{"ParksMid", 17, "publisher_blocked", 0.003},
+		{"ParksEarly", 0, "publisher_blocked", 0.001},
+		{"ParksUnmeasured", 1, "publisher_blocked", -1},
+	}
+	derive := func(generator string, withCores bool) map[string]implScore {
+		data := &reportData{meta: map[string]any{"generator_version": generator, "profile": "quick"}}
+		for i, im := range impls {
+			ns := float64(100 + 40*i)
+			for _, subs := range []float64{1, 8, 64} {
+				data.metrics = append(data.metrics, map[string]any{
+					"type": "metric", "metric": "publish_ns_op", "family": "broadcast", "impl": im.name,
+					"dims": map[string]any{"subscribers": subs}, "mean": ns, "ci95_low": ns - 1, "ci95_high": ns + 1,
+					"samples": []any{ns - 1, ns, ns + 1}, "publishes": 1000.0, "receives": 1000.0 * subs, "delivered_fraction": 1.0,
+				})
+			}
+			rec := map[string]any{
+				"type": "metric", "metric": "stalled_consumer_ops_completed", "family": "broadcast", "impl": im.name,
+				"ops_planned": 100.0, "ops_completed": im.ops, "outcome": im.outcome,
+			}
+			if withCores && im.cores >= 0 {
+				rec["blocked_cpu_cores"] = im.cores
+			}
+			data.metrics = append(data.metrics, rec)
+		}
+		return deriveReport(data, nil).Scores["broadcast"]
+	}
+
+	scores := derive(measureGeneratorVersion, true)
+	if len(scores) != len(impls) {
+		t.Fatalf("scores for %d of %d implementations: %v", len(scores), len(impls), scores)
+	}
+	stall := func(s map[string]implScore, name string) int { return s[name].Dims["stall_resilience"] }
+	for _, im := range impls {
+		if !scores[im.name].Ranked {
+			t.Fatalf("%s is not ranked (%s); the fixture is meant to be", im.name, scores[im.name].UnrankedReason)
+		}
+		if im.name != "Spinner" && stall(scores, im.name) <= stall(scores, "Spinner") {
+			t.Errorf("%s scores %d on stall resilience, the spinner %d", im.name, stall(scores, im.name), stall(scores, "Spinner"))
+		}
+	}
+	if got := stall(scores, "ParksLate"); got <= stall(scores, "ParksMid") || stall(scores, "Completes") <= got {
+		t.Errorf("among publishers that do not spin the order is by publishes completed: Completes %d, ParksLate %d, ParksMid %d",
+			stall(scores, "Completes"), got, stall(scores, "ParksMid"))
+	}
+	m := scores["Spinner"].Metrics
+	if m["stalled_blocked_cpu_cores"] != 1.08 || m["stalled_publisher_spins"] != true {
+		t.Errorf("the spinner's metrics do not say it spins: %v", m)
+	}
+	if m := scores["ParksLate"].Metrics; m["stalled_publisher_spins"] != false {
+		t.Errorf("a parked publisher is marked as spinning: %v", m)
+	}
+	if _, has := scores["ParksUnmeasured"].Metrics["stalled_publisher_spins"]; has {
+		t.Errorf("an unmeasured publisher has a verdict on spinning: %v", scores["ParksUnmeasured"].Metrics)
+	}
+
+	// The same records without the figure: the spinner ties with the parked
+	// publisher that completed as many publishes, as it did before.
+	old := derive(measureGeneratorVersion, false)
+	if stall(old, "Spinner") != stall(old, "ParksLate") {
+		t.Errorf("without a CPU figure the spinner scores %d and its equal %d", stall(old, "Spinner"), stall(old, "ParksLate"))
 	}
 }

@@ -9,12 +9,17 @@
 //   spinHint64GLM:     YIELD     — power- and pipeline-friendly spin hint.
 //
 // How far this file has been exercised: it assembles and vets
-// (GOARCH=arm64 go vet), and each routine's machine code was executed under
-// an ARMv8 emulator (Unicorn 2.1.4), where each returns to its caller on two
-// CPU models. It has not run on arm64 hardware, and the test binary has not
-// run as an arm64 process: `make verify-arm64` does that and needs an arm64
-// host or qemu-aarch64. Emulation shows the instructions decode and return;
-// it shows nothing about memory ordering, which is what a fence is for.
+// (GOARCH=arm64 go vet), each routine's machine code was executed under an
+// ARMv8 emulator (Unicorn 2.1.4), where each returns to its caller on two CPU
+// models, and the package's test binary has run as an arm64 process under a
+// user-mode emulator (qemu-aarch64 5.2.0, `make verify-arm64
+// VERIFY_ARM64_EXEC=<emulator>`, the whole suite at GOMAXPROCS 1, 2 and 4;
+// the gates record of a measurement run says whether that leg ran and under
+// what). It has not run on arm64 hardware. Emulation shows that the
+// instructions decode, execute and return inside the real program; it shows
+// nothing about memory ordering on an arm64 processor, which is what a fence
+// is for: qemu runs the guest's threads on an x86-64 host, whose ordering is
+// stronger than arm64's, so a missing or wrong fence cannot fail there.
 
 #include "textflag.h"
 
