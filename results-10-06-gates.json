@@ -1,0 +1,169 @@
+{
+  "type": "gates",
+  "schema": 1,
+  "commit": "d5368ab51dd6",
+  "dirty_tree": false,
+  "recorded": "2026-11-12T00:57:48Z",
+  "stamp": "written by verify.all before its first leg",
+  "go": "go1.27.3",
+  "goos": "linux",
+  "goarch": "amd64",
+  "num_cpu": 2,
+  "legs": [
+    {
+      "leg": "vet",
+      "status": "pass",
+      "commands": [
+        "go vet ./...",
+        "go vet -race ./...",
+        "GOARCH=arm64 go vet ./...",
+        "GOARCH=386 go vet ./..."
+      ],
+      "detail": "4 vet invocations"
+    },
+    {
+      "leg": "test",
+      "status": "pass",
+      "commands": [
+        "go test -count=1 -cpu 1,2,4 ./..."
+      ],
+      "detail": "193.506 s"
+    },
+    {
+      "leg": "race",
+      "status": "pass",
+      "commands": [
+        "go test -race -count=1 ./..."
+      ],
+      "detail": "134.206 s"
+    },
+    {
+      "leg": "alloc",
+      "status": "pass",
+      "commands": [
+        "go test -count=1 -run Alloc -v ./..."
+      ],
+      "detail": "32 passing, 0 failing, 0 skipped test results; 0.037 s"
+    },
+    {
+      "leg": "fuzz",
+      "status": "pass",
+      "commands": [
+        "go test -run=NONE -fuzz='^TARGET$' -fuzztime=10s -timeout 30m . (once for each target)"
+      ],
+      "detail": "15 of 15 targets passed"
+    },
+    {
+      "leg": "arm64",
+      "status": "pass",
+      "commands": [
+        "GOARCH=arm64 under /home/user/qemu/sq/shellphish_qemu/bin/shellphish-qemu-linux-aarch64",
+        "emulator: qemu-aarch64 version 5.2.0 (v5.2.0-dirty)",
+        "GODEBUG=madvdontneed=0 BIGBUFF_MEASURE_EXEC=/home/user/qemu/sq/shellphish_qemu/bin/shellphish-qemu-linux-aarch64"
+      ],
+      "detail": "the arm64 test binary executed under an emulator (qemu-aarch64 version 5.2.0 (v5.2.0-dirty)), not on arm64 hardware"
+    }
+  ],
+  "fuzz": [
+    {
+      "target": "FuzzBitmap72Gemini",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 14863
+    },
+    {
+      "target": "FuzzUnifiedBroadcaster",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 328
+    },
+    {
+      "target": "FuzzBroadcaster58RingModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 158297
+    },
+    {
+      "target": "FuzzQueuedFanout24FIFO",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 157742
+    },
+    {
+      "target": "FuzzReplayCast53RingModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 159842
+    },
+    {
+      "target": "FuzzRingCaster55Model",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 163250
+    },
+    {
+      "target": "FuzzRingFanOut14TwoStageModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 158814
+    },
+    {
+      "target": "FuzzRingPubSubModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 52904
+    },
+    {
+      "target": "FuzzScenarioBarrier",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 73224
+    },
+    {
+      "target": "FuzzScenarioExchange",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 67841
+    },
+    {
+      "target": "FuzzScenarioFaninModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 152405
+    },
+    {
+      "target": "FuzzScenarioBroadcast",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 35331
+    },
+    {
+      "target": "FuzzScenarioCasterScatterGather",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 63144
+    },
+    {
+      "target": "FuzzStableRing32QueueModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 161449
+    },
+    {
+      "target": "FuzzBoundedScatterModel",
+      "status": "pass",
+      "budget": "10s",
+      "execs": 149714
+    }
+  ],
+  "measured_commit": "633423b277d3",
+  "comparison": "compared",
+  "source_files_changed_since_measurement": [
+    "measure_evaluate_repro_test.go",
+    "measure_isolate_run_test.go",
+    "measure_report_markup_test.go",
+    "measure_report_test.go",
+    "scenario_registry_test.go"
+  ],
+  "result_files_changed_since_measurement": 29
+}

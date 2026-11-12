@@ -322,6 +322,7 @@ footer.site-foot a:hover { color: var(--cyan); }
           </p>
           <ul class="report-features">
             <li><span class="dot"></span> <strong>Newest run:</strong> the scorecards below are read from it</li>
+            <li><span class="dot"></span> <strong>Gates recorded:</strong> the evaluation states what <code>make verify</code> reported</li>
             <li><span class="dot"></span> 25 implementation(s) skipped a battery, each with a recorded reason</li>
           </ul>
         </div>
@@ -1009,8 +1010,16 @@ Several responses claim "0 allocations per send" and allocate when measured: a p
             <tr>
               <td><strong>Run 10</strong></td>
               <td><span class="tag tag-prompt">standard</span></td>
+              <td><code>results-10-06-gates.json</code></td>
+              <td>What make verify reported, and at which commit · 4 KB</td>
+              <td><span class="v-strong">verified</span></td>
+              <td><a href="results-10-06-gates.json" download class="btn">Download JSON</a></td>
+            </tr>
+            <tr>
+              <td><strong>Run 10</strong></td>
+              <td><span class="tag tag-prompt">standard</span></td>
               <td><code>results-10-07-evaluation.md</code></td>
-              <td>Evaluation generated from the run&#39;s own files · 31 KB</td>
+              <td>Evaluation generated from the run&#39;s own files · 33 KB</td>
               <td><span class="v-strong">verified</span></td>
               <td><a href="results-10-07-evaluation.md" class="btn">Open Evaluation</a></td>
             </tr>
