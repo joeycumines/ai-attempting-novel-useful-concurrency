@@ -138,11 +138,11 @@ ranking needs. A first attempt at run 12 was discarded and is not in the
 repository, because the machine was used while it measured (`measurement.md`,
 "Known limitations").
 
-**Gates.** Runs 05, 08 and 10 have a gates record (slot 06). Runs 06, 07 and
-09 do not: nothing recorded what `make verify` reported for their trees. Run
-10's record is the first whose arm64 leg ran (under `qemu-aarch64`, not on
-hardware); it was taken five tooling files after the measured commit, which
-the record and the evaluation name.
+**Gates.** Runs 05, 08, 10 and 12 have a gates record (slot 06). Runs 06, 07,
+09 and 11 do not: nothing recorded what `make verify` reported for their
+trees. Run 10's record is the first whose arm64 leg ran (under `qemu-aarch64`,
+not on hardware), and run 12's ran the same way. Both were taken some files
+after the measured commit; each record and evaluation names the files.
 
 **Families with fewer than five measured implementations are not ranked.** They
 are measured, checked for integrity and reported with their raw numbers. See
