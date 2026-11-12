@@ -10,7 +10,7 @@ Armed with these various chatbots, I decided to test how well AI would respond t
 
 ## Input
 
-The [prompt](02-prompt.md) (built with [osm prompt-flow](https://github.com/joeycumines/one-shot-man)) lead with:
+The [prompt](02-prompt.md) (the first of several; [01-readme.md](01-readme.md#prompts) lists them) (built with [osm prompt-flow](https://github.com/joeycumines/one-shot-man)) lead with:
 
 > Advance the implementation to its ultimate form by evolving one or both implementations to achieve a much greater height of sophistication AND cleverness, AND/OR implement one additional, complementary implementation, of greater sophistication and extremely strong broad applicability, with similarly nuanced and interesting characteristics as this implementation's extremely stable and predictable (very low) allocation coupled with performance comparable (if lesser) to a linear "callback channel" oriented design + its obvious extremely valuable support for use within a select (which the callback-oriented design achieves, though in a manner that doesnt scale with churn of consumers or large numbers of consumers), as an expert in low-level Go runtime optimisations. N.B. Novelty of design coupled with exceptionally strong characteristics is the kind of solution I require.
 

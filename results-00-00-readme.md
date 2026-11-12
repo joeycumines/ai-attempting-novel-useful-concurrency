@@ -63,12 +63,13 @@ added later. Whether the newest run still covers the live registry is a
 separate question, which `bigbuff-measure index` answers with a note and the
 landing page shows.
 
-**Run 10 is the current run, and run 09 is the same code measured ten minutes
-earlier.** They are the first pair of runs that can be compared, and
-`report-04-run-10-analysis.md` is the written account of both. Run 08 is the
-first run whose rankings mean what they say. **No family of runs 01 to 06 is
+**Run 12 is the current run, and run 11 is the same code measured before
+it.** Runs 09 and 10 are the pair before them, under the previous contract;
+they were the first runs that could be compared, and
+`report-04-run-10-analysis.md` is the written account of those two. Run 08 is
+the first run whose rankings mean what they say. **No family of runs 01 to 06 is
 ranked, and the broadcast and payload families of run 07 are not either.**
-Five defects of the measurement were found, each by looking at what a
+Six defects of the measurement were found, each by looking at what a
 suspicious number was made of, and each has its own record contract
 (`generator_version` in the meta record and the manifest):
 
@@ -80,6 +81,7 @@ suspicious number was made of, and each has its own record contract
 | 1.3.0 | 07 | Every battery of every implementation is measured in a process of its own. Before, the run was one process, and the publishers left spinning by the stall probes of the eleventh broadcast implementation held both CPUs for the rest of it. Throughput repetitions are sized by the clock. |
 | 1.4.0 | 08 | The broadcast and payload throughput records say how much of what was published the subscribers received, and the two families are scored in two delivery classes: implementations that delivered everything, and implementations that dropped or coalesced. Before, the record gave the cost of calling Publish only, and in run 07 the eight top broadcast places went to implementations that delivered 0.1 to 79 percent of their values. A tie counts as half a place in a percentile rank, and a dimension on which a whole class has one value is left out. |
 | 1.5.0 | 09 on | Three things. Every timed repetition of every battery is sized by the clock; before, the churn, allocation, caster, scatter, gather and barrier batteries fixed their count from a short estimate. The stalled-consumer probes record the CPU a blocked publisher uses (`blocked_cpu_cores`), and one that uses half a CPU or more ranks last on stall resilience; before, `EpochCaster (13-OpenRouter)`, which waits by spinning, was 2nd of 50. The allocation dimension ranks to a tenth of an allocation per publish; before, the 53 or so implementations that allocate nothing were ordered by stray allocations of the runtime, differently in each run. The third was found by comparing runs 09 and 10, so their reports, score files and evaluations were regenerated after they were first committed. |
+| 1.6.0 | 11 on | A latency battery times 31 fresh instances (episodes) of 400 publishes each instead of one, and the record carries each episode's median, 90th and 99th percentile and mean; its interval is taken across episodes. The latency dimension ranks the mean over episodes of the 90th percentile; before, the mean of the single episode. Before, two runs of the same code ordered the implementations that drop differently on latency (rank correlation 0.77 in broadcast, 0.42 in payload, runs 09 and 10). |
 
 One more rule came out of comparing runs 07 and 08: a group whose members the
 measurement cannot tell apart is not ranked. The caster family's 13
@@ -125,6 +127,16 @@ publish to 8 subscribers and 8th of 44, runs 09 and 10 at 317 and 286 ns and
 value under the wrong sequence number: 422 ns in run 08, 544 and 628 ns after
 the repair. Run 08's rows for these three describe code that no longer
 exists. Its scores are not recomputed under the rules of contract 1.5.0.
+
+**Runs 11 and 12 measure the same code under contract 1.6.0**, so run 12's
+evaluation compares the two. Scores agree at rank correlation 0.93 (broadcast,
+delivers), 0.98 (broadcast, drops) and 0.96 (payload, delivers); the latency
+dimension alone at 0.92, 0.86 and 0.89, where runs 09 and 10 had 0.94, 0.77
+and 0.96. The payload implementations that drop are not ranked in either run:
+their publish costs separate 30 and 32 of 66 pairs, under the half that a
+ranking needs. A first attempt at run 12 was discarded and is not in the
+repository, because the machine was used while it measured (`measurement.md`,
+"Known limitations").
 
 **Gates.** Runs 05, 08 and 10 have a gates record (slot 06). Runs 06, 07 and
 09 do not: nothing recorded what `make verify` reported for their trees. Run

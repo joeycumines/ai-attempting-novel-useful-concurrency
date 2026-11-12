@@ -164,6 +164,9 @@ One JSON object per line. Every committed run has one (`results-NN-01-results.js
 | `evicted`, `delivered_fraction` | scatter: items a bounded queue evicted by contract (its own eviction counter), and the fraction of sent items that were delivered. `dispatch_ns_op` is wall time per **delivered** item, so an evicting queue is not credited with the items it dropped. Always `0` and `1` for implementations without an eviction counter |
 | `publishes`, `receives`, `delivered_fraction` | broadcast and payload `publish_ns_op` (contract 1.4.0 on): the publishes made over all repetitions of the cell, warm-up included; the values the subscribers received; and `receives / (publishes × subscribers)`. `publish_ns_op` is the cost of the call whatever became of the value. The count is read once the subscribers have gone 50 ms without receiving, so a backlog that is still draining is waited for; a cell whose subscribers are still receiving after 20 s fails the run. `verify` rejects a 1.4.0 run whose throughput records lack `publishes` or `receives` |
 | `blocked_cpu_cores` | broadcast and payload `stalled_consumer_ops_completed` with outcome `publisher_blocked` (contract 1.5.0 on): the process's CPU time over 100 ms taken while the publisher was blocked, in CPUs. A parked publisher reads 0.00 to 0.01; one that waits by spinning reads about 1 |
+| `episodes`, `episode_p50`, `episode_p90`, `episode_p99`, `episode_mean` | latency batteries (contract 1.6.0 on): how many fresh instances were timed, and each one's median, 90th percentile, 99th percentile and mean. `mean`, the percentiles, the histogram and `samples` of the record are over every timed operation of every episode, and `ops` and `n` count them |
+| `episode_p90_mean`, `episode_p90_ci95_low`, `episode_p90_ci95_high` | latency batteries: the mean over episodes of the 90th percentile, which is what the latency dimension ranks, and its 95% interval across episodes |
+| `ci95_basis` | latency batteries: `episodes` when the record's interval was taken across episode means, `samples` when there was one episode. The samples of one episode share whatever the machine was doing while it ran, so an interval across all of them is narrower than the figure deserves |
 | `torn_reads`, `checked` | payload: multi-word ([4]uint64) read integrity vs loads checked |
 | `deliveries`, `deliveries_expected`, `deliveries_missing` | caster throughput and latency: values the receivers took, values the timed Sends should have delivered, and the difference. A Send is timed only once every receiver is registered for it. Any missing delivery fails the implementation's integrity gate |
 | `withdrawal_compensation_success` | caster: fraction of rounds where `Add(-1)` unstuck a parked `Send` |
@@ -212,16 +215,21 @@ three, plus a JSONL re-export, client-side.
 
 ## Profiles
 
-| profile | reps | sweep | latency samples | churn ops | stalled deadline | use |
+| profile | reps | sweep | latency episodes × samples | churn ops | stalled deadline | use |
 |---|---|---|---|---|---|---|
-| quick | 3 | subs 1, 8, 64 / casters 1, 8, 32 | 160 | 80 | 150 ms | CI gate |
-| standard | 5 | subs 1…256 / casters 1…32 | 400 | 200 | 250 ms | default decisions |
-| full | 7 | subs 1…512 / casters 1…64 | 1000 | 320 | 600 ms | publication-grade |
+| quick | 3 | subs 1, 8, 64 / casters 1, 8, 32 | 5 × 160 | 80 | 150 ms | CI gate |
+| standard | 5 | subs 1…256 / casters 1…32 | 31 × 400 | 200 | 250 ms | default decisions |
+| full | 7 | subs 1…512 / casters 1…64 | 61 × 1000 | 320 | 600 ms | publication-grade |
 
 All profiles: warmup runs before measurement; alloc batteries pin GOGC=off and measure
-with an explicit GC; latency batteries use a bounded reservoir; stalled-consumer probes
-run a shared wall-clock deadline after which a still-parked publisher is *recorded*,
-not killed.
+with an explicit GC; stalled-consumer probes run a shared wall-clock deadline after
+which a still-parked publisher is *recorded*, not killed.
+
+A latency battery times every publish of several **episodes** (contract 1.6.0 on).
+An episode is a fresh instance with its own subscribers, warmed with 32 publishes
+and then timed for the profile's sample count. Until 1.6.0 the battery was one
+episode: 400 publishes of one instance, 40 µs to 2 ms of wall time in all, so
+whatever the machine was doing in that instant was in every sample.
 
 A timed repetition is sized by the clock, not by an estimate (the broadcast
 and payload throughput and latency batteries from contract 1.3.0, every
@@ -347,6 +355,12 @@ scored without them.
   half a CPU or more meanwhile (`blocked_cpu_cores`), the implementation ranks
   below every member of its group that parked or completed, however many
   publishes it had completed. The report marks it "spins".
+- **Latency ranks the 90th percentile, averaged over episodes** (contract 1.6.0,
+  run 11, on). The dimension ranks the mean over episodes of the time within
+  which nine publishes in ten returned. Before, it ranked the mean of a single
+  episode. The 99th percentile of a 400-sample episode is its fourth largest
+  sample, which on a shared two-CPU machine is a preemption more often than it
+  is the implementation, and it does not repeat; the report still shows it.
 - **Allocations rank to a tenth of an allocation per publish.** The figure is
   rounded to 0.1 before ranking and equal figures tie. The battery counts the
   process's allocations, so an implementation that allocates nothing measures
@@ -523,9 +537,32 @@ does. See `extraction_audit.md` ("arm64 assembly: executed under emulation").
   median within-run variation of `churn_ns_op` was 26 percent in run 08 and
   19 and 23 percent in runs 09 and 10, and that of `send_ns_op` 7, 11 and 9
   percent. What it removes is a repetition count fixed from the wrong cost.
-- The latency dimension reproduces poorly between two runs of the same code
-  in the classes that drop (rank correlation 0.77 in broadcast and 0.42 in
-  payload, runs 09 and 10). It is still 14 percent of the score.
+- The latency dimension reproduced poorly between two runs of the same code
+  in the classes that drop: rank correlation 0.77 in broadcast and 0.42 in
+  payload, runs 09 and 10. With episodes (runs 11 and 12) broadcast reads 0.92
+  for the implementations that deliver and 0.86 for those that drop, and
+  payload 0.89 for those that deliver. The classes that deliver were at 0.94
+  and 0.96 before, so they did not gain: what episodes repaired is the classes
+  that drop. The payload class that drops is not ranked in either of runs 11
+  and 12 (next item), so it has no figure in their evaluations.
+- A group near the threshold of "do not rank what the measurement cannot
+  separate" is ranked in one run and withheld in the next. The cost of one
+  publish told apart 30 and 32 of the 66 pairs of the payload implementations
+  that drop in runs 11 and 12, under the half the rule asks for, so neither run
+  ranks that class; runs 09 and 10 ranked it.
+- Some implementations have two speeds, and five repetitions do not average
+  them. `EpochCasterGemini_c64` publishes to 8 subscribers in either 150 to
+  250 ns or 1.2 to 1.4 µs per repetition. One repetition of five was slow in
+  run 08, two in run 09 and none in run 10, which is the whole of the 3.4×
+  difference between runs 09 and 10 in its headline cost. What puts a
+  repetition in the slow mode was not established.
+- **Leave the machine alone while a run measures.** A first attempt at run 12
+  was discarded because shell commands were issued during it (`git status`,
+  `ps`): the payload cells of `GenCaster` that were being timed at that moment
+  had repetitions of 8 to 131 µs per publish, against cell means of 173 to
+  424 ns in runs 08 to 11 and 216 to 312 ns in the repeat. Process isolation separates one battery from the
+  next; it does not separate a battery from whatever else the machine is asked
+  to do.
 - The allocation battery counts the process's allocations, the runtime's
   included. The score ranks the figure to a tenth of an allocation per
   publish for that reason, and so cannot tell an implementation that
