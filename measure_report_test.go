@@ -287,18 +287,22 @@ const deliveryClassContract = "1.4.0"
 // allocation dimension ranks from record contract allocResolutionContract.
 //
 // The battery counts the process's mallocs over the timed publishes, so the
-// count includes whatever the runtime allocated meanwhile. For the
-// implementations whose publish allocates nothing that stray count is the
-// whole figure: between 0 and 0.02 allocations per publish, different in
-// every repetition (a coefficient of variation of 224 percent is one
-// repetition in five with a single stray allocation). Ranked as measured, 40
-// implementations that do not allocate were put in an order that the next
-// run reshuffled: runs 09 and 10 measured RingPubSub at 0.00006 and 0.00002
-// and EpochCaster at 0.00004 and 0, and their allocation scores moved from 76
-// to 92 and from 80 to 98 on that alone. A tenth of an allocation per publish
-// is five times the largest stray figure seen, and smaller than the gap
-// between any two implementations whose publish does allocate a different
-// number of objects. Implementations that round to the same figure tie.
+// count includes whatever the runtime allocated meanwhile. For an
+// implementation whose publish allocates nothing that stray count is the
+// whole figure, and it differs in every repetition (a coefficient of
+// variation of 224 percent is one repetition in five with a stray
+// allocation). In runs 09 and 10, 53 and 54 of the 94 broadcast
+// implementations measured under 0.01 allocations per publish, with means up
+// to 0.016 and single repetitions up to 0.04. Ranked as measured, they were
+// put in an order that the next run reshuffled: RingPubSub measured 0.00006
+// and 0.00002 in the two runs and EpochCaster 0.00004 and 0, and their
+// allocation scores moved from 76 to 92 and from 80 to 98 on that alone.
+//
+// A tenth of an allocation per publish is about six times the largest stray
+// mean seen. Implementations that round to the same figure tie. The price is
+// that an implementation which really allocates once in 35 to 100 publishes
+// (three did, at 0.01 to 0.03) ties with those that never allocate; the
+// figure reported is still the one measured.
 const (
 	allocResolution         = 0.1
 	allocResolutionContract = "1.5.0"
