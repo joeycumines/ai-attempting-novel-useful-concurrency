@@ -120,7 +120,8 @@ Verification: green across `-count=10`, `-race`, close-burst `-count=20`;
 cross-compiled for `linux/arm64` and `linux/386` (the arm64 fence was
 compile-verified at this point; it has since been executed under an ARMv8
 emulator, never on ARM hardware: see "arm64 assembly: executed under
-emulation"). **No benchmarks were delivered with the
+emulation"). A fifth defect, in the response as delivered, was found and
+repaired after run 08: see "Sixth pass". **No benchmarks were delivered with the
 candidate** (its README claims a matrix that does not exist in the extract);
 measurement harness coverage comes from the scenario facets instead.
 Attachment: `bounded-ring-lossy-detectable`, `ephemeral-churn-membership`,
@@ -381,8 +382,9 @@ blocks). Both are documented in their attachment remarks.
   (`BenchmarkBeacon64GLM_*` in `beacon_64_glm_test.go`: publish with no
   watcher, publish then read, snapshot, publish with eight blocked watchers).
 - #64’s ARM64 fence (`beacon_64_glm_fence_arm64.s`, `DMB ISHLD/ISH`) has
-  been executed under an ARMv8 emulator, one function at a time, and never on
-  ARM hardware; see "arm64 assembly: executed under emulation" below. AMD64
+  been executed under emulation (one function at a time, and since then
+  inside the whole test suite under `qemu-aarch64`), and never on ARM
+  hardware; see "arm64 assembly: executed under emulation" below. AMD64
   fences are covered by the full amd64 suite; GOARCH=386 is green as of the
   portability batch above.
 - `Build tags`: fast slot paths are `!race`; `-race` swaps in the atomic slot
@@ -689,8 +691,11 @@ an emulator says nothing about the memory-ordering effect of the `DMB`
 fences or the acquire loads, which only real multi-core arm64 hardware can
 show. `make verify-arm64` runs the tests of the implementations concerned as
 an arm64 binary, natively or under `qemu-aarch64`; it fails when neither is
-available, and it has not been run to completion anywhere: only its build
-step and its failure path were exercised here.
+available. When this section was written it had not been run to completion
+anywhere. It has since: see "Sixth pass" (the whole suite as an arm64 binary
+under `qemu-aarch64` 5.2.0, passing). The limit stated above is unchanged:
+the emulator runs on an x86-64 host, which orders memory more strongly than
+arm64, so a wrong fence cannot fail there.
 
 Measurement run 04 measured the defective versions of #28, #29, #30, #31,
 #47, `BaselineBarrierPubSub` and the `EpochPubSub` adapter. No run before
@@ -771,7 +776,9 @@ runs because the numbers were plausible.
   `EpochTape (10-Gemini)`, whose publish is cheap only while its subscribers
   sleep, that put 400,000 publishes into a repetition with a 60 ms target, at
   up to 75 µs each. Repetitions are now sized by the clock after a timed
-  warm-up.
+  warm-up. Why its publish was that slow with its subscribers awake was not
+  explained here; it was a defect of the port and is repaired ("Sixth
+  pass").
 
 ### Fourth pass: what the broadcast ranking was ranking
 
@@ -846,8 +853,75 @@ test to be retried:
   The count is now taken down first. The count is only the fast path of
   `Send`, so no value was misdelivered.
 
+### Sixth pass: after run 08
+
+Found by going back over what the run 08 report had left open or stated too
+favourably. Runs 09 and 10 measure the code after these changes;
+`report-04-run-10-analysis.md` has the figures.
+
+- **#64 `Beacon64GLM`: a value delivered under the wrong sequence (defect of
+  the response).** Each slot counted its writes, and the reader turned the
+  count back into a sequence on the assumption that writers reach a slot in
+  the order they claimed sequences (the response says so at line 1096 of its
+  file and relies on it from line 1590). A producer descheduled between its
+  claim and its write can be overtaken by a whole ring (256 publishes); the
+  newer value is then read as the older sequence, and the late write replaces
+  it under the newer one. Two writers in one slot could also both be mid-write
+  with the counter even. The response's own `TestMultiProducerStress` failed
+  in 2 of 90 rounds on amd64. The slot word now names the sequence itself
+  (`2k-1` while sequence `k` is being written, `2k` once it is stable); a
+  writer takes the slot by compare-and-swap from an even value, and one that
+  finds its own or a later sequence there leaves the slot alone
+  (`storeClaimed`). After: 0 failures in 450 rounds, clean under the race
+  detector. `TestBeaconProducerLappedBetweenClaimAndWrite` and
+  `TestBeaconLateWriteThenTheNewerOne` put a producer in that position
+  deterministically. Cost: a producer can now wait for another producer that
+  is mid-write in the same slot, so the publish path is no longer free of
+  waiting between producers; the file's header says so. Publish at 8
+  subscribers: 422 ns in run 08, 544 and 628 ns in runs 09 and 10.
+- **#10 `EpochTape`: a reader that starved the writer (defect of the port).**
+  A subscriber that found a slot mid-write retried at once without yielding.
+  With more subscribers than CPUs the retrying readers held the CPUs the
+  writer needed. This is the slow publish the third pass noticed and did not
+  explain, and the 184 µs per publish of run 08. The reader now yields
+  (`runtime.Gosched`) when it finds a write in progress.
+  `TestEpochTape_ReaderYieldsToAWriteInProgress` fails within its time limit
+  with the yield removed. Publish at 8 subscribers: 271 and 294 ns.
+- **#57 adapter: a test for the earlier repair.** The repair of the deadlock
+  between a blocked `Subscribe` and an unsubscribe had no test that failed
+  without it. `TestChanPubSub57AdapterUnsubscribeDuringBlockedSubscribe`
+  does: it fails when the exclusive lock is put back.
+- **#40 `SlabCaster40Gemini`: the earlier repairs checked by mutation.** With
+  the wait for in-flight deliveries disabled, the existing tests report a
+  data race. No new test was needed.
+- **#13 `EpochCaster`: not changed.** Its `Send` waits for a full ring in a
+  loop around `runtime.Gosched` and holds a CPU while a subscriber is
+  stalled. That is the response's design. The stalled-consumer probes now
+  measure it (`blocked_cpu_cores`, 1.04 to 1.05 CPUs) and the score ranks it
+  last on stall resilience from record contract 1.5.0.
+- **arm64: the whole suite under `qemu-aarch64`.** `make verify-arm64
+  VERIFY_ARM64_EXEC=...` builds the test binary for arm64 and runs it under
+  the named emulator (qemu-aarch64 5.2.0 from the PyPI package
+  `shellphish-qemu`; no root needed). It needs `GODEBUG=madvdontneed=0`,
+  which `verify.mk` sets (`VERIFY_ARM64_GODEBUG`), and the harness's child
+  processes are started under the same emulator (`BIGBUFF_MEASURE_EXEC`). It
+  passes, 204 to 217 s, and is a leg of run 10's gates record. It replaces
+  "one routine at a time" with "inside the running program". It does not
+  replace hardware: the emulator executes on x86-64, whose memory ordering is
+  stronger than arm64's, so the `DMB` fences and acquire loads are still
+  untested for what they are there to do.
+- **Measurement.** Record contract 1.5.0: every repetition sized by the clock
+  (`calibrateOps` deleted), the blocked publisher's CPU measured and scored,
+  allocations ranked to a tenth. The evaluation compares a run with the one
+  before it. See `measurement.md` and `results-00-00-readme.md`.
+
 ### Not done
 
-- arm64 assembly (#64 fence, #72 bitmap) has run under an emulator, one
-  function at a time, and never on arm64 hardware (previous section).
+- arm64 assembly (#64 fence, #72 bitmap) has run under an emulator (one
+  function at a time, then inside the whole test suite under `qemu-aarch64`)
+  and never on arm64 hardware. Its memory ordering is untested.
+- `EpochCaster (13-OpenRouter)`'s `Send` still waits for a full ring by
+  spinning. It is measured and scored, not changed.
+- The latency dimension of the score reproduces poorly between runs in the
+  classes that drop, and is still in the score.
 - Nothing has been measured on more than 2 CPUs.

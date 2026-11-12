@@ -165,7 +165,9 @@ Policy that the documentation of the mechanics does not carry:
   has not run. Emulating a routine is not running the program, and neither says
   anything about memory ordering on real hardware. `make verify-arm64` exists
   so that the arm64 assembly can be executed on a machine that can execute it,
-  and fails where it cannot rather than passing vacuously.
+  and fails where it cannot rather than passing vacuously. It passes under
+  `qemu-aarch64` (`VERIFY_ARM64_EXEC`); it has not run on arm64 hardware, and an
+  emulator on an x86-64 host cannot show a wrong memory fence.
 - **Record the gates with the run.** A statement that the suite passed is worth
   what its record is worth: which commit, whether the tree was clean, which
   legs ran, what each reported. `make measure-gates` writes that record.
