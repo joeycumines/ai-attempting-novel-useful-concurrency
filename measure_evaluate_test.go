@@ -216,26 +216,40 @@ func parseGateLog(leg, text string) (gateLeg, []gateFuzzTarget) {
 			out.Status = "pass"
 		}
 	case "arm64":
-		if strings.Contains(text, "verify.arm64: ok") && !failed {
+		// platform.mk prints what it ran and how. Where the binary ran is
+		// part of what the leg shows: an emulator executes the instructions
+		// and says nothing about the memory ordering of an arm64 CPU.
+		field := func(name string) string {
+			for _, line := range strings.Split(text, "\n") {
+				if v, ok := strings.CutPrefix(line, "== "+name+": "); ok {
+					return strings.TrimSpace(v)
+				}
+			}
+			return ""
+		}
+		platform, runner, execution := field("platform"), field("runner"), field("execution")
+		if strings.Contains(text, "verify.arm64: ok") && !failed && execution != "" {
 			out.Status = "pass"
 			out.Detail = "the arm64 test binary executed"
-			// Where it ran is part of what the leg shows: an emulator
-			// executes the instructions and says nothing about the memory
-			// ordering of real arm64 hardware.
-			switch {
-			case strings.Contains(text, "== native arm64"):
-				out.Detail += " on an arm64 host"
-			case strings.Contains(text, "== GOARCH=arm64 under "):
-				emulator := "an emulator"
-				for _, line := range strings.Split(text, "\n") {
-					if v, ok := strings.CutPrefix(line, "== emulator: "); ok && strings.TrimSpace(v) != "" {
-						emulator = "an emulator (" + strings.TrimSpace(v) + ")"
-					}
-				}
-				out.Detail += " under " + emulator + ", not on arm64 hardware"
+			if p, _, ok := strings.Cut(platform, " on host "); ok {
+				out.Detail = "the " + p + " test binary executed"
+			}
+			switch execution {
+			case "hardware":
+				out.Detail += " on an arm64 CPU"
+			case "emulated":
+				out.Detail += " under emulation, not on arm64 hardware"
+			default:
+				out.Detail += "; the runner does not say whether on arm64 hardware"
+			}
+			if runner != "" {
+				out.Detail += " (runner " + runner + ")"
 			}
 		} else {
 			out.Detail = "the arm64 assembly was not executed"
+			if failed {
+				out.Detail = "reported a failure"
+			}
 		}
 	}
 	return out, fuzz
@@ -276,7 +290,12 @@ func readGateLogs(dir string) gatesRecord {
 	for _, leg := range gateLegOrder {
 		raw, err := os.ReadFile(filepath.Join(dir, leg+".log"))
 		if err != nil {
-			rec.Legs = append(rec.Legs, gateLeg{Leg: leg, Status: "not-run", Detail: "no log"})
+			// A leg that was skipped on purpose says why in <leg>.skip.
+			detail := "no log"
+			if why, err := os.ReadFile(filepath.Join(dir, leg+".skip")); err == nil && strings.TrimSpace(string(why)) != "" {
+				detail = strings.TrimSpace(strings.SplitN(string(why), "\n", 2)[0])
+			}
+			rec.Legs = append(rec.Legs, gateLeg{Leg: leg, Status: "not-run", Detail: detail})
 			continue
 		}
 		l, fuzz := parseGateLog(leg, string(raw))

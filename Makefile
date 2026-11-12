@@ -85,6 +85,8 @@ include $(PROJECT_ROOT)/measure.mk
 # Landing page & report wire-up makefile (lives at flat root per gist constraints).
 include $(PROJECT_ROOT)/site.mk
 
+# Running the test binary of another platform on this machine: native, emulator or container (lives at flat root per gist constraints).
+include $(PROJECT_ROOT)/platform.mk
 # Race / multi-GOMAXPROCS / fuzz / allocation / benchmark gates (lives at flat root per gist constraints).
 include $(PROJECT_ROOT)/verify.mk
 
@@ -180,7 +182,10 @@ measure-ci: measure.ci ## CI gate: quick profile + verification.
 verify: verify.all ## Correctness gates beyond `make all`: vet (race + cross-arch), tests at several GOMAXPROCS, race detector, allocation assertions, fuzzing.
 
 .PHONY: verify-arm64
-verify-arm64: verify.arm64 ## Execute the arm64-assembly implementations' tests as an arm64 binary (needs an arm64 host or qemu-aarch64).
+verify-arm64: verify.arm64 ## Execute the arm64 assembly: its tests as an arm64 binary, natively, emulated or in a container, whichever this machine has.
+
+.PHONY: verify-platform
+verify-platform: platform.test ## Run the tests as a PLATFORM_GOOS/PLATFORM_GOARCH binary on this machine (PLATFORM_RUN=<regexp>; `make platform.info` shows how).
 
 .PHONY: verify-bench
 verify-bench: verify.bench ## Run the Go benchmarks (VERIFY_BENCH=<regexp>, VERIFY_BENCHTIME=<n>x).
