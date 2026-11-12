@@ -400,49 +400,137 @@ func measureBroadcastThroughput(ctx *measureContext, factory func() Broadcaster,
 	}
 }
 
+// latencyEpisodes collects the timed publishes of a latency battery, one
+// slice per episode. An episode is a fresh instance with its own subscribers,
+// warmed and then timed for LatencySamples publishes.
+//
+// Until record contract 1.6.0 a latency battery was one episode: 400
+// publishes of one instance, 40 µs to 2 ms of wall time in all. Whatever the
+// machine was doing in that instant was in every sample, the confidence
+// interval was taken across those samples and so said nothing about it, and
+// between two runs of the same code the order of the implementations that
+// drop came out differently (rank correlation 0.77 in broadcast, 0.42 in
+// payload, runs 09 and 10).
+type latencyEpisodes struct {
+	episodes [][]float64
+	hist     *histogram
+}
+
+func newLatencyEpisodes() *latencyEpisodes { return &latencyEpisodes{hist: newHistogram()} }
+
+// begin starts an episode of at most n samples.
+func (l *latencyEpisodes) begin(n int) { l.episodes = append(l.episodes, make([]float64, 0, n)) }
+
+func (l *latencyEpisodes) add(d time.Duration) {
+	last := len(l.episodes) - 1
+	l.episodes[last] = append(l.episodes[last], float64(d))
+	l.hist.add(float64(d))
+}
+
+// pooled is every sample of every episode, in order.
+func (l *latencyEpisodes) pooled() []float64 {
+	var out []float64
+	for _, e := range l.episodes {
+		out = append(out, e...)
+	}
+	return out
+}
+
+// write emits the latency record of a battery.
+//
+// The record's mean, percentiles, histogram and samples are over every
+// timed publish of every episode, and "ops" and "n" count them. The
+// per-episode lists say how much one episode differs from the next, which
+// the pooled figures cannot. The confidence interval is taken across
+// episodes: the samples of one episode share whatever the machine was doing
+// while it ran, so an interval across all of them is narrower than the
+// figure deserves. "ci95_basis" names the unit the interval was taken over.
+// With a single episode there is nothing to take it across, and the
+// interval is the one across that episode's samples, as before 1.6.0.
+func (l *latencyEpisodes) write(ctx *measureContext, rec map[string]any) {
+	var p50, p90, p99, mean []float64
+	for _, e := range l.episodes {
+		if len(e) == 0 {
+			continue
+		}
+		s := summarize(e)
+		p50 = append(p50, finite(s.P50))
+		p90 = append(p90, finite(s.P90))
+		p99 = append(p99, finite(s.P99))
+		mean = append(mean, finite(s.Mean))
+	}
+	pooled := l.pooled()
+	rec["ops"] = len(pooled)
+	rec["episodes"] = len(p50)
+	rec["episode_p50"] = p50
+	rec["episode_p90"] = p90
+	rec["episode_p99"] = p99
+	rec["episode_mean"] = mean
+	rec["ci95_basis"] = "samples"
+	var across summary
+	if len(mean) > 1 {
+		across = summarize(mean)
+		r := summarize(p90)
+		rec["ci95_basis"] = "episodes"
+		rec["episode_p90_mean"] = r.Mean
+		rec["episode_p90_ci95_low"] = r.CI95Low
+		rec["episode_p90_ci95_high"] = r.CI95High
+	}
+	ctx.writeMetricWith(rec, pooled, func(m map[string]any) {
+		if len(mean) > 1 {
+			m["ci95_halfwidth"] = across.CI95HalfWidth
+			m["ci95_low"] = m["mean"].(float64) - across.CI95HalfWidth
+			m["ci95_high"] = m["mean"].(float64) + across.CI95HalfWidth
+		}
+	})
+}
+
 func measureBroadcastLatency(ctx *measureContext, factory func() Broadcaster, name string) {
 	scen, goodFit, expLimit := broadcastAttachmentMeta(name)
 	const subs = 8
-	b := factory()
-	g, drainErr := startBroadcastDrains(b, subs)
-	if drainErr != nil {
-		ctx.skip("broadcast", name, "broadcast.latency", drainErr.Error())
-		_ = closeWithWatchdog(b, 2*time.Second)
-		return
-	}
 	const warmup = 32
-	for i := 0; i < warmup; i++ {
-		b.Publish(i + 1)
-	}
 	n := ctx.profile.LatencySamples
-	durations := make([]float64, n)
-	hist := newHistogram()
-	for i := 0; i < n; i++ {
-		t0 := time.Now()
-		b.Publish(i + 1 + warmup)
-		d := time.Since(t0)
-		durations[i] = float64(d)
-		hist.add(float64(d))
+	lat := newLatencyEpisodes()
+	for e := 0; e < ctx.profile.latencyEpisodeCount(); e++ {
+		b := factory()
+		g, drainErr := startBroadcastDrains(b, subs)
+		if drainErr != nil {
+			ctx.skip("broadcast", name, "broadcast.latency", drainErr.Error())
+			_ = closeWithWatchdog(b, 2*time.Second)
+			return
+		}
+		for i := 0; i < warmup; i++ {
+			b.Publish(i + 1)
+		}
+		lat.begin(n)
+		for i := 0; i < n; i++ {
+			t0 := time.Now()
+			b.Publish(i + 1 + warmup)
+			lat.add(time.Since(t0))
+		}
+		clean := g.stop(3 * time.Second)
+		if !clean {
+			ctx.fail("%s: drain goroutines did not exit after latency run", name)
+		}
+		closeWithWatchdog(b, 2*time.Second)
+		if !clean {
+			break
+		}
 	}
-	clean := g.stop(3 * time.Second)
-	if !clean {
-		ctx.fail("%s: drain goroutines did not exit after latency run", name)
-	}
-	closeWithWatchdog(b, 2*time.Second)
-	ctx.writeMetric(map[string]any{
+	rec := map[string]any{
 		"metric":            "publish_latency_ns",
 		"family":            "broadcast",
 		"impl":              name,
 		"unit":              "ns",
 		"dims":              map[string]any{"subs": subs},
-		"ops":               n,
-		"histogram":         hist,
+		"histogram":         lat.hist,
 		"lower_is_better":   true,
 		"scenarios":         scen,
 		"expected_good_fit": goodFit,
 		"exposure_limited":  expLimit,
 		"instrumented":      true,
-	}, durations)
+	}
+	lat.write(ctx, rec)
 }
 
 func measureBroadcastAllocations(ctx *measureContext, factory func() Broadcaster, name string) {

@@ -277,6 +277,9 @@ var harnessRunnables = map[string]string{
 	"TestWarmOpsIsSizedByTheClock":                      "measurement battery tooling",
 	"TestDeliveryFieldsRecordTheShareDelivered":         "measurement battery tooling",
 	"TestEvaluationListsOnlyResidueThatUsesACPU":        "measurement battery tooling",
+	"TestLatencyIntervalIsTakenAcrossEpisodes":          "measurement battery tooling",
+	"TestLatencyBatteriesTimeEveryEpisode":              "measurement battery tooling",
+	"TestLatencyDimensionRanksTheEpisodeP90":            "measurement evaluation tooling",
 }
 
 // implementationSource returns the non-test source file a test file belongs

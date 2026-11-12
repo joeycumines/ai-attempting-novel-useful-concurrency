@@ -6,6 +6,7 @@ const reportJS3 = `
 
 /* ── Leaderboard ── */
 var lbGroup = 0, lbSort = {k:'score', dir:-1};
+var latHeader = 'p99 latency';
 function lbRows(group){
   var family = group.family;
   var sc = derivedGroup(group);
@@ -19,7 +20,14 @@ function lbRows(group){
   Object.keys(sc).forEach(function(impl){
     var s = sc[impl];
     var tm = thr[impl], lm = lat[impl], am = allocs[impl], sm = stalls[impl];
+    // What the latency dimension ranks: from record contract 1.6.0 the mean over
+    // episodes of the 90th percentile; before it the column showed the single
+    // episode's 99th percentile.
     var p99 = lm && typeof lm.p99 === 'number' ? lm.p99 : null;
+    if (lm && Array.isArray(lm.episode_p90) && lm.episode_p90.length) {
+      p99 = lm.episode_p90.reduce(function(a, b){ return a + b; }, 0) / lm.episode_p90.length;
+      latHeader = 'p90 latency';
+    }
     var stallOps = sm && typeof sm.ops_completed === 'number' ? sm.ops_completed : (sm ? meanOf(sm) : null);
     rows.push({
       impl: impl, score: s.score, ranked: isRanked(s), verdict: s.verdict, integrity: s.integrity,
@@ -49,12 +57,15 @@ function lbRender(){
   if (!scoreGroups.length) return;
   var q = ($('lbSearch').value||'').toLowerCase();
   var baseOnly = $('lbBaselinesOnly').checked, goodOnly = $('lbGoodFitOnly').checked;
+  latHeader = 'p99 latency';
   var rows = lbRows(scoreGroups[lbGroup]).filter(function(r){
     if (q && r.impl.toLowerCase().indexOf(q) < 0) return false;
     if (baseOnly && !r.baseline) return false;
     if (goodOnly && !r.goodFit) return false;
     return true;
   });
+  var latTh = document.querySelector('#leaderboard th[data-k="lat"]');
+  if (latTh && latTh.textContent !== latHeader) latTh.textContent = latHeader;
   var dir = lbSort.dir, key = lbSort.k;
   rows.sort(function(a,b){
     var av = a[key], bv = b[key];
