@@ -232,7 +232,8 @@ func cpuModel() string {
 //	       99th percentile (episode_p50, episode_p90, episode_p99,
 //	       episode_mean). The latency dimension ranks the mean over
 //	       episodes of the 90th percentile. Before this the battery was 400
-//	       publishes of one instance (40 µs to 2 ms in all), the dimension
+//	       publishes of one instance (about half a millisecond in all for
+//	       the median implementation of run 10), the dimension
 //	       ranked their mean, and two runs of the same code ordered the
 //	       implementations that drop differently (see latencyEpisodes).
 const measureGeneratorVersion = "1.6.0"

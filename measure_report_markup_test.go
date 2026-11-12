@@ -242,7 +242,7 @@ const reportHTMLBody = `<body>
     <div class="scroll-x"><table class="gloss">
       <tr><td>metric</td><td>record kind; dims carry the sweep dimension (<code class="k">subs</code> / <code class="k">receivers</code> / <code class="k">senders</code>)</td></tr>
       <tr><td>mean / stddev / cv</td><td>distributional summaries over <code class="k">reps</code> repetitions of <code class="k">ops</code> operations each</td></tr>
-      <tr><td>p50 / p90 / p99 / max</td><td>reservoir-sampled latencies (ADR-004 HDR-ish reservoir, per-run)</td></tr>
+      <tr><td>p50 / p90 / p99 / max</td><td>percentiles and the largest of the timed operations of a latency battery; from contract 1.6.0 over every episode, with each episode's own in <code class="k">episode_p50</code>, <code class="k">episode_p90</code>, <code class="k">episode_p99</code></td></tr>
       <tr><td>ci95_low / ci95_high</td><td>Welch-adjusted 95% half-width on the per-op mean (t-distribution, df = n−1)</td></tr>
       <tr><td>approx_retained_bytes</td><td>post-GC heap growth attributable to a permanently stalled subscriber</td></tr>
       <tr><td>exactly_once_violations</td><td>scatter items neither delivered exactly once nor counted as evicted, summed over all receivers incl. warmup; non-zero fails the integrity gate</td></tr>

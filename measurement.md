@@ -153,7 +153,7 @@ One JSON object per line. Every committed run has one (`results-NN-01-results.js
 | `dims` | sweep dimension — `subs` (fan-out), `receivers` (caster/scatter), `senders` (gather) |
 | `ops`, `n`, `reps` | operations per repetition, samples, repetitions |
 | `mean`, `stddev`, `cv` | distributional summaries across repetitions |
-| `min`, `p50`, `p90`, `p99`, `max` | per-operation latency reservoir (ADR-004 style) |
+| `min`, `p50`, `p90`, `p99`, `max` | latency batteries: the smallest, the percentiles and the largest of the timed operations (every one is kept; there is no sampling) |
 | `ci95_low`, `ci95_high`, `ci95_halfwidth` | 95% CI on the per-op mean (t-distribution, df = n−1) |
 | `lower_is_better` | sort direction for scoreboards |
 | `unit` | `ns`, `bytes`, `fraction`, `count` |
@@ -228,7 +228,8 @@ which a still-parked publisher is *recorded*, not killed.
 A latency battery times every publish of several **episodes** (contract 1.6.0 on).
 An episode is a fresh instance with its own subscribers, warmed with 32 publishes
 and then timed for the profile's sample count. Until 1.6.0 the battery was one
-episode: 400 publishes of one instance, 40 µs to 2 ms of wall time in all, so
+episode: 400 publishes of one instance, half a millisecond of wall time in all
+for the median implementation of run 10 and 14 ms for the slowest, so
 whatever the machine was doing in that instant was in every sample.
 
 A timed repetition is sized by the clock, not by an estimate (the broadcast

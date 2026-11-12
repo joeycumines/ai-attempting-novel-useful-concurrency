@@ -523,10 +523,11 @@ func metricMeans(metrics []map[string]any, metric, family string, dimsSubsFilter
 // 99th percentile is its fourth largest sample, and on a shared two-CPU
 // machine that sample is a preemption more often than it is the
 // implementation. Between repeated passes of this battery alone (31
-// episodes, three passes) the order of a class by the 99th percentile
-// agreed at 0.62 to 0.96, by the 90th at 0.80 to 0.96 and by the median at
-// 0.87 to 1.00. The median says least that the throughput dimension does not
-// already say, so the dimension takes the highest percentile that repeats.
+// episodes, three passes) the order of a class by the mean over episodes of
+// the 99th percentile agreed at 0.62 to 0.96, by that of the 90th at 0.80
+// to 0.96 and by that of the median at 0.87 to 1.00. The median says least
+// that the throughput dimension does not already say, so the dimension takes
+// the highest percentile that repeats.
 func latencyRankValues(metrics []map[string]any, metric, family string) map[string]float64 {
 	out := map[string]float64{}
 	for _, m := range metrics {

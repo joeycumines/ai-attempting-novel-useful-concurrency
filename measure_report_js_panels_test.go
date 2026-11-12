@@ -346,7 +346,7 @@ function downloadBlob(name, content, mime){
 (function renderMethodology(){
   var batteries = [
     ['broadcast.throughput', 'publish_ns_op', 'cost per publish vs subscriber count (1…64/256/512)'],
-    ['broadcast.latency', 'publish_latency_ns', 'publish→receipt latency, 8 subscribers, p50…p99/max + reservoir histogram'],
+    ['broadcast.latency', 'publish_latency_ns', 'time for one publish call to return, 8 subscribers receiving: p50, p90, p99, max and a log2 histogram, over the fresh instances the record counts in episodes (one before contract 1.6.0)'],
     ['broadcast.allocs', 'publish_allocs_op / publish_bytes_op', 'allocator pressure per publish at 8 subscribers, GOGC=off, post-GC measurement'],
     ['broadcast.allocs_zerosubs', 'publish_allocs_op_zerosubs / publish_bytes_op_zerosubs', 'same, publishing into the void'],
     ['broadcast.mem_per_subscriber', 'mem_per_subscriber_bytes', 'post-GC heap retained per idle subscriber (16 idle subscriptions)'],
