@@ -142,7 +142,7 @@ const reportHTMLBody = `<body>
 <section class="block" id="latency">
   <div class="kicker">Tail behaviour</div>
   <h2 class="title">Latency distribution @ 8 subscribers</h2>
-  <p class="lede">p50 / p90 / p99 / max from reservoir-sampled publish→delivery latency (ADR-004 harness, warm). Sorted by p99. Whiskers show the 95% confidence interval around the mean where available.</p>
+  <p class="lede">p50 / p90 / p99 / max of the time one publish call takes to return with 8 subscribers draining, after a warm-up, over every timed publish of the battery. From record contract 1.6.0 the battery times several fresh instances (episodes), the whiskers are the 95% confidence interval of the mean across episodes, and the score ranks the mean over episodes of the 90th percentile. Sorted by p99.</p>
   <div class="tabs" id="latTabs"></div>
   <div class="card pad"><div id="latChart"></div><p class="small" style="margin-top:10px">Values in nanoseconds; lower is better. Histogram buckets in <a href="#methodology" style="color:var(--cyan)">Methodology</a>.</p></div>
 </section>

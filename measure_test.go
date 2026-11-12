@@ -227,7 +227,15 @@ func cpuModel() string {
 //	       (blocked_cpu_cores), so that a publisher that waits by spinning
 //	       is told apart from one that parks; the stall-resilience dimension
 //	       ranks a spinning publisher last (see stallRank).
-const measureGeneratorVersion = "1.5.0"
+//	1.6.0  A latency battery times LatencyEpisodes fresh instances instead
+//	       of one, and its record carries each episode's median, 90th and
+//	       99th percentile (episode_p50, episode_p90, episode_p99,
+//	       episode_mean). The latency dimension ranks the mean over
+//	       episodes of the 90th percentile. Before this the battery was 400
+//	       publishes of one instance (40 µs to 2 ms in all), the dimension
+//	       ranked their mean, and two runs of the same code ordered the
+//	       implementations that drop differently (see latencyEpisodes).
+const measureGeneratorVersion = "1.6.0"
 
 // generatorBefore reports whether the record contract `have` is older than
 // `want`. A file without a contract (hand-built records in the tooling tests)
@@ -284,6 +292,7 @@ type measureProfile struct {
 	ScaleSubs          []int
 	CasterScaleSubs    []int
 	LatencySamples     int
+	LatencyEpisodes    int
 	AllocReps          int
 	ChurnOps           int
 	ChurnReps          int
@@ -296,13 +305,22 @@ type measureProfile struct {
 	ScatterScaleSubs   []int
 }
 
+// latencyEpisodeCount is LatencyEpisodes, and one for a profile that does not
+// set it: a latency battery always times something.
+func (p measureProfile) latencyEpisodeCount() int {
+	if p.LatencyEpisodes < 1 {
+		return 1
+	}
+	return p.LatencyEpisodes
+}
+
 func profileByName(name string) (measureProfile, bool) {
 	switch name {
 	case "quick":
 		return measureProfile{Name: "quick", Reps: 3, TargetPerRep: 25 * time.Millisecond,
 			MinOps: 32, MaxOps: 200000,
 			ScaleSubs: []int{1, 8, 64}, CasterScaleSubs: []int{1, 8, 32},
-			LatencySamples: 160, AllocReps: 3, ChurnOps: 100, ChurnReps: 2,
+			LatencySamples: 160, LatencyEpisodes: 5, AllocReps: 3, ChurnOps: 100, ChurnReps: 2,
 			MemProbeSubs: 8, StalledOps: 100, StalledDeadline: 150 * time.Millisecond,
 			TraceOps: 40, TraceMaxEvents: 1200, IntegrityPublishes: 3000,
 			ScatterScaleSubs: []int{1, 8}}, true
@@ -310,7 +328,7 @@ func profileByName(name string) (measureProfile, bool) {
 		return measureProfile{Name: "standard", Reps: 5, TargetPerRep: 60 * time.Millisecond,
 			MinOps: 64, MaxOps: 400000,
 			ScaleSubs: []int{1, 4, 8, 16, 32, 64, 128, 256}, CasterScaleSubs: []int{1, 4, 8, 16, 32},
-			LatencySamples: 400, AllocReps: 5, ChurnOps: 200, ChurnReps: 3,
+			LatencySamples: 400, LatencyEpisodes: 31, AllocReps: 5, ChurnOps: 200, ChurnReps: 3,
 			MemProbeSubs: 16, StalledOps: 1000, StalledDeadline: 250 * time.Millisecond,
 			TraceOps: 80, TraceMaxEvents: 2400, IntegrityPublishes: 8000,
 			ScatterScaleSubs: []int{1, 4, 8, 16}}, true
@@ -318,7 +336,7 @@ func profileByName(name string) (measureProfile, bool) {
 		return measureProfile{Name: "full", Reps: 7, TargetPerRep: 120 * time.Millisecond,
 			MinOps: 64, MaxOps: 800000,
 			ScaleSubs: []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512}, CasterScaleSubs: []int{1, 2, 4, 8, 16, 32, 64},
-			LatencySamples: 1000, AllocReps: 7, ChurnOps: 400, ChurnReps: 5,
+			LatencySamples: 1000, LatencyEpisodes: 61, AllocReps: 7, ChurnOps: 400, ChurnReps: 5,
 			MemProbeSubs: 32, StalledOps: 2000, StalledDeadline: 600 * time.Millisecond,
 			TraceOps: 120, TraceMaxEvents: 4000, IntegrityPublishes: 20000,
 			ScatterScaleSubs: []int{1, 2, 4, 8, 16, 32}}, true
@@ -453,6 +471,12 @@ func faninAttachmentMeta(impl string) ([]string, bool, bool) {
 // writeMetric emits a metric record. summary is computed from raw rep samples
 // (kept in the record for full re-analysis) unless raw is nil.
 func (c *measureContext) writeMetric(m map[string]any, samples []float64) {
+	c.writeMetricWith(m, samples, nil)
+}
+
+// writeMetricWith is writeMetric with a last word on the summary: adjust runs
+// after the summary of the samples is in the record and before it is written.
+func (c *measureContext) writeMetricWith(m map[string]any, samples []float64, adjust func(map[string]any)) {
 	m["type"] = "metric"
 	m["schema"] = measureSchemaVersion
 	if samples != nil {
@@ -470,6 +494,9 @@ func (c *measureContext) writeMetric(m map[string]any, samples []float64) {
 		m["ci95_halfwidth"] = s.CI95HalfWidth
 		m["ci95_low"] = s.CI95Low
 		m["ci95_high"] = s.CI95High
+		if adjust != nil {
+			adjust(m)
+		}
 	}
 	for k, v := range m {
 		if f, ok := v.(float64); ok {

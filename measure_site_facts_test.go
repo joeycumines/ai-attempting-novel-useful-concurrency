@@ -357,10 +357,15 @@ func renderSiteFacts(page string, cat siteCatalog, facts siteFacts) string {
 		} else if generatorBefore(r.Generator, deliveryClassContract) {
 			cards.WriteString(`            <li><span class="dot"></span> <strong>Broadcast and payload not ranked:</strong> the throughput battery timed each publish and did not record what was delivered, so a publish that drops was ranked against one that delivers; runs under record contract ` + deliveryClassContract + ` or later record it and rank the two apart</li>` + "\n")
 		}
+		if r.Generator != "" && generatorBefore(r.Generator, measureGeneratorVersion) {
+			// A committed report is not regenerated when the rules change,
+			// so a card must say which rules its scores were computed by.
+			fmt.Fprintf(&cards, `            <li><span class="dot"></span> <strong>Record contract %s:</strong> scored by that contract's rules, not the current ones (%s); <code>results-00-00-readme.md</code> lists what each contract changed</li>`+"\n", esc(r.Generator), measureGeneratorVersion)
+		}
 		if _, ok := r.file("06"); ok {
 			cards.WriteString(`            <li><span class="dot"></span> <strong>Gates recorded:</strong> the evaluation states what <code>make verify</code> reported</li>` + "\n")
 		}
-		fmt.Fprintf(&cards, `            <li><span class="dot"></span> %d implementation(s) skipped a battery, each with a recorded reason</li>
+		fmt.Fprintf(&cards, `            <li><span class="dot"></span> %d battery cell(s) skipped, each with a recorded reason</li>
           </ul>
         </div>
         <div class="report-actions">

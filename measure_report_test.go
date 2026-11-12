@@ -291,18 +291,25 @@ const deliveryClassContract = "1.4.0"
 // implementation whose publish allocates nothing that stray count is the
 // whole figure, and it differs in every repetition (a coefficient of
 // variation of 224 percent is one repetition in five with a stray
-// allocation). In runs 09 and 10, 53 and 54 of the 94 broadcast
-// implementations measured under 0.01 allocations per publish, with means up
-// to 0.016 and single repetitions up to 0.04. Ranked as measured, they were
-// put in an order that the next run reshuffled: RingPubSub measured 0.00006
-// and 0.00002 in the two runs and EpochCaster 0.00004 and 0, and their
-// allocation scores moved from 76 to 92 and from 80 to 98 on that alone.
+// allocation). In runs 09 and 10, 52 of the 94 broadcast implementations had
+// a repetition with no allocation at all in each run; their means ran up to
+// 0.016 allocations per publish and single repetitions up to 0.04. Ranked as
+// measured, they were put in an order that the next run reshuffled:
+// RingPubSub measured 0.00006 and 0.00002 in the two runs and EpochCaster
+// 0.00004 and 0, and their allocation scores moved from 76 to 92 and from 80
+// to 98 on that alone.
 //
 // A tenth of an allocation per publish is about six times the largest stray
 // mean seen. Implementations that round to the same figure tie. The price is
 // that an implementation which really allocates once in 35 to 100 publishes
-// (three did, at 0.01 to 0.03) ties with those that never allocate; the
-// figure reported is still the one measured.
+// (three did in both runs, at 0.01 to 0.03) ties with those that never
+// allocate; the figure reported is still the one measured.
+//
+// A finer rule was considered and not taken: tie only the implementations
+// with a repetition at zero. It tells those three apart, but it also moves
+// implementations in and out of the tie between runs. Two had no repetition
+// at zero in run 09 and two others in run 10 (smallest repetition 0.0002 to
+// 0.001), and each of the four had one in the other run.
 const (
 	allocResolution         = 0.1
 	allocResolutionContract = "1.5.0"
@@ -503,6 +510,58 @@ func metricMeans(metrics []map[string]any, metric, family string, dimsSubsFilter
 	return out
 }
 
+// latencyRankValues is what the latency dimension ranks, by implementation.
+//
+// From record contract 1.6.0 a latency record holds the 90th percentile of
+// each of its episodes, and the value is their mean: the time within which
+// nine publishes in ten returned, averaged over fresh instances. A record
+// without episodes is from an earlier contract, whose battery was a single
+// episode; its value is the mean of that episode's samples, which is what
+// those runs were scored on.
+//
+// Why the 90th percentile and not the 99th: with 400 samples an episode's
+// 99th percentile is its fourth largest sample, and on a shared two-CPU
+// machine that sample is a preemption more often than it is the
+// implementation. Between repeated passes of this battery alone (31
+// episodes, three passes) the order of a class by the 99th percentile
+// agreed at 0.62 to 0.96, by the 90th at 0.80 to 0.96 and by the median at
+// 0.87 to 1.00. The median says least that the throughput dimension does not
+// already say, so the dimension takes the highest percentile that repeats.
+func latencyRankValues(metrics []map[string]any, metric, family string) map[string]float64 {
+	out := map[string]float64{}
+	for _, m := range metrics {
+		if m["metric"] != metric || m["family"] != family {
+			continue
+		}
+		impl, _ := m["impl"].(string)
+		if v, ok := episodeMean(m, "episode_p90"); ok {
+			out[impl] = v
+			continue
+		}
+		if mean, ok := recMean(m); ok {
+			out[impl] = mean
+		}
+	}
+	return out
+}
+
+// episodeMean is the mean of a per-episode list of a latency record.
+func episodeMean(m map[string]any, key string) (float64, bool) {
+	list, ok := m[key].([]any)
+	if !ok || len(list) == 0 {
+		return 0, false
+	}
+	sum := 0.0
+	for _, v := range list {
+		f, ok := v.(float64)
+		if !ok {
+			return 0, false
+		}
+		sum += f
+	}
+	return sum / float64(len(list)), true
+}
+
 // higherIsBetterFlag reports whether the metric is better when larger.
 func stalledOpsCompleted(metrics []map[string]any, family string) map[string]float64 {
 	out := map[string]float64{}
@@ -671,9 +730,9 @@ func deriveReport(data *reportData, registry map[string]any) derivedData {
 			}
 		}
 		thrAll := metricMeans(data.metrics, thrMetric, family, thrDims)
-		latAll := metricMeans(data.metrics, map[string]string{
+		latAll := latencyRankValues(data.metrics, map[string]string{
 			"broadcast": "publish_latency_ns", "payload": "publish_latency_ns", "caster": "send_latency_ns",
-		}[family], family, -1)
+		}[family], family)
 		var allocAll map[string]float64
 		allocRaw := map[string]float64{}
 		if family == "broadcast" {

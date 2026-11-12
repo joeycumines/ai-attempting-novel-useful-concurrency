@@ -141,40 +141,41 @@ func measurePayloadThroughput(ctx *measureContext, mk func() asyncAPI, name stri
 func measurePayloadLatency(ctx *measureContext, mk func() asyncAPI, name string) {
 	scen, goodFit, expLimit := payloadAttachmentMeta(name)
 	const subs = 8
-	x := mk()
-	g := startPayloadDrains(x, subs)
 	const warmup = 32
-	for i := 0; i < warmup; i++ {
-		x.send(mkpv(i + 1))
-	}
 	n := ctx.profile.LatencySamples
-	durations := make([]float64, n)
-	hist := newHistogram()
-	for i := 0; i < n; i++ {
-		t0 := time.Now()
-		x.send(mkpv(i + 1 + warmup))
-		d := time.Since(t0)
-		durations[i] = float64(d)
-		hist.add(float64(d))
+	lat := newLatencyEpisodes()
+	for e := 0; e < ctx.profile.latencyEpisodeCount(); e++ {
+		x := mk()
+		g := startPayloadDrains(x, subs)
+		for i := 0; i < warmup; i++ {
+			x.send(mkpv(i + 1))
+		}
+		lat.begin(n)
+		for i := 0; i < n; i++ {
+			t0 := time.Now()
+			x.send(mkpv(i + 1 + warmup))
+			lat.add(time.Since(t0))
+		}
+		if !g.stop(3 * time.Second) {
+			ctx.fail("%s: payload drains did not exit after latency run", name)
+			break
+		}
 	}
-	if !g.stop(3 * time.Second) {
-		ctx.fail("%s: payload drains did not exit after latency run", name)
-	}
-	ctx.writeMetric(map[string]any{
+	rec := map[string]any{
 		"metric":            "publish_latency_ns",
 		"family":            "payload",
 		"impl":              name,
 		"unit":              "ns",
 		"dims":              map[string]any{"subs": subs},
-		"ops":               n,
-		"histogram":         hist,
+		"histogram":         lat.hist,
 		"lower_is_better":   true,
 		"scenarios":         scen,
 		"expected_good_fit": goodFit,
 		"exposure_limited":  expLimit,
 		"instrumented":      true,
 		"payload_words":     4,
-	}, durations)
+	}
+	lat.write(ctx, rec)
 }
 
 // measurePayloadIntegrity hammers the implementation with multi-word payloads

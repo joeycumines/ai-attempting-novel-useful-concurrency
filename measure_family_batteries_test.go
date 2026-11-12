@@ -256,40 +256,47 @@ func measureCasterThroughput(ctx *measureContext, mk func() casterLike, name str
 func measureCasterLatency(ctx *measureContext, mk func() casterLike, name string) {
 	scen, goodFit, expLimit := casterAttachmentMeta(name)
 	const receivers = 8
-	rounds := startCasterRounds(mk(), receivers)
 	const warmup = 32
-	ok := true
-	for i := 0; i < warmup && ok; i++ {
-		_, _, ok = rounds.send(i + 1)
-	}
-	warmReceived := int64(0)
-	if ok {
-		ok = rounds.arm()
-		warmReceived = rounds.received.Load()
-	}
 	n := ctx.profile.LatencySamples
-	durations := make([]float64, 0, n)
-	hist := newHistogram()
+	lat := newLatencyEpisodes()
 	var delivery casterDelivery
-	for i := 0; i < n && ok; i++ {
-		var d time.Duration
-		var k int
-		d, k, ok = rounds.send(i + 1 + warmup)
+	received := int64(0)
+	for e := 0; e < ctx.profile.latencyEpisodeCount(); e++ {
+		rounds := startCasterRounds(mk(), receivers)
+		ok := true
+		for i := 0; i < warmup && ok; i++ {
+			_, _, ok = rounds.send(i + 1)
+		}
+		warmReceived := int64(0)
+		if ok {
+			ok = rounds.arm()
+			warmReceived = rounds.received.Load()
+		}
+		lat.begin(n)
+		for i := 0; i < n && ok; i++ {
+			var d time.Duration
+			var k int
+			d, k, ok = rounds.send(i + 1 + warmup)
+			if !ok {
+				break
+			}
+			lat.add(d)
+			delivery.add(receivers, k)
+		}
+		if ok {
+			ok = rounds.arm()
+		}
 		if !ok {
+			ctx.fail("%s: a Send reported a delivery that no receiver took during the latency run", name)
+		}
+		finished := rounds.finish()
+		if !finished {
+			ctx.fail("%s: caster receivers did not stop after latency run", name)
+		}
+		received += rounds.received.Load() - warmReceived
+		if !ok || !finished {
 			break
 		}
-		durations = append(durations, float64(d))
-		hist.add(float64(d))
-		delivery.add(receivers, k)
-	}
-	if ok {
-		ok = rounds.arm()
-	}
-	if !ok {
-		ctx.fail("%s: a Send reported a delivery that no receiver took during the latency run", name)
-	}
-	if !rounds.finish() {
-		ctx.fail("%s: caster receivers did not stop after latency run", name)
 	}
 	rec := map[string]any{
 		"metric":            "send_latency_ns",
@@ -297,18 +304,17 @@ func measureCasterLatency(ctx *measureContext, mk func() casterLike, name string
 		"impl":              name,
 		"unit":              "ns",
 		"dims":              map[string]any{"receivers": receivers},
-		"ops":               len(durations),
-		"histogram":         hist,
+		"histogram":         lat.hist,
 		"lower_is_better":   true,
 		"scenarios":         scen,
 		"expected_good_fit": goodFit,
 		"exposure_limited":  expLimit,
 		"instrumented":      true,
 	}
-	for k, v := range delivery.fields(rounds.received.Load() - warmReceived) {
+	for k, v := range delivery.fields(received) {
 		rec[k] = v
 	}
-	ctx.writeMetric(rec, durations)
+	lat.write(ctx, rec)
 }
 
 func measureCasterChurn(ctx *measureContext, mk func() casterLike, name string) {
